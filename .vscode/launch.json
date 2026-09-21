@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug VWA EduRecords",
+            "request": "launch",
+            "mainClass": "vn.vwa.edurecords.VwaEdurecordsApplication",
+            "projectName": "vwa-edurecords",
+            "cwd": "${workspaceFolder}/backend"
+        }
+    ]
+}
