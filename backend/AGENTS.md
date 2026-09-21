@@ -150,7 +150,16 @@ shouldMarkTemporaryBorrowAsOverdueAfterDueDate()
 cd backend
 .\mvnw.cmd test
 .\mvnw.cmd clean package
+
+# Chạy ổn định trên Windows khi đường dẫn workspace có ký tự Unicode
+java -jar target/vwa-edurecords-0.0.1-SNAPSHOT.jar --server.port=8081
 ```
+
+`spring-boot:run` có thể không dựng đúng classpath khi workspace nằm trong đường
+dẫn Windows có ký tự tiếng Việt và khoảng trắng. Khi gặp `ClassNotFoundException`
+cho `VwaEdurecordsApplication`, dùng `clean package` rồi chạy executable JAR như
+lệnh trên, hoặc mở/copy repo vào một đường dẫn ASCII ngắn, ví dụ
+`D:\workspace\vwa-edurecords`.
 
 8. Xem lại diff, loại bỏ debug code, import thừa, log nhạy cảm và file sinh ra.
 9. Tóm tắt thay đổi, test đã chạy và rủi ro còn lại trong pull request/response cuối.

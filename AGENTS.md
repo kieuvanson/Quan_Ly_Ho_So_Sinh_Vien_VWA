@@ -142,11 +142,15 @@ Chạy từ thư mục `backend/`:
 # Build và chạy test/package
 .\mvnw.cmd clean package
 
+# Chạy executable JAR trên Windows
+java -jar target/vwa-edurecords-0.0.1-SNAPSHOT.jar --server.port=8081
+
 # Chạy bằng Maven đã cài sẵn (tương đương wrapper)
 mvn spring-boot:run
 mvn test
 ```
 
 - Repo có `mvnw`, `mvnw.cmd` và Maven Wrapper `3.3.4`; ưu tiên wrapper để dùng đúng môi trường repo.
+- Nếu `spring-boot:run` báo `ClassNotFoundException` trong workspace có đường dẫn tiếng Việt/khoảng trắng, hãy chạy `clean package` rồi dùng executable JAR; hoặc mở repo từ đường dẫn ASCII ngắn.
 - Frontend chưa có `package.json`, nên hiện chưa có lệnh `npm run dev`, `npm run build` hoặc `npm test` thực tế để chạy. Chỉ bổ sung các lệnh này sau khi framework/frontend được tạo.
 - Test hiện hữu là `VwaEdurecordsApplicationTests.contextLoads()`. Khi thêm nghiệp vụ, bổ sung test Service/API cho các business rules và audit bắt buộc.
