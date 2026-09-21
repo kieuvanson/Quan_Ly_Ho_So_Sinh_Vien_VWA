@@ -22,26 +22,25 @@
 ├── AGENTS.md
 ├── .gitignore
 ├── backend/
-│   └── vwa-edurecords/
-│       ├── pom.xml
-│       ├── mvnw
-│       ├── mvnw.cmd
-│       ├── .mvn/wrapper/maven-wrapper.properties
-│       └── src/
-│           ├── main/
-│           │   ├── java/vn/vwa/edurecords/
-│           │   │   └── VwaEdurecordsApplication.java
-│           │   └── resources/
-│           │       ├── application.properties
-│           │       ├── static/
-│           │       └── templates/
-│           └── test/java/vn/vwa/edurecords/
-│               └── VwaEdurecordsApplicationTests.java
+│   ├── pom.xml
+│   ├── mvnw
+│   ├── mvnw.cmd
+│   ├── .mvn/wrapper/maven-wrapper.properties
+│   └── src/
+│       ├── main/
+│       │   ├── java/vn/vwa/edurecords/
+│       │   │   └── VwaEdurecordsApplication.java
+│       │   └── resources/
+│       │       ├── application.properties
+│       │       ├── static/
+│       │       └── templates/
+│       └── test/java/vn/vwa/edurecords/
+│           └── VwaEdurecordsApplicationTests.java
 └── frontend/
     └── (đang trống)
 ```
 
-- `backend/vwa-edurecords/`: ứng dụng Spring Boot Maven.
+- `backend/`: ứng dụng Spring Boot Maven `vwa-edurecords`.
 - `src/main/java/vn/vwa/edurecords/`: package gốc của backend; `VwaEdurecordsApplication` là entry point với `@SpringBootApplication`.
 - `src/main/resources/`: cấu hình và tài nguyên runtime. `application.properties` hiện chỉ có `spring.application.name`; `static/` và `templates/` chưa có file triển khai.
 - `src/test/java/vn/vwa/edurecords/`: test backend; hiện có `VwaEdurecordsApplicationTests` với `contextLoads()`.
@@ -131,7 +130,7 @@ erDiagram
 
 ## 7. Lệnh thường dùng
 
-Chạy từ thư mục `backend/vwa-edurecords/`:
+Chạy từ thư mục `backend/`:
 
 ```powershell
 # Chạy ứng dụng bằng Maven Wrapper trên Windows

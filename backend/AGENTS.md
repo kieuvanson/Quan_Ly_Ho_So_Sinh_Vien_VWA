@@ -1,6 +1,6 @@
 # Backend Engineering Guide
 
-Tài liệu này bổ sung cho `AGENTS.md` ở thư mục gốc. Phạm vi áp dụng là `backend/vwa-edurecords/`. Mục tiêu là giữ code dễ đọc, dễ kiểm thử, dễ thay đổi và đủ chắc chắn cho một hệ thống quản lý hồ sơ có dữ liệu audit.
+Tài liệu này bổ sung cho `AGENTS.md` ở thư mục gốc. Phạm vi áp dụng là `backend/`. Mục tiêu là giữ code dễ đọc, dễ kiểm thử, dễ thay đổi và đủ chắc chắn cho một hệ thống quản lý hồ sơ có dữ liệu audit.
 
 ## 1. Nguyên tắc làm việc
 
@@ -147,7 +147,7 @@ shouldMarkTemporaryBorrowAsOverdueAfterDueDate()
 7. Chạy kiểm tra tối thiểu:
 
 ```powershell
-cd backend/vwa-edurecords
+cd backend
 .\mvnw.cmd test
 .\mvnw.cmd clean package
 ```
