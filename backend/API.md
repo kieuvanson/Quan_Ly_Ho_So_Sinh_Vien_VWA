@@ -1,199 +1,145 @@
-# VWA EduRecords API
+# VWA EduRecords — Backend API Reference
 
-Tài liệu hợp đồng API giữa backend và frontend. Mỗi khi thêm hoặc thay đổi endpoint, phải cập nhật file này trong cùng commit với code API.
+> Tài liệu hợp đồng API góc nhìn backend engineer. Đối với frontend, đọc bản
+> chi tiết hơn ở [`/API.md`](../API.md).
+>
+> Khi thêm / sửa endpoint public, phải cập nhật **cả 2 file** trong cùng commit.
 
-## 1. Trạng thái hiện tại
+## 1. Trạng thái triển khai
 
-- Backend: Spring Boot `4.1.1`.
-- Base URL local dự kiến: `http://localhost:8081`.
-- Database: PostgreSQL `vwa_edurecords`.
-- Hiện tại chưa có `@RestController` hoặc endpoint nghiệp vụ nào được triển khai.
-- Frontend không được tự gọi các API trong phần “Dự kiến”; chỉ gọi API đã có trong phần “Đã triển khai”.
-- Spring Security hiện đang bật mặc định. Request chưa có cấu hình xác thực phù hợp có thể nhận `401 Unauthorized`.
+| Module | Controller | Endpoints | Trạng thái |
+|---|---|---|---|
+| **Auth** | `AuthController` | 3 | ✅ Đã triển khai |
+| Sinh viên (`/api/v1/students`) | — | — | 🔜 MVP |
+| Hồ sơ giấy tờ | — | — | 🔜 MVP |
+| Mượn — Trả — Rút | — | — | 🔜 MVP |
+| Lịch sử & Audit | — | — | 🔜 MVP |
 
-## 2. Quy ước chung
+## 2. Stack
 
-### HTTP method
-
-| Method | Mục đích |
+| | |
 |---|---|
-| `GET` | Đọc dữ liệu, không thay đổi dữ liệu |
-| `POST` | Tạo tài nguyên hoặc thực hiện một command nghiệp vụ |
-| `PUT` | Thay thế toàn bộ tài nguyên |
-| `PATCH` | Cập nhật một phần tài nguyên |
-| `DELETE` | Xóa tài nguyên, chỉ dùng khi nghiệp vụ cho phép |
+| Backend | Spring Boot `4.1.1`, Java 25, Maven Wrapper |
+| Persistence | Spring Data JPA + H2 (dev) / PostgreSQL (prod) |
+| Auth | JWT HS256, Redis revocation list |
+| Cache / Revocation | Redis (`localhost:6379` mặc định) |
+| Validation | Jakarta Bean Validation |
+| Error handling | `@RestControllerAdvice` tập trung → `ErrorResponse` thống nhất |
+| Rate limit | In-memory sliding window cho `/login` (5/60s/IP) |
+| Audit | SLF4J logger `AUDIT` |
+
+## 3. Quy ước
 
 ### URL
+- Base: `/api`
+- Module Auth dùng `/api/auth/**` (legacy, không có version)
+- Module nghiệp vụ dùng `/api/v1/<resource>` (versioned)
 
-- Dùng danh từ tài nguyên, chữ thường và kebab-case khi cần.
-- Không dùng động từ trong URL thông thường: dùng `POST /api/students`, không dùng `/api/create-student`.
-- Version API khi cần: `/api/v1/...`.
-- ID đặt trong path: `/api/v1/students/{mssv}`.
-- Query filter, sort và phân trang đặt trong query string.
+### HTTP status
 
-### Response thành công
-
-Response phải thống nhất theo use case. Ví dụ:
-
-```json
-{
-  "data": {},
-  "message": "Success"
-}
-```
-
-Danh sách nên có metadata phân trang:
-
-```json
-{
-  "data": [],
-  "pagination": {
-    "page": 0,
-    "size": 20,
-    "totalElements": 0,
-    "totalPages": 0
-  }
-}
-```
-
-### Response lỗi
-
-```json
-{
-  "timestamp": "2026-09-21T10:00:00Z",
-  "status": 400,
-  "code": "VALIDATION_ERROR",
-  "message": "Dữ liệu không hợp lệ",
-  "path": "/api/v1/students",
-  "fieldErrors": {
-    "mssv": "MSSV không được để trống"
-  }
-}
-```
-
-Frontend dùng `code` để xử lý logic; không dùng nội dung `message` để so sánh điều kiện.
-
-### HTTP status bắt buộc
-
-| Status | Ý nghĩa |
+| Status | Dùng khi |
 |---|---|
-| `200 OK` | Đọc hoặc cập nhật thành công |
-| `201 Created` | Tạo tài nguyên thành công |
-| `204 No Content` | Thành công, không có body |
-| `400 Bad Request` | Request sai format hoặc validation thất bại |
-| `401 Unauthorized` | Chưa xác thực |
-| `403 Forbidden` | Không có quyền |
-| `404 Not Found` | Không tìm thấy tài nguyên |
-| `409 Conflict` | Vi phạm trạng thái hoặc business rule |
-| `500 Internal Server Error` | Lỗi server ngoài dự kiến |
+| `200 OK` | Read / update thành công |
+| `201 Created` | Tạo resource mới |
+| `204 No Content` | Thành công, không có body (ít dùng) |
+| `400 Bad Request` | Validate fail, JSON lỗi, param sai |
+| `401 Unauthorized` | Token sai / hết hạn / bị thu hồi |
+| `403 Forbidden` | Đúng token nhưng thiếu quyền |
+| `404 Not Found` | Resource không tồn tại |
+| `409 Conflict` | Vi phạm business rule / trạng thái |
+| `429 Too Many Requests` | Rate limit |
+| `500 Internal Server Error` | Lỗi ngoài dự kiến (đã log stack trace) |
 
-## 3. API đã triển khai
+### Response envelope
 
-Hiện chưa có API nào được triển khai.
+| Thành công | Lỗi |
+|---|---|
+| `ApiResponse<T>` (`success=true`, `data`) | `ErrorResponse` (`success=false`, `code`, `errors[]` optional) |
 
-| Method | Endpoint | Tác dụng | Trạng thái |
-|---|---|---|---|
-| - | - | Chưa có controller/endpoint nghiệp vụ | Chưa triển khai |
+Xem chi tiết payload ở [`/API.md` §1](../API.md#1-response-thống-nhất).
 
-## 4. API dự kiến của MVP
+### Error codes
 
-Các API dưới đây là danh sách định hướng, chưa phải API có thể gọi. Khi triển khai thật, chuyển endpoint vào mục “API đã triển khai” và điền đầy đủ request/response.
+Enum-like string ổn định. Đăng ký mã mới phải cập nhật docs.
 
-### Danh sách hồ sơ sinh viên
+| Nhóm | Codes |
+|---|---|
+| Auth | `INVALID_CREDENTIALS`, `ACCOUNT_DISABLED`, `INSUFFICIENT_ROLE`, `MISSING_REFRESH_TOKEN`, `INVALID_REFRESH_TOKEN`, `REFRESH_TOKEN_REVOKED`, `USER_NOT_FOUND` |
+| Request | `VALIDATION_ERROR`, `MALFORMED_JSON`, `MISSING_PARAMETER`, `INVALID_PARAMETER` |
+| System | `UNAUTHORIZED`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`, `METHOD_NOT_ALLOWED`, `TOO_MANY_REQUESTS`, `INTERNAL_ERROR` |
 
-| Method | Endpoint | Tác dụng |
-|---|---|---|
-| `GET` | `/api/v1/students` | Lấy danh sách hồ sơ, tìm kiếm, lọc và phân trang |
-| `GET` | `/api/v1/students/{mssv}` | Xem tóm tắt hồ sơ một sinh viên |
-| `POST` | `/api/v1/students` | Tạo hồ sơ sinh viên |
-| `PATCH` | `/api/v1/students/{mssv}` | Cập nhật một phần thông tin sinh viên |
+## 4. Endpoints đã triển khai
 
-### Hồ sơ giấy tờ
+### 4.1. `POST /api/auth/login`
 
-| Method | Endpoint | Tác dụng |
-|---|---|---|
-| `GET` | `/api/v1/students/{mssv}/documents` | Lấy danh sách giấy tờ của sinh viên |
-| `PATCH` | `/api/v1/documents/{maHoSo}/submission-status` | Tick/bỏ tick trạng thái nộp giấy tờ và tạo `LICHSUNOP` |
-| `GET` | `/api/v1/documents/{maHoSo}/submission-history` | Xem lịch sử nộp/bổ sung giấy tờ |
-| `POST` | `/api/v1/documents/{maHoSo}/attachment` | Thêm file đính kèm theo quy tắc upload |
-+
-### Mượn, trả và rút hồ sơ
+| | |
+|---|---|
+| Controller | `AuthController#login` |
+| Service | `AuthService#login` |
+| Auth | Public (rate-limited 5/60s/IP) |
+| Body | `LoginRequest(username, password)` |
+| Response | `ApiResponse<AuthResponse>` + `Set-Cookie: refresh_token` |
+| Side effects | Tạo family ID mới, ghi `AUDIT` event=LOGIN |
+| Errors | `VALIDATION_ERROR` (400), `INVALID_CREDENTIALS` (401), `ACCOUNT_DISABLED` (401), `INSUFFICIENT_ROLE` (401), `TOO_MANY_REQUESTS` (429) |
 
-| Method | Endpoint | Tác dụng |
-|---|---|---|
-| `POST` | `/api/v1/loans` | Tạo phiếu Mượn tạm thời |
-| `POST` | `/api/v1/loans/{maPhieu}/return` | Ghi nhận trả hồ sơ mượn |
-| `GET` | `/api/v1/loans` | Tra cứu phiếu mượn/trả |
-| `POST` | `/api/v1/withdrawals` | Tạo phiếu Rút hồ sơ vĩnh viễn cho toàn bộ giấy tờ |
-| `POST` | `/api/v1/withdrawals/{maPhieu}/complete` | Hoàn tất rút hồ sơ và khóa chỉnh sửa |
-+
-### Lịch sử và audit
+### 4.2. `POST /api/auth/refresh`
 
-| Method | Endpoint | Tác dụng |
-|---|---|---|
-| `GET` | `/api/v1/audits` | Tra cứu lịch sử thay đổi theo hồ sơ, phiếu hoặc thời gian |
-| `GET` | `/api/v1/students/{mssv}/audits` | Xem toàn bộ audit của một sinh viên |
-+
-## 5. Quy tắc frontend phải biết
+| | |
+|---|---|
+| Controller | `AuthController#refresh` |
+| Service | `AuthService#refresh` |
+| Auth | Cookie `refresh_token` hoặc body `RefreshTokenRequest` |
+| Response | `ApiResponse<AuthResponse>` + `Set-Cookie` rotated |
+| Side effects | Revoke old `jti` trong Redis, cấp cặp mới với cùng `fid`, ghi `AUDIT` event=REFRESH |
+| Errors | `MISSING_REFRESH_TOKEN` (401), `INVALID_REFRESH_TOKEN` (401), `REFRESH_TOKEN_REVOKED` (401), `USER_NOT_FOUND` (401), `ACCOUNT_DISABLED` (401), `INSUFFICIENT_ROLE` (401) |
 
-- Không xem `200` là thành công duy nhất; `201`, `204` cũng là response thành công hợp lệ.
-- Với `409`, hiển thị lỗi nghiệp vụ từ `code`/`message`; không tự retry.
-- Với `401`, đưa người dùng về luồng đăng nhập khi authentication được triển khai.
-- Với `422` nếu sau này backend dùng status này cho validation, xử lý tương tự `400` và đọc `fieldErrors`.
-- Không tự thay đổi trạng thái hồ sơ ở frontend để suy đoán kết quả; reload hoặc dùng response từ backend.
-- Khi tick/bỏ tick giấy tờ, chỉ cập nhật UI sau khi API thành công vì backend phải tạo audit cùng transaction.
-- Khi tạo phiếu Rút hồ sơ, frontend không gửi danh sách một phần để cố rút một số giấy tờ; backend sẽ áp dụng toàn bộ hồ sơ.
-- Không lưu password, token hoặc dữ liệu hồ sơ nhạy cảm vào source code.
+### 4.3. `POST /api/auth/logout`
 
-## 6. Template thêm API mới
+| | |
+|---|---|
+| Controller | `AuthController#logout` |
+| Service | `AuthService#logout` |
+| Auth | Optional (luôn trả 200) |
+| Response | `ApiResponse<Void>` + clear cookie |
+| Side effects | Revoke `jti` + `fid` trong Redis, ghi `AUDIT` event=LOGOUT |
 
-Mỗi API mới phải được ghi theo mẫu sau:
+## 5. Endpoints dự kiến (chưa triển khai)
 
-```markdown
-### [Tên chức năng]
+> Khi bắt đầu implement, chuyển từng endpoint xuống §4 với đầy đủ thông tin.
 
-- **Method:** `GET|POST|PUT|PATCH|DELETE`
-- **Endpoint:** `/api/v1/...`
-- **Trạng thái:** Đã triển khai | Chưa triển khai
-- **Tác dụng:** API dùng để làm gì, nói rõ đối tượng bị ảnh hưởng.
-- **Quyền yêu cầu:** Admin | Public | Chưa xác định
-- **Business rules:** Liệt kê rule Service phải kiểm tra.
+Xem chi tiết ở [`/API.md` §5](../API.md#5-endpoints--dự-kiến-mvp-chưa-có).
 
-#### Request
+## 6. Token management (Redis)
 
-```http
-METHOD /api/v1/... HTTP/1.1
-Content-Type: application/json
+Key schema:
+
+```
+revoked:jti:<jti>           -> "1"   TTL = thời gian còn lại của refresh token
+revoked:family:<familyId>   -> "1"   TTL = refresh token TTL
 ```
 
-```json
-{}
-```
+Service: `TokenRevocationService`. Được inject vào `AuthService` để:
+- Sau refresh: revoke `jti` cũ
+- Sau logout: revoke `jti` + `fid`
+- Khi phát hiện reuse: revoke toàn bộ `fid`
 
-#### Response thành công
+JWT signing key = SHA-256(`app.security.jwt.secret`), luôn 32 bytes dù secret ngắn.
 
-- **Status:** `200 OK`
+## 7. Checklist khi thêm endpoint mới
 
-```json
-{}
-```
+- [ ] Tạo controller theo layer, không trả entity JPA
+- [ ] Dùng DTO riêng cho request / response
+- [ ] `@Valid` cho body, validate kiểu dữ liệu
+- [ ] Business rule ở Service, throw `ApiException` / subclass
+- [ ] `@Transactional` ở ranh giới use case
+- [ ] Ghi `AUDIT` nếu thao tác nhạy cảm (thay đổi trạng thái, quyền)
+- [ ] Thêm test Service (rule + nhánh lỗi) và test Controller (status, validation)
+- [ ] Cập nhật cả `/API.md` và `backend/API.md`
+- [ ] Chạy `.\mvnw.cmd test` pass
 
-#### Response lỗi
+## 8. Tài liệu liên quan
 
-| Status | Code | Khi nào xảy ra |
-|---|---|---|
-| `400` | `...` | ... |
-| `404` | `...` | ... |
-| `409` | `...` | ... |
-```
-
-## 7. Checklist cập nhật API
-
-- [ ] Controller, Service, Repository và DTO đã được tạo đúng layer.
-- [ ] Request/response JSON trong tài liệu khớp với DTO thực tế.
-- [ ] HTTP status và error code đã được thống nhất.
-- [ ] Business rules được kiểm tra ở Service.
-- [ ] Thay đổi trạng thái có audit nếu nghiệp vụ yêu cầu.
-- [ ] Có test cho thành công, validation, not found và conflict.
-- [ ] Frontend biết endpoint mới và cách xử lý lỗi.
-- [ ] Đã chạy `cd backend; .\mvnw.cmd test`.
+- [`/API.md`](../API.md) — API doc cho frontend (chi tiết, ví dụ curl, axios)
+- [`AGENTS.md`](../AGENTS.md) (root) — tổng quan dự án
+- [`backend/AGENTS.md`](AGENTS.md) — backend engineering guide
+- `backend/.env.example` — biến môi trường
