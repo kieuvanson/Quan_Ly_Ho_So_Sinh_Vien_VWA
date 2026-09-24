@@ -1,0 +1,21 @@
+.trang-cai-dat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.trang-cai-dat__title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 16px 0;
+}
+
+.trang-cai-dat__message {
+  font-size: 16px;
+  color: #6b7280;
+  margin: 0;
+}

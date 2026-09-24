@@ -1,6 +1,8 @@
 import { useId, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { IconEye, IconEyeOff, IconLock, IconUser } from '../icons/LoginIcons'
-import { mockLogin } from '../../lib/mockLogin'
+import { authApi } from '../../api/auth'
+import { authStore } from '../../lib/authStore'
 import './LoginForm.css'
 
 const REMEMBER_KEY = 'vwa-edurecords-remember-username'
@@ -19,6 +21,7 @@ function readRememberedUsername(): string {
 }
 
 export function LoginForm() {
+  const navigate = useNavigate()
   const usernameId = useId()
   const passwordId = useId()
   const usernameErrorId = useId()
@@ -58,12 +61,10 @@ export function LoginForm() {
 
     setIsLoading(true)
     try {
-      const result = await mockLogin({ username, password })
-      if (result.success) {
-        setFormError(null)
-        setSuccessMessage(
-          'Đăng nhập thành công (mock). Kết nối API sẽ được bổ sung sau.',
-        )
+      const response = await authApi.login(username.trim(), password)
+      if (response.success && response.data) {
+        authStore.setAccessToken(response.data.token.accessToken)
+        authStore.setUser(response.data.user)
         try {
           if (remember) {
             localStorage.setItem(REMEMBER_KEY, username.trim())
@@ -73,8 +74,16 @@ export function LoginForm() {
         } catch {
           /* ignore */
         }
+        navigate('/')
       } else {
-        setFormError(result.message)
+        setFormError(response.message || 'Đăng nhập thất bại')
+      }
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { code?: string; message?: string } } }
+      if (err.response?.data?.code === 'INVALID_CREDENTIALS') {
+        setFormError('Sai tài khoản hoặc mật khẩu')
+      } else {
+        setFormError(err.response?.data?.message || 'Đăng nhập thất bại. Vui lòng thử lại.')
       }
     } finally {
       setIsLoading(false)
