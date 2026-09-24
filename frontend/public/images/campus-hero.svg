@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7ec8ff"/>
+      <stop offset="45%" stop-color="#4a9ef0"/>
+      <stop offset="100%" stop-color="#2d6fbf"/>
+    </linearGradient>
+    <linearGradient id="facade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8eef5"/>
+      <stop offset="100%" stop-color="#b8c4d4"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8ec5ff" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#3d7fd6" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="1200" fill="url(#sky)"/>
+  <ellipse cx="780" cy="180" rx="120" ry="120" fill="#fff" opacity="0.35"/>
+  <ellipse cx="820" cy="200" rx="90" ry="90" fill="#fff" opacity="0.25"/>
+  <rect x="0" y="520" width="960" height="680" fill="#5a8f5a" opacity="0.35"/>
+  <rect x="80" y="420" width="800" height="420" rx="8" fill="url(#facade)"/>
+  <rect x="120" y="460" width="720" height="340" fill="#dfe6ef"/>
+  <g opacity="0.9">
+    <rect x="150" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="260" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="370" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="480" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="590" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="700" y="490" width="90" height="120" fill="url(#glass)"/>
+    <rect x="150" y="630" width="90" height="120" fill="url(#glass)"/>
+    <rect x="260" y="630" width="90" height="120" fill="url(#glass)"/>
+    <rect x="370" y="630" width="90" height="120" fill="url(#glass)"/>
+    <rect x="480" y="630" width="90" height="120" fill="url(#glass)"/>
+    <rect x="590" y="630" width="90" height="120" fill="url(#glass)"/>
+    <rect x="700" y="630" width="90" height="120" fill="url(#glass)"/>
+  </g>
+  <polygon points="480,320 120,420 840,420" fill="#c5d0de"/>
+  <rect x="430" y="350" width="100" height="70" fill="#1769e0" opacity="0.85"/>
+  <rect x="0" y="900" width="960" height="300" fill="#3d6b3d" opacity="0.25"/>
+</svg>

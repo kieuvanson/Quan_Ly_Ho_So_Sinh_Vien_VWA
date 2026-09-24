@@ -1,0 +1,48 @@
+.form-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-select__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.form-select__field {
+  width: 100%;
+  padding: 10px 36px 10px 12px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: all var(--transition-fast);
+}
+
+.form-select__field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.form-select__field:disabled {
+  background-color: var(--color-surface-hover);
+  cursor: not-allowed;
+}
+
+.form-select--error .form-select__field {
+  border-color: var(--color-danger-text);
+}
+
+.form-select__error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger-text);
+}

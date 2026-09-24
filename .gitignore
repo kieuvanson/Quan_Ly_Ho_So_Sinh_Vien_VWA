@@ -61,6 +61,10 @@ pnpm-debug.log*
 **/application-local.yml
 **/application-local.yaml
 
+# Backend local scripts (chạy test trên máy dev)
+**/*.ps1
+!**/scripts/*.ps1
+
 # Runtime logs and temporary files
 *.log
 *.pid
