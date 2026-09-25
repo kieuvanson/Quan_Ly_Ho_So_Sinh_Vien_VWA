@@ -1,10 +1,11 @@
 package vn.vwa.edurecords.exception;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
-public class UnauthorizedException extends ApiException {
-
-    public UnauthorizedException(String code, String message) {
-        super(HttpStatus.UNAUTHORIZED, code, message);
+@ResponseStatus(HttpStatus.UNAUTHORIZED)
+public class UnauthorizedException extends RuntimeException {
+    public UnauthorizedException(String message) {
+        super(message);
     }
 }

@@ -63,8 +63,9 @@ export function LoginForm() {
     try {
       const response = await authApi.login(username.trim(), password)
       if (response.success && response.data) {
-        authStore.setAccessToken(response.data.token.accessToken)
-        authStore.setUser(response.data.user)
+        const data = response.data
+        authStore.setAccessToken(data.accessToken)
+        authStore.setUser(data.user)
         try {
           if (remember) {
             localStorage.setItem(REMEMBER_KEY, username.trim())
