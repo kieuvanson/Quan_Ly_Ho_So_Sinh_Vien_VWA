@@ -367,6 +367,123 @@
   margin: 0;
 }
 
+/* Reset Button */
+.trang-danh-sach__reset-btn {
+  width: 100px !important;
+}
+
+/* Error State */
+.trang-danh-sach__error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  text-align: center;
+}
+
+.trang-danh-sach__error-icon {
+  color: #ef4444;
+  margin-bottom: var(--space-4);
+}
+
+.trang-danh-sach__error-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.trang-danh-sach__error-message {
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-5) 0;
+}
+
+.trang-danh-sach__retry-btn {
+  min-width: 120px;
+}
+
+/* Empty State (Improved) */
+.trang-danh-sach__empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  text-align: center;
+}
+
+.trang-danh-sach__empty-state .trang-danh-sach__empty-icon {
+  color: var(--color-text-muted);
+}
+
+.trang-danh-sach__empty-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.trang-danh-sach__empty-message {
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-5) 0;
+}
+
+.trang-danh-sach__reset-filter-btn {
+  margin-top: var(--space-2);
+}
+
+/* Skeleton Loading */
+.trang-danh-sach__skeleton-row td {
+  padding: var(--space-4);
+  vertical-align: middle;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton--sm {
+  width: 30px;
+  height: 16px;
+}
+
+.skeleton--md {
+  width: 80px;
+  height: 16px;
+}
+
+.skeleton--lg {
+  width: 150px;
+  height: 16px;
+}
+
+.skeleton--badge {
+  width: 70px;
+  height: 24px;
+  border-radius: var(--radius-full);
+}
+
+.skeleton--btn {
+  width: 60px;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* Toast */
 .trang-danh-sach__toast {
   position: fixed;
