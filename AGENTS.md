@@ -1,6 +1,21 @@
 # AGENTS.md
 
-> Tài liệu ngữ cảnh chuẩn cho AI coding agent làm việc trên VWA EduRecords. Repo hiện ở trạng thái skeleton Spring Boot; các phần được đánh dấu **đặc tả MVP** là yêu cầu cần triển khai, chưa phải chức năng đã có trong code.
+> Tài liệu ngữ cảnh chuẩn cho AI coding agent và developer làm việc trên VWA EduRecords.
+
+## Mục lục
+
+1. [Tổng quan dự án](#1-tổng-quan-dự-án)
+2. [Cấu trúc thư mục](#2-cấu-trúc-thư-mục)
+3. [Tech stack](#3-tech-stack)
+4. [Mô hình dữ liệu (ERD)](#4-mô-hình-dữ-liệu-erd)
+5. [Quy tắc nghiệp vụ bắt buộc](#5-quy-tắc-nghiệp-vụ-bắt-buộc)
+6. [Coding convention](#6-coding-convention)
+7. [Cách chạy dự án](#7-cách-chạy-dự-án)
+8. [Docker (khuyến nghị)](#8-docker-khuyến-nghị)
+9. [Cách chạy không Docker](#9-cách-chạy-không-docker)
+10. [Tài khoản mặc định](#10-tài-khoản-mặc-định)
+
+---
 
 ## 1. Tổng quan dự án
 
@@ -13,7 +28,7 @@
   - Chi tiết hồ sơ (3 tab).
   - Mượn-Trả & Rút hồ sơ.
   - Lịch sử & Audit.
-- **Tình trạng hiện tại trong repo:** Backend mới có application class, một test kiểm tra context và cấu hình tên ứng dụng; chưa có module nghiệp vụ, entity, API hoặc giao diện frontend.
+- **Tình trạng hiện tại trong repo:** Backend đã có đầy đủ module nghiệp vụ, entity, API, authentication (JWT). Frontend đã có React + Vite + TypeScript. Database schema và seed data đã có qua Flyway. Hỗ trợ Docker và Docker Compose.
 
 ## 2. Cấu trúc thư mục
 
@@ -57,16 +72,25 @@
 
 | Thành phần | Thực tế trong repo |
 |---|---|
-| Backend | Spring Boot parent `4.1.1`, Maven |
-| Java | Java `25` (`<java.version>25</java.version>` trong `pom.xml`) |
+| Backend | Spring Boot `4.1.1`, Maven |
+| Java | Java `25` |
 | Web | `spring-boot-starter-webmvc` |
 | Persistence | `spring-boot-starter-data-jpa` |
 | Validation | `spring-boot-starter-validation` |
-| Security | `spring-boot-starter-security` |
-| Database driver | PostgreSQL runtime dependency đã có trong `pom.xml` |
-| Dev/test | Spring Boot DevTools, Lombok, các starter test tương ứng |
-| Frontend | Chưa xác định framework: `frontend/` trống, không có `package.json` |
-| Database config | Chưa cấu hình. `application.properties` chưa có JDBC URL, username, password, dialect hay migration config. PostgreSQL hiện chỉ là database dự kiến theo dependency. |
+| Security | `spring-boot-starter-security`, JWT (JJWT 0.12.6) |
+| Database | PostgreSQL 18, Flyway migrations |
+| Cache | Spring Data Redis |
+| Frontend | React 19, Vite 8, TypeScript |
+| Container | Docker, Docker Compose |
+
+### Ports mặc định
+
+| Service | Port |
+|---------|------|
+| Backend API | 8081 |
+| Frontend | 5173 |
+| PostgreSQL | 5432 |
+| Redis | 6379 |
 
 ## 4. Mô hình dữ liệu (ERD)
 
@@ -128,29 +152,203 @@ erDiagram
 - Dùng Lombok chỉ khi phù hợp với style hiện tại; dependency Lombok đã có nhưng chưa được dùng trong source hiện hữu.
 - Không sửa hoặc commit artifact sinh ra trong `target/`.
 
-## 7. Lệnh thường dùng
+## 7. Cách chạy dự án
 
-Chạy từ thư mục `backend/`:
+Có **2 cách** để chạy dự án:
 
-```powershell
-# Chạy ứng dụng bằng Maven Wrapper trên Windows
-.\mvnw.cmd spring-boot:run
+### Cách 1: Docker (Khuyến nghị - đồng bộ cho cả team)
 
-# Chạy toàn bộ test
-.\mvnw.cmd test
+Xem chi tiết ở [mục 8](#8-docker-khuyến-nghị).
 
-# Build và chạy test/package
-.\mvnw.cmd clean package
+### Cách 2: Chạy trực tiếp trên máy
 
-# Chạy executable JAR trên Windows
-java -jar target/vwa-edurecords-0.0.1-SNAPSHOT.jar --server.port=8081
+Xem chi tiết ở [mục 9](#9-cách-chạy-không-docker).
 
-# Chạy bằng Maven đã cài sẵn (tương đương wrapper)
-mvn spring-boot:run
-mvn test
+---
+
+## 8. Docker (Khuyến nghị)
+
+### Yêu cầu
+
+- Docker Desktop đã cài đặt và đang chạy
+- Docker Compose (tích hợp sẵn trong Docker Desktop)
+
+### Setup nhanh
+
+```bash
+# 1. Clone repo
+git clone <repo-url>
+cd <repo-name>
+
+# 2. Copy file môi trường
+cp .env.example .env
+
+# 3. Build và chạy tất cả services
+docker-compose up -d
+
+# 4. Kiểm tra trạng thái
+docker-compose ps
+
+# 5. Xem logs
+docker-compose logs -f backend
 ```
 
-- Repo có `mvnw`, `mvnw.cmd` và Maven Wrapper `3.3.4`; ưu tiên wrapper để dùng đúng môi trường repo.
-- Nếu `spring-boot:run` báo `ClassNotFoundException` trong workspace có đường dẫn tiếng Việt/khoảng trắng, hãy chạy `clean package` rồi dùng executable JAR; hoặc mở repo từ đường dẫn ASCII ngắn.
-- Frontend chưa có `package.json`, nên hiện chưa có lệnh `npm run dev`, `npm run build` hoặc `npm test` thực tế để chạy. Chỉ bổ sung các lệnh này sau khi framework/frontend được tạo.
-- Test hiện hữu là `VwaEdurecordsApplicationTests.contextLoads()`. Khi thêm nghiệp vụ, bổ sung test Service/API cho các business rules và audit bắt buộc.
+### Các lệnh Docker thường dùng
+
+```bash
+# Xem trạng thái các services
+docker-compose ps
+
+# Xem logs tất cả
+docker-compose logs -f
+
+# Xem logs một service cụ thể
+docker-compose logs -f backend
+docker-compose logs -f frontend
+docker-compose logs -f postgres
+
+# Restart một service
+docker-compose restart backend
+
+# Dừng tất cả
+docker-compose down
+
+# Dừng và xóa data (reset database)
+docker-compose down -v
+docker-compose up -d
+
+# Rebuild khi có thay đổi code
+docker-compose up -d --build
+
+# Rebuild chỉ một service
+docker-compose up -d --build backend
+```
+
+### Cấu trúc Docker
+
+| Service | Port | Mô tả |
+|---------|------|--------|
+| `postgres` | 5432 | Database PostgreSQL 18 |
+| `redis` | 6379 | Cache cho JWT tokens & rate limiting |
+| `backend` | 8081 | API Spring Boot (Java 25) |
+| `frontend` | 5173 | Web React + Vite |
+
+### Kiểm tra ứng dụng
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8081
+- Backend Health: http://localhost:8081/actuator/health
+
+### Cấu hình environment
+
+Chỉnh sửa file `.env` để thay đổi:
+
+```env
+# Database
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=332003
+
+# JWT Secret (THAY ĐỔI TRONG PRODUCTION!)
+JWT_SECRET=VwaEduRecords2026SecretKeyJwt256bitsMinLengthRequired
+```
+
+---
+
+## 9. Cách chạy không Docker
+
+### Yêu cầu
+
+- Java 25
+- Node.js 22+
+- PostgreSQL 18 (đã chạy sẵn)
+- Redis (đã chạy sẵn)
+
+### Chạy Backend
+
+```powershell
+cd backend
+
+# Cài dependencies (lần đầu)
+.\mvnw.cmd install
+
+# Chạy ứng dụng
+.\mvnw.cmd spring-boot:run
+
+# Hoặc chạy test
+.\mvnw.cmd test
+
+# Build package
+.\mvnw.cmd clean package
+
+# Chạy executable JAR
+java -jar target/vwa-edurecords-0.0.1-SNAPSHOT.jar --server.port=8081
+```
+
+### Chạy Frontend
+
+```powershell
+cd frontend
+
+# Cài dependencies (lần đầu)
+npm install
+
+# Chạy development server
+npm run dev
+
+# Build production
+npm run build
+```
+
+### Cấu hình Backend (không Docker)
+
+Chỉnh sửa `backend/src/main/resources/application.properties`:
+
+```properties
+# Database - đổi URL, username, password nếu cần
+spring.datasource.url=jdbc:postgresql://localhost:5432/vwa_edurecords?sslmode=disable
+spring.datasource.username=postgres
+spring.datasource.password=332003
+
+# Redis
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+
+# Port
+server.port=8081
+```
+
+### Cấu hình Frontend (không Docker)
+
+Tạo file `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8081
+```
+
+---
+
+## 10. Tài khoản mặc định
+
+Sau khi chạy Flyway migration, có sẵn:
+
+| Username | Password | Role |
+|----------|----------|------|
+| Kieuvanson | 332003 | STAFF |
+
+Đăng nhập tại: http://localhost:5173 (hoặc http://localhost:3000)
+
+---
+
+## Phụ lục: Cấu trúc file Docker
+
+```text
+/
+├── docker-compose.yml      # Docker Compose configuration
+├── .env.example            # Template biến môi trường
+├── backend/
+│   ├── Dockerfile          # Container cho Spring Boot
+│   └── .dockerignore       # Ignore files khi build backend
+└── frontend/
+    ├── Dockerfile          # Container cho React/Vite
+    └── .dockerignore       # Ignore files khi build frontend
+```

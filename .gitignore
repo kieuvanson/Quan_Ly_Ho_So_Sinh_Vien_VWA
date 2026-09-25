@@ -73,6 +73,9 @@ pnpm-debug.log*
 *.swp
 *.swo
 
+# Docker files in root (Dockerfile và docker-compose.yml giữ lại)
+# backend/.dockerignore và frontend/.dockerignore tự động ignore trong subfolders
+
 # Database and local data files
 *.db
 *.sqlite
