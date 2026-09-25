@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { authStore } from '../lib/authStore'
 
-const BASE_URL = 'http://localhost:8081'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
 
 /**
  * Axios instance configured for VWA EduRecords API.
