@@ -10,7 +10,7 @@
 | Module | Controller | Endpoints | Trạng thái |
 |---|---|---|---|
 | **Auth** | `AuthController` | 3 | ✅ Đã triển khai |
-| Sinh viên (`/api/v1/students`) | — | — | 🔜 MVP |
+| **Sinh Viên** (`/api/sinh-vien`) | `SinhVienController` | 6 | ✅ Đã triển khai (3 placeholder) |
 | Hồ sơ giấy tờ | — | — | 🔜 MVP |
 | Mượn — Trả — Rút | — | — | 🔜 MVP |
 | Lịch sử & Audit | — | — | 🔜 MVP |
@@ -20,7 +20,7 @@
 | | |
 |---|---|
 | Backend | Spring Boot `4.1.1`, Java 25, Maven Wrapper |
-| Persistence | Spring Data JPA + H2 (dev) / PostgreSQL (prod) |
+| Persistence | Spring Data JPA + PostgreSQL |
 | Auth | JWT HS256, Redis revocation list |
 | Cache / Revocation | Redis (`localhost:6379` mặc định) |
 | Validation | Jakarta Bean Validation |
@@ -32,8 +32,8 @@
 
 ### URL
 - Base: `/api`
-- Module Auth dùng `/api/auth/**` (legacy, không có version)
-- Module nghiệp vụ dùng `/api/v1/<resource>` (versioned)
+- Module Auth dùng `/api/auth/**`
+- Module nghiệp vụ dùng `/api/sinh-vien` (chưa versioned theo `v1`)
 
 ### HTTP status
 
@@ -41,14 +41,13 @@
 |---|---|
 | `200 OK` | Read / update thành công |
 | `201 Created` | Tạo resource mới |
-| `204 No Content` | Thành công, không có body (ít dùng) |
 | `400 Bad Request` | Validate fail, JSON lỗi, param sai |
 | `401 Unauthorized` | Token sai / hết hạn / bị thu hồi |
 | `403 Forbidden` | Đúng token nhưng thiếu quyền |
 | `404 Not Found` | Resource không tồn tại |
 | `409 Conflict` | Vi phạm business rule / trạng thái |
 | `429 Too Many Requests` | Rate limit |
-| `500 Internal Server Error` | Lỗi ngoài dự kiến (đã log stack trace) |
+| `500 Internal Server Error` | Lỗi ngoài dự kiến |
 
 ### Response envelope
 
@@ -65,7 +64,7 @@ Enum-like string ổn định. Đăng ký mã mới phải cập nhật docs.
 | Nhóm | Codes |
 |---|---|
 | Auth | `INVALID_CREDENTIALS`, `ACCOUNT_DISABLED`, `INSUFFICIENT_ROLE`, `MISSING_REFRESH_TOKEN`, `INVALID_REFRESH_TOKEN`, `REFRESH_TOKEN_REVOKED`, `USER_NOT_FOUND` |
-| Request | `VALIDATION_ERROR`, `MALFORMED_JSON`, `MISSING_PARAMETER`, `INVALID_PARAMETER` |
+| Request | `VALIDATION_ERROR`, `MALFORMED_JSON`, `MISSING_PARAMETER`, `INVALID_PARAMETER`, `NOT_FOUND` |
 | System | `UNAUTHORIZED`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`, `METHOD_NOT_ALLOWED`, `TOO_MANY_REQUESTS`, `INTERNAL_ERROR` |
 
 ## 4. Endpoints đã triển khai
@@ -103,13 +102,113 @@ Enum-like string ổn định. Đăng ký mã mới phải cập nhật docs.
 | Response | `ApiResponse<Void>` + clear cookie |
 | Side effects | Revoke `jti` + `fid` trong Redis, ghi `AUDIT` event=LOGOUT |
 
-## 5. Endpoints dự kiến (chưa triển khai)
+## 5. Endpoints — Module Sinh Viên (`/api/sinh-vien`)
 
-> Khi bắt đầu implement, chuyển từng endpoint xuống §4 với đầy đủ thông tin.
+> `SinhVienController` — `SinhVienService` — `SinhVienRepository`
 
-Xem chi tiết ở [`/API.md` §5](../API.md#5-endpoints--dự-kiến-mvp-chưa-có).
+### 5.1. `GET /api/sinh-vien`
 
-## 6. Token management (Redis)
+| | |
+|---|---|
+| Controller | `SinhVienController#getAllSinhVien` |
+| Service | `SinhVienService` |
+| Auth | `ADMIN`, `STAFF` (`@PreAuthorize`) |
+| Query params | `keyword`, `trangThaiHocVu`, `nganh`, `lop`, `khoaNamNhapHoc`, `khoa`, `heDaoTao`, `page`, `size`, `sortDirection` |
+| Response | `ApiResponse<PagedResponse<List<SinhVien>>>` |
+| Lỗi | 400 (trangThaiHocVu không cast được ENUM), 401, 403 |
+
+**Chi tiết query param:**
+
+| Param | Type | Default | Mô tả |
+|---|---|---|
+| `keyword` | string | — | LIKE họ tên hoặc MSSV, không phân biệt hoa thường | Ưu tiên cao nhất |
+| `trangThaiHocVu` | string | — | Cần `CAST()` sang ENUM `trangthaihocvu` | |
+| `nganh` | string | — | Lọc theo ngành | |
+| `lop` | string | — | Lọc theo lớp | |
+| `khoaNamNhapHoc` | string | — | Lọc theo khóa/năm nhập học | |
+| `khoa` | string | — | Lọc theo khoa | |
+| `heDaoTao` | string | — | Lọc theo hệ đào tạo | |
+| `page` | int | `0` | Số trang (bắt đầu từ 0) | |
+| `size` | int | `10` | Số phần tử/trang (max 100) | |
+| `sortDirection` | int | `0` | `0` = mới nhất trước, `1` = cũ nhất trước | |
+
+> **Tất cả query params được áp dụng đồng thời (AND logic)**. Không có ưu tiên — mọi param filter cùng tham gia WHERE clause.
+
+> **PagedResponse**: `data.data` = mảng `SinhVien`, `data.page` = `{page, size, totalElements, totalPages, first, last}`.
+
+### 5.2. `GET /api/sinh-vien/{mssv}`
+
+| | |
+|---|---|
+| Controller | `SinhVienController#getSinhVienByMssv` |
+| Auth | `ADMIN`, `STAFF` |
+| Response | `ApiResponse<SinhVien>` — 200 nếu tìm thấy, 404 NOT_FOUND nếu không |
+| Lỗi | 401, 403, 404 |
+
+### 5.3. `GET /api/sinh-vien/stats`
+
+| | |
+|---|---|
+| Controller | `SinhVienController#getStats` |
+| Auth | `ADMIN`, `STAFF` |
+| Response | `ApiResponse<Map<String, Object>>` — keys: `tongSoSinhVien`, `dangHoc`, `totNghiep`, `baoLuu`, `dinhChi`, `daRutHoSo` |
+| Lỗi | 401, 403 |
+
+### 5.4. `POST /api/sinh-vien`
+
+| | |
+|---|---|
+| Controller | `SinhVienController#createSinhVien` |
+| Auth | `ADMIN` |
+| Response | 200 placeholder (`"Tính năng đang phát triển"`) |
+| Lỗi | 401, 403 |
+
+### 5.5. `PUT /api/sinh-vien/{mssv}`
+
+| | |
+|---|---|
+| Controller | `SinhVienController#updateSinhVien` |
+| Auth | `ADMIN` |
+| Response | 200 placeholder |
+| Lỗi | 401, 403 |
+
+### 5.6. `DELETE /api/sinh-vien/{mssv}`
+
+| | |
+|---|---|
+| Controller | `SinhVienController#deleteSinhVien` |
+| Auth | `ADMIN` |
+| Response | 200 placeholder |
+| Lỗi | 401, 403 |
+
+## 6. Entity `SinhVien` — chi tiết
+
+| Table | `sinhvien` | PK | `mssv` (String) |
+|---|---|---|---|
+| ENUM | `trangthaihocvu` | Values | `Đang học`, `Tốt nghiệp`, `Bảo lưu`, `Đình chỉ`, `Đã rút hồ sơ` |
+
+| Field Java | Column DB | Type |
+|---|---|---|
+| `mssv` | `mssv` | String (PK) |
+| `hoTen` | `ho_ten` | String |
+| `ngaySinh` | `ngay_sinh` | LocalDateTime |
+| `gioiTinh` | `gioi_tinh` | String |
+| `cccd` | `cccd` | String (unique) |
+| `sdt` | `sdt` | String |
+| `email` | `email` | String |
+| `queQuan` | `que_quan` | String |
+| `nganh` | `nganh` | String |
+| `lop` | `lop` | String |
+| `khoa` | `khoa` | String |
+| `khoaNamNhapHoc` | `khoa_nam_nhap_hoc` | String |
+| `heDaoTao` | `he_dao_tao` | String |
+| `trangThaiHocVu` | `trang_thai_hoc_vu` | String (DB ENUM) |
+| `ngayTao` | `ngay_tao` | LocalDateTime |
+| `ngayCapNhat` | `ngay_cap_nhat` | LocalDateTime |
+
+> **Lưu ý**: Entity trả JPA trực tiếp qua API — chưa tách DTO riêng cho response. Cần tách `SinhVienResponse` khi cần format chuẩn hơn hoặc khi API public.
+
+## 7. Token management (Redis)
 
 Key schema:
 
@@ -125,9 +224,9 @@ Service: `TokenRevocationService`. Được inject vào `AuthService` để:
 
 JWT signing key = SHA-256(`app.security.jwt.secret`), luôn 32 bytes dù secret ngắn.
 
-## 7. Checklist khi thêm endpoint mới
+## 8. Checklist khi thêm endpoint mới
 
-- [ ] Tạo controller theo layer, không trả entity JPA
+- [ ] Tạo controller theo layer, không trả entity JPA (hoặc ghi chú rõ nếu đang dùng entity)
 - [ ] Dùng DTO riêng cho request / response
 - [ ] `@Valid` cho body, validate kiểu dữ liệu
 - [ ] Business rule ở Service, throw `ApiException` / subclass
@@ -137,7 +236,7 @@ JWT signing key = SHA-256(`app.security.jwt.secret`), luôn 32 bytes dù secret 
 - [ ] Cập nhật cả `/API.md` và `backend/API.md`
 - [ ] Chạy `.\mvnw.cmd test` pass
 
-## 8. Tài liệu liên quan
+## 9. Tài liệu liên quan
 
 - [`/API.md`](../API.md) — API doc cho frontend (chi tiết, ví dụ curl, axios)
 - [`AGENTS.md`](../AGENTS.md) (root) — tổng quan dự án
