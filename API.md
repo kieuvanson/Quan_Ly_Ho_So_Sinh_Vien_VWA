@@ -99,14 +99,15 @@ Khi lỗi validate, `errors` là **mảng field-level**:
 | `jti` | Token ID (UUID) — dùng để revoke trong Redis |
 | `fid` | Family ID — nhóm chuỗi refresh của 1 phiên |
 | `type` | `access` hoặc `refresh` |
-| `role` | `ADMIN` (chỉ role duy nhất ở MVP) |
+| `role` | `ADMIN` hoặc `STAFF` |
 | `username` | Tên đăng nhập |
+| `mssv` | Mã số sinh viên (chỉ có với STAFF, nullable) |
 | `iat`, `exp` | Issued / Expiration (epoch seconds) |
 
 | Token | TTL | Default | Truyền qua |
 |---|---|---|---|
-| Access | 1 giờ | `APP_SECURITY_JWT_ACCESS_TOKEN_TTL=PT1H` | `Authorization: Bearer <token>` |
-| Refresh | 7 ngày | `APP_SECURITY_JWT_REFRESH_TOKEN_TTL=P7D` | Cookie `refresh_token` (HttpOnly) |
+| Access | 1 giờ | `PT1H` | `Authorization: Bearer <token>` |
+| Refresh | 7 ngày | `P7D` | Cookie `refresh_token` (HttpOnly) |
 
 ### 2.2. Refresh token rotation + reuse detection
 
@@ -125,7 +126,7 @@ Mỗi lần /api/auth/refresh:
 | `HttpOnly` | ✓ | ✓ |
 | `Secure` | false | true |
 | `SameSite` | `Lax` | `Lax` |
-| `Path` | `/api/auth` | `/api/auth` |
+| `Path` | `/api/auth/refresh` | `/api/auth/refresh` |
 | `Max-Age` | = refresh TTL (giây) | = refresh TTL (giây) |
 
 > Frontend **không được** đọc / ghi cookie này — browser tự quản lý.
@@ -161,9 +162,21 @@ event=LOGIN|REFRESH|LOGOUT  username=...  ip=...  success=true|false  reason=...
 
 ## 3. Endpoints — Module Auth
 
+### 3.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `POST` | `/api/auth/login` | Public | Đăng nhập |
+| `POST` | `/api/auth/register` | Public | Đăng ký tài khoản mới |
+| `POST` | `/api/auth/refresh` | Cookie | Làm mới token |
+| `POST` | `/api/auth/logout` | Optional | Đăng xuất |
+| `POST` | `/api/auth/encode-password` | Public | Encode password (utility) |
+
+---
+
 ### 3.1. `POST /api/auth/login`
 
-Xác thực username/password. Cấp accessToken (body) + set cookie refresh_token. Tạo **family ID mới** → mỗi login là một phiên độc lập.
+Xác thực username/password. Cấp accessToken (body) + set cookie refresh_token.
 
 **Auth yêu cầu:** Public (không cần token).
 
@@ -211,12 +224,10 @@ Xác thực username/password. Cấp accessToken (body) + set cookie refresh_tok
 }
 ```
 
-> `data.token.refreshToken` luôn `null` — token nằm trong cookie, không trong body.
-
 **Response header:**
 
 ```
-Set-Cookie: refresh_token=eyJhbGciOiJIUzM4NCJ9...; Path=/api/auth; HttpOnly; Max-Age=604800; SameSite=Lax
+Set-Cookie: refresh_token=eyJhbGciOiJIUzM4NCJ9...; Path=/api/auth/refresh; HttpOnly; Max-Age=604800; SameSite=Lax
 ```
 
 **Lỗi có thể gặp:**
@@ -227,42 +238,102 @@ Set-Cookie: refresh_token=eyJhbGciOiJIUzM4NCJ9...; Path=/api/auth; HttpOnly; Max
 | 400 | `MALFORMED_JSON` | Body không phải JSON |
 | 401 | `INVALID_CREDENTIALS` | Username không tồn tại HOẶC password sai |
 | 401 | `ACCOUNT_DISABLED` | `isActive=false` |
-| 401 | `INSUFFICIENT_ROLE` | Role không phải `ADMIN` |
 | 429 | `TOO_MANY_REQUESTS` | Rate limit (kèm `Retry-After`) |
 
-**Ví dụ 401:**
+**Ví dụ test:**
 
-```json
-{
-  "success": false,
-  "status": 401,
-  "code": "INVALID_CREDENTIALS",
-  "message": "Tên đăng nhập hoặc mật khẩu không đúng",
-  "timestamp": "2026-09-26T15:51:45.038Z"
-}
+```bash
+curl -i -X POST http://localhost:8081/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"Kieuvanson","password":"332003"}' \
+  -c cookies.txt
 ```
-
-**Ví dụ 429:**
-
-```json
-{
-  "success": false,
-  "status": 429,
-  "code": "TOO_MANY_REQUESTS",
-  "message": "Quá nhiều lần thử đăng nhập, vui lòng thử lại sau 47 giây",
-  "timestamp": "2026-09-26T15:51:45.038Z"
-}
-```
-
-Header kèm theo: `Retry-After: 47`
 
 ---
 
-### 3.2. `POST /api/auth/refresh`
+### 3.2. `POST /api/auth/register`
 
-Đổi refresh token lấy cặp accessToken/refreshToken mới (rotation). Phát hiện reuse → revoke toàn bộ family.
+Đăng ký tài khoản mới cho Staff.
 
-**Auth yêu cầu:** Cần cookie `refresh_token` còn hiệu lực. Có thể truyền qua body nếu không dùng cookie.
+**Auth yêu cầu:** Public (không cần token).
+
+**Request body:**
+
+| Field | Type | Required | Ràng buộc |
+|---|---|---|---|
+| `username` | string | ✓ | 3–50 ký tự, unique |
+| `password` | string | ✓ | 6–100 ký tự |
+| `hoTen` | string | ✓ | Tên người dùng |
+| `email` | string | ✓ | Email hợp lệ |
+| `mssv` | string | | MSSV gán cho Staff (nếu có) |
+
+```json
+{
+  "username": "nvbinh",
+  "password": "332003",
+  "hoTen": "Nguyen Van Binh",
+  "email": "binh.nv@vwa.edu.vn",
+  "mssv": "B23DCCN001"
+}
+```
+
+**Response `201 Created`:**
+
+```json
+{
+  "success": true,
+  "status": 201,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "user": {
+      "id": 3,
+      "username": "nvbinh",
+      "hoTen": "Nguyen Van Binh",
+      "email": "binh.nv@vwa.edu.vn",
+      "role": "STAFF",
+      "isActive": true,
+      "mssv": "B23DCCN001",
+      "createdAt": "2026-09-28T10:00:00.000000"
+    },
+    "token": {
+      "accessToken": "eyJhbGciOiJIUzM4NCJ9...",
+      "refreshToken": null,
+      "tokenType": "Bearer",
+      "expiresIn": 3600
+    }
+  },
+  "timestamp": "2026-09-28T10:00:00.000Z"
+}
+```
+
+**Set-Cookie**: `refresh_token=...; Path=/api/auth/refresh; HttpOnly; Max-Age=604800; SameSite=Lax`
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Dữ liệu không hợp lệ |
+| 400 | `USERNAME_EXISTS` | Username đã tồn tại |
+| 400 | `EMAIL_EXISTS` | Email đã được sử dụng |
+| 400 | `MSSV_NOT_FOUND` | MSSV không tồn tại (nếu cung cấp) |
+
+**Ví dụ test:**
+
+```bash
+curl -i -X POST http://localhost:8081/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"nvbinh","password":"332003","hoTen":"Nguyen Van Binh","email":"binh.nv@vwa.edu.vn","mssv":"B23DCCN001"}' \
+  -c cookies.txt
+```
+
+---
+
+### 3.3. `POST /api/auth/refresh`
+
+Đổi refresh token lấy cặp accessToken/refreshToken mới (rotation).
+
+**Auth yêu cầu:** Cần cookie `refresh_token` còn hiệu lực.
 
 **Request body** _(optional — ưu tiên cookie)_:
 
@@ -286,33 +357,30 @@ Header kèm theo: `Retry-After: 47`
 }
 ```
 
-**Set-Cookie**: `refresh_token=...NEW...; Path=/api/auth; HttpOnly; Max-Age=604800; SameSite=Lax`
+**Set-Cookie**: `refresh_token=...NEW...; Path=/api/auth/refresh; HttpOnly; Max-Age=604800; SameSite=Lax`
 
 **Lỗi có thể gặp:**
 
 | Status | Code | Khi nào |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Body có `refreshToken` rỗng |
-| 401 | `MISSING_REFRESH_TOKEN` | Không có cookie lẫn body |
+| 401 | `NO_REFRESH_TOKEN` | Không có cookie lẫn body |
 | 401 | `INVALID_REFRESH_TOKEN` | Sai chữ ký, hết hạn, không phải loại refresh |
 | 401 | `REFRESH_TOKEN_REVOKED` | Đã logout hoặc **phát hiện reuse** |
-| 401 | `ACCOUNT_DISABLED` | User bị vô hiệu |
-| 401 | `INSUFFICIENT_ROLE` | Role đã đổi khác `ADMIN` |
-| 401 | `USER_NOT_FOUND` | User trong token không còn |
+
+**Ví dụ test:**
+
+```bash
+curl -i -X POST http://localhost:8081/api/auth/refresh \
+  -b cookies.txt -c cookies.txt
+```
 
 ---
 
-### 3.3. `POST /api/auth/logout`
+### 3.4. `POST /api/auth/logout`
 
 Thu hồi refresh token hiện tại, xoá cookie, kết thúc phiên.
 
-**Auth yêu cầu:** Không bắt buộc (vẫn trả 200 ngay cả khi token không hợp lệ, để tránh lộ thông tin).
-
-**Request body** _(optional — ưu tiên cookie)_:
-
-```json
-{ "refreshToken": "eyJhbGciOiJIUzM4NCJ9..." }
-```
+**Auth yêu cầu:** Không bắt buộc.
 
 **Response `200 OK`:**
 
@@ -322,50 +390,223 @@ Thu hồi refresh token hiện tại, xoá cookie, kết thúc phiên.
   "status": 200,
   "code": "SUCCESS",
   "message": "Đăng xuất thành công",
-  "data": null,
+  "data": { "message": "Logged out successfully" },
   "timestamp": "2026-09-26T17:30:00.123Z"
 }
 ```
 
-**Set-Cookie**: `refresh_token=; Path=/api/auth; HttpOnly; Max-Age=0` (xoá ngay)
+**Set-Cookie**: `refresh_token=; Path=/api/auth/refresh; HttpOnly; Max-Age=0`
+
+**Ví dụ test:**
+
+```bash
+curl -i -X POST http://localhost:8081/api/auth/logout \
+  -H "Authorization: Bearer <token>" \
+  -b cookies.txt -c cookies.txt
+```
 
 ---
 
-## 4. Endpoints — Module Sinh Viên
+### 3.5. `POST /api/auth/encode-password`
+
+Utility endpoint để encode password thành BCrypt hash.
+
+**Auth yêu cầu:** Public.
+
+**Request body:**
+
+```json
+{ "password": "332003" }
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "bcryptHash": "$2a$10$..."
+}
+```
+
+**Ví dụ test:**
+
+```bash
+curl -X POST http://localhost:8081/api/auth/encode-password \
+  -H "Content-Type: application/json" \
+  -d '{"password":"332003"}'
+```
+
+---
+
+## 4. Endpoints — Module User
 
 ### 4.0. Bảng tổng hợp
 
 | Method | Endpoint | Auth | Mô tả |
 |---|---|---|---|
-| `GET` | `/api/sinh-vien` | ADMIN, STAFF | Danh sách sinh viên (tìm kiếm, lọc) |
-| `GET` | `/api/sinh-vien/{mssv}` | ADMIN, STAFF | Chi tiết một sinh viên |
-| `GET` | `/api/sinh-vien/stats` | ADMIN, STAFF | Thống kê tổng quan sinh viên |
-| `POST` | `/api/sinh-vien` | ADMIN | Tạo sinh viên mới |
-| `PUT` | `/api/sinh-vien/{mssv}` | ADMIN | Cập nhật sinh viên |
-| `DELETE` | `/api/sinh-vien/{mssv}` | ADMIN | Xóa sinh viên |
+| `GET` | `/api/users/me` | ADMIN, STAFF | Thông tin người dùng hiện tại |
+| `GET` | `/api/users` | ADMIN | Danh sách tất cả người dùng (chưa triển khai) |
 
 ---
 
-### 4.1. `GET /api/sinh-vien`
+### 4.1. `GET /api/users/me`
 
-Danh sách sinh viên, hỗ trợ tìm kiếm, lọc và phân trang. **Tất cả query params được áp dụng đồng thời (AND logic).**
+Lấy thông tin cá nhân của người dùng đang đăng nhập.
 
 **Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "id": 2,
+    "username": "Kieuvanson",
+    "hoTen": "Quan Tri Vien",
+    "email": "admin@vwa.edu.vn",
+    "role": "ADMIN",
+    "isActive": true,
+    "mssv": null,
+    "createdAt": "2026-09-26T00:59:37.468223",
+    "updatedAt": null
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 401 | `UNAUTHORIZED` | Không có token |
+| 404 | `NOT_FOUND` | Không tìm thấy user |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/users/me \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 4.2. `GET /api/users`
+
+Lấy danh sách tất cả người dùng.
+
+**Auth yêu cầu:** `ADMIN`.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Tính năng đang phát triển",
+  "data": null,
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+> Hiện tại chưa triển khai đầy đủ.
+
+---
+
+## 5. Endpoints — Module Sinh Viên
+
+### 5.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/sinh-vien/me` | STAFF | Thông tin sinh viên của Staff đang đăng nhập |
+| `GET` | `/api/sinh-vien` | ADMIN, STAFF | Danh sách sinh viên (tìm kiếm, lọc) |
+| `GET` | `/api/sinh-vien/{mssv}` | ADMIN, STAFF | Chi tiết một sinh viên |
+| `GET` | `/api/sinh-vien/stats` | ADMIN | Thống kê tổng quan sinh viên |
+| `POST` | `/api/sinh-vien` | ADMIN | Tạo sinh viên mới (chưa triển khai) |
+| `PUT` | `/api/sinh-vien/{mssv}` | ADMIN | Cập nhật sinh viên (chưa triển khai) |
+| `DELETE` | `/api/sinh-vien/{mssv}` | ADMIN | Xóa sinh viên (chưa triển khai) |
+
+---
+
+### 5.1. `GET /api/sinh-vien/me`
+
+Lấy thông tin sinh viên của chính Staff đang đăng nhập.
+
+**Auth yêu cầu:** `STAFF`. Tài khoản Staff phải có `mssv` được gán.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "mssv": "B23DCCN001",
+    "hoTen": "Nguyễn Văn An",
+    "ngaySinh": "2005-03-15T00:00:00",
+    "gioiTinh": "Nam",
+    "cccd": "079205001234",
+    "sdt": "0912345678",
+    "email": "an.nv_b23dccn001@vwa.edu.vn",
+    "queQuan": "TP. HCM",
+    "nganh": "Công nghệ thông tin",
+    "lop": "D23CQCN01-N",
+    "khoa": "Khoa CNTT",
+    "khoaNamNhapHoc": "2023-2024",
+    "heDaoTao": "Chính quy",
+    "trangThaiHocVu": "Đang học",
+    "ngayTao": "2026-09-26T00:51:30.618768",
+    "ngayCapNhat": null
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 401 | `UNAUTHORIZED` | Không có token |
+| 403 | `NO_MSSV` | Tài khoản Staff chưa được gán MSSV |
+| 404 | `NOT_FOUND` | Không tìm thấy sinh viên |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/sinh-vien/me \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 5.2. `GET /api/sinh-vien`
+
+Danh sách sinh viên, hỗ trợ tìm kiếm, lọc và phân trang.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem toàn bộ danh sách với filter
+- **STAFF**: chỉ xem thông tin của chính mình
 
 **Query parameters:**
 
 | Param | Type | Mô tả |
 |---|---|---|
-| `keyword` | string | Tìm kiếm theo họ tên hoặc MSSV (LIKE, không phân biệt hoa thường) |
-| `trangThaiHocVu` | string | Lọc theo trạng thái học vụ. Giá trị hợp lệ: `Đang học`, `Tốt nghiệp`, `Bảo lưu`, `Đình chỉ`, `Đã rút hồ sơ` |
+| `keyword` | string | Tìm kiếm theo họ tên hoặc MSSV (LIKE) |
+| `trangThaiHocVu` | string | Lọc theo trạng thái: `Đang học`, `Tốt nghiệp`, `Bảo lưu`, `Đình chỉ`, `Đã rút hồ sơ` |
 | `nganh` | string | Lọc theo tên ngành |
 | `lop` | string | Lọc theo lớp |
-| `khoaNamNhapHoc` | string | Lọc theo khóa/năm nhập học (ví dụ: `2023-2024`) |
+| `khoaNamNhapHoc` | string | Lọc theo khóa/năm nhập học (VD: `2023-2024`) |
 | `khoa` | string | Lọc theo khoa |
 | `heDaoTao` | string | Lọc theo hệ đào tạo |
 | `page` | int | Số trang, bắt đầu từ 0. Default: `0` |
 | `size` | int | Số phần tử/trang. Default: `10`, Max: `100` |
-| `sortDirection` | int | Hướng sắp xếp: `0` = mới nhất trước, `1` = cũ nhất trước. Default: `0` |
+| `sortDirection` | int | `0` = mới nhất trước, `1` = cũ nhất trước. Default: `0` |
 
 **Response `200 OK`:**
 
@@ -409,51 +650,39 @@ Danh sách sinh viên, hỗ trợ tìm kiếm, lọc và phân trang. **Tất c�
 }
 ```
 
-> **Cấu trúc phân trang**: `data.data` = mảng sinh viên, `data.page` = metadata trang.
-
-**Lỗi có thể gặp:**
-
-| Status | Code | Khi nào |
-|---|---|---|
-| 400 | `INVALID_PARAMETER` | Giá trị `trangThaiHocVu` không cast được sang ENUM |
-| 401 | `UNAUTHORIZED` | Không có token hoặc token hết hạn |
-| 403 | `FORBIDDEN` | Token hợp lệ nhưng role không phải ADMIN/STAFF |
-
 **Ví dụ test:**
 
 ```bash
-# Lấy tất cả (phân trang mặc định: page=0, size=10)
+# ADMIN: Lấy tất cả
 curl -X GET http://localhost:8081/api/sinh-vien \
   -H "Authorization: Bearer <token>"
 
-# Phân trang: trang 0, 2 phần tử
+# ADMIN: Phân trang
 curl -X GET "http://localhost:8081/api/sinh-vien?page=0&size=2" \
   -H "Authorization: Bearer <token>"
 
-# Tìm theo từ khóa
+# ADMIN: Tìm theo từ khóa
 curl -X GET "http://localhost:8081/api/sinh-vien?keyword=An" \
   -H "Authorization: Bearer <token>"
 
-# Lọc theo trạng thái (URL-encode tiếng Việt)
+# ADMIN: Lọc theo trạng thái
 curl -X GET "http://localhost:8081/api/sinh-vien?trangThaiHocVu=%C4%90ang%20h%E1%BB%8Dc" \
   -H "Authorization: Bearer <token>"
 
-# Kết hợp nhiều filter (AND)
-curl -X GET "http://localhost:8081/api/sinh-vien?keyword=An&trangThaiHocVu=%C4%90ang%20h%E1%BB%8Dc" \
-  -H "Authorization: Bearer <token>"
-
-# Lọc theo ngành + lớp
-curl -X GET "http://localhost:8081/api/sinh-vien?nganh=C%C3%B4ng%20ngh%E1%BB%87%20th%C3%B4ng%20tin&lop=D23CQCN01-N" \
-  -H "Authorization: Bearer <token>"
+# STAFF: Tự động chỉ xem chính mình
+curl -X GET http://localhost:8081/api/sinh-vien \
+  -H "Authorization: Bearer <token_staff>"
 ```
 
 ---
 
-### 4.2. `GET /api/sinh-vien/{mssv}`
+### 5.3. `GET /api/sinh-vien/{mssv}`
 
-Lấy thông tin chi tiết một sinh viên theo MSSV.
+Lấy thông tin chi tiết một sinh viên.
 
 **Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem bất kỳ sinh viên nào
+- **STAFF**: chỉ xem chính mình
 
 **Path parameters:**
 
@@ -467,21 +696,9 @@ Lấy thông tin chi tiết một sinh viên theo MSSV.
 
 | Status | Code | Khi nào |
 |---|---|---|
-| 404 | `NOT_FOUND` | Không tồn tại sinh viên với MSSV đã cho |
 | 401 | `UNAUTHORIZED` | Không có token |
-| 403 | `FORBIDDEN` | Role không phải ADMIN/STAFF |
-
-**Ví dụ 404:**
-
-```json
-{
-  "success": false,
-  "status": 404,
-  "code": "NOT_FOUND",
-  "message": "Không tìm thấy sinh viên với MSSV: B23DCCN999",
-  "timestamp": "2026-09-26T15:53:36.457Z"
-}
-```
+| 403 | `FORBIDDEN` | STAFF cố xem sinh viên khác |
+| 404 | `NOT_FOUND` | Không tồn tại sinh viên |
 
 **Ví dụ test:**
 
@@ -492,11 +709,11 @@ curl -X GET http://localhost:8081/api/sinh-vien/B23DCCN001 \
 
 ---
 
-### 4.3. `GET /api/sinh-vien/stats`
+### 5.4. `GET /api/sinh-vien/stats`
 
 Thống kê tổng quan về số lượng sinh viên theo từng trạng thái học vụ.
 
-**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+**Auth yêu cầu:** `ADMIN` only.
 
 **Response `200 OK`:**
 
@@ -518,13 +735,6 @@ Thống kê tổng quan về số lượng sinh viên theo từng trạng thái 
 }
 ```
 
-**Lỗi có thể gặp:**
-
-| Status | Code | Khi nào |
-|---|---|---|
-| 401 | `UNAUTHORIZED` | Không có token |
-| 403 | `FORBIDDEN` | Role không phải ADMIN/STAFF |
-
 **Ví dụ test:**
 
 ```bash
@@ -534,13 +744,13 @@ curl -X GET http://localhost:8081/api/sinh-vien/stats \
 
 ---
 
-### 4.4. `POST /api/sinh-vien`
+### 5.5. `POST /api/sinh-vien`
 
-Tạo sinh viên mới. **Hiện tại chưa triển khai — trả placeholder.**
+Tạo sinh viên mới.
 
 **Auth yêu cầu:** `ADMIN`.
 
-**Request body:** tương lai sẽ nhận `SinhVienRequest` với các field của entity `SinhVien`.
+> **Hiện tại chưa triển khai** — trả placeholder.
 
 **Response `200 OK`** (placeholder):
 
@@ -551,7 +761,143 @@ Tạo sinh viên mới. **Hiện tại chưa triển khai — trả placeholder.
   "code": "SUCCESS",
   "message": "Tính năng đang phát triển",
   "data": null,
-  "timestamp": "2026-09-26T15:52:38.221Z"
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+---
+
+### 5.6. `PUT /api/sinh-vien/{mssv}`
+
+Cập nhật toàn bộ thông tin sinh viên.
+
+**Auth yêu cầu:** `ADMIN`.
+
+> **Hiện tại chưa triển khai** — trả placeholder.
+
+**Response `200 OK`** (placeholder): giống `POST /api/sinh-vien`.
+
+---
+
+### 5.7. `DELETE /api/sinh-vien/{mssv}`
+
+Xóa sinh viên khỏi hệ thống.
+
+**Auth yêu cầu:** `ADMIN`.
+
+> **Hiện tại chưa triển khai** — trả placeholder.
+
+**Response `200 OK`** (placeholder): giống `POST /api/sinh-vien`.
+
+---
+
+## 6. Endpoints — Module Loại Giấy Tờ
+
+### 6.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/loai-giay-to` | ADMIN, STAFF | Danh sách loại giấy tờ đang sử dụng |
+| `GET` | `/api/loai-giay-to/bat-buoc` | ADMIN, STAFF | Danh sách loại giấy tờ bắt buộc |
+| `GET` | `/api/loai-giay-to/{maLoai}` | ADMIN, STAFF | Chi tiết một loại giấy tờ |
+| `GET` | `/api/loai-giay-to/stats` | ADMIN, STAFF | Thống kê số lượng loại giấy tờ |
+
+---
+
+### 6.1. `GET /api/loai-giay-to`
+
+Lấy danh sách tất cả loại giấy tờ đang sử dụng, sắp xếp theo thứ tự hiển thị.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": [
+    {
+      "maLoai": "GT01",
+      "tenGiayTo": "Giấy khai sinh",
+      "moTa": null,
+      "batBuoc": true,
+      "dangSuDung": true,
+      "thuTuHienThi": 1,
+      "ngayTao": "2026-09-26T00:00:00"
+    },
+    {
+      "maLoai": "GT02",
+      "tenGiayTo": "CMND/CCCD",
+      "moTa": null,
+      "batBuoc": true,
+      "dangSuDung": true,
+      "thuTuHienThi": 2,
+      "ngayTao": "2026-09-26T00:00:00"
+    }
+  ],
+  "timestamp": "2026-09-26T15:52:16.220Z"
+}
+```
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/loai-giay-to \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 6.2. `GET /api/loai-giay-to/bat-buoc`
+
+Lấy danh sách loại giấy tờ **bắt buộc** (8 loại).
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response:** giống `GET /api/loai-giay-to`, nhưng chỉ trả về các loại có `batBuoc: true`.
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/loai-giay-to/bat-buoc \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 6.3. `GET /api/loai-giay-to/{maLoai}`
+
+Lấy chi tiết một loại giấy tờ theo mã.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Path parameters:**
+
+| Param | Type | Mô tả |
+|---|---|---|
+| `maLoai` | string | Mã loại giấy tờ (VD: `GT01`) |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "maLoai": "GT01",
+    "tenGiayTo": "Giấy khai sinh",
+    "moTa": null,
+    "batBuoc": true,
+    "dangSuDung": true,
+    "thuTuHienThi": 1,
+    "ngayTao": "2026-09-26T00:00:00"
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
 }
 ```
 
@@ -559,105 +905,643 @@ Tạo sinh viên mới. **Hiện tại chưa triển khai — trả placeholder.
 
 | Status | Code | Khi nào |
 |---|---|---|
-| 401 | `UNAUTHORIZED` | Không có token |
-| 403 | `FORBIDDEN` | Role không phải ADMIN |
+| 404 | `NOT_FOUND` | Không tồn tại loại giấy tờ |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/loai-giay-to/GT01 \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 
-### 4.5. `PUT /api/sinh-vien/{mssv}`
+### 6.4. `GET /api/loai-giay-to/stats`
 
-Cập nhật toàn bộ thông tin sinh viên. **Hiện tại chưa triển khai — trả placeholder.**
+Thống kê số lượng loại giấy tờ.
 
-**Auth yêu cầu:** `ADMIN`.
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
 
-**Response `200 OK`** (placeholder): giống `POST /api/sinh-vien`.
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "tongSoLoai": 13,
+    "soLoaiBatBuoc": 8
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/loai-giay-to/stats \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## 7. Endpoints — Module Hồ Sơ Giấy Tờ
+
+### 7.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/ho-so-giay-to` | ADMIN, STAFF | Danh sách hồ sơ theo MSSV |
+| `GET` | `/api/ho-so-giay-to/{maHoSo}` | ADMIN, STAFF | Chi tiết một hồ sơ |
+| `GET` | `/api/ho-so-giay-to/stats` | ADMIN, STAFF | Thống kê giấy tờ theo MSSV |
+| `POST` | `/api/ho-so-giay-to` | ADMIN | Tạo hồ sơ giấy tờ mới |
+| `PUT` | `/api/ho-so-giay-to/{maHoSo}` | ADMIN | Cập nhật hồ sơ |
+| `PATCH` | `/api/ho-so-giay-to/{maHoSo}/trang-thai` | ADMIN | Cập nhật trạng thái nộp |
+| `DELETE` | `/api/ho-so-giay-to/{maHoSo}` | ADMIN | Xóa hồ sơ |
+
+---
+
+### 7.1. `GET /api/ho-so-giay-to`
+
+Lấy danh sách hồ sơ giấy tờ theo MSSV.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem tất cả sinh viên (cần query theo `mssv`)
+- **STAFF**: chỉ xem giấy tờ của chính mình
+
+**Query parameters:**
+
+| Param | Type | Required | Mô tả |
+|---|---|---|---|
+| `mssv` | string | Có (ADMIN) / Không (STAFF) | Mã số sinh viên |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": [
+    {
+      "maHoSo": "HS001",
+      "mssv": "B23DCCN001",
+      "maLoai": "GT01",
+      "tenGiayTo": "Giấy khai sinh",
+      "trangThaiNop": "Đã nộp",
+      "banGocBanSao": "Bản gốc",
+      "fileDinhKem": null,
+      "viTriLuuKho": "Kệ A1-01",
+      "ghiChu": null,
+      "ngayTao": "2026-09-26T00:51:30.618768",
+      "ngayCapNhat": null
+    }
+  ],
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
 
 **Lỗi có thể gặp:**
 
 | Status | Code | Khi nào |
 |---|---|---|
-| 401 | `UNAUTHORIZED` | Không có token |
-| 403 | `FORBIDDEN` | Role không phải ADMIN |
+| 400 | `MISSING_PARAM` | ADMIN không cung cấp `mssv` |
+| 403 | `FORBIDDEN` | STAFF cố xem hồ sơ người khác |
+
+**Ví dụ test:**
+
+```bash
+# ADMIN: Xem tất cả giấy tờ của một sinh viên
+curl -X GET "http://localhost:8081/api/ho-so-giay-to?mssv=B23DCCN001" \
+  -H "Authorization: Bearer <token>"
+
+# STAFF: Tự động chỉ xem giấy tờ của mình (không cần mssv)
+curl -X GET http://localhost:8081/api/ho-so-giay-to \
+  -H "Authorization: Bearer <token_staff>"
+```
 
 ---
 
-### 4.6. `DELETE /api/sinh-vien/{mssv}`
+### 7.2. `GET /api/ho-so-giay-to/{maHoSo}`
 
-Xóa sinh viên khỏi hệ thống. **Hiện tại chưa triển khai — trả placeholder.**
+Lấy chi tiết một hồ sơ giấy tờ.
 
-**Auth yêu cầu:** `ADMIN`.
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem bất kỳ hồ sơ nào
+- **STAFF**: chỉ xem hồ sơ của chính mình
 
-**Response `200 OK`** (placeholder): giống `POST /api/sinh-vien`.
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "maHoSo": "HS001",
+    "mssv": "B23DCCN001",
+    "maLoai": "GT01",
+    "tenGiayTo": "Giấy khai sinh",
+    "trangThaiNop": "Đã nộp",
+    "banGocBanSao": "Bản gốc",
+    "fileDinhKem": null,
+    "viTriLuuKho": "Kệ A1-01",
+    "ghiChu": null,
+    "ngayTao": "2026-09-26T00:51:30.618768",
+    "ngayCapNhat": null
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
 
 **Lỗi có thể gặp:**
 
 | Status | Code | Khi nào |
 |---|---|---|
-| 401 | `UNAUTHORIZED` | Không có token |
-| 403 | `FORBIDDEN` | Role không phải ADMIN |
+| 403 | `FORBIDDEN` | STAFF cố xem hồ sơ người khác |
+| 404 | `NOT_FOUND` | Không tồn tại hồ sơ |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/ho-so-giay-to/HS001 \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 
-## 5. Endpoints — Dự kiến MVP (CHƯA có)
+### 7.3. `GET /api/ho-so-giay-to/stats`
 
-> **Cảnh báo**: các endpoint dưới đây là định hướng, **chưa tồn tại**. Frontend không được gọi cho tới khi thấy chúng chuyển sang §3 (Auth) hoặc §4 (Sinh Viên).
+Thống kê giấy tờ theo MSSV.
 
-### 5.1. Hồ sơ giấy tờ
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem thống kê của bất kỳ sinh viên nào
+- **STAFF**: chỉ xem thống kê của chính mình
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| `GET` | `/api/v1/students/{mssv}/documents` | Danh sách giấy tờ |
-| `PATCH` | `/api/v1/documents/{maHoSo}/submission-status` | Tick/bỏ tick nộp giấy (kèm audit `LICHSUNOP`) |
-| `GET` | `/api/v1/documents/{maHoSo}/submission-history` | Lịch sử nộp/bổ sung |
-| `POST` | `/api/v1/documents/{maHoSo}/attachment` | Upload file đính kèm |
+**Query parameters:**
 
-### 5.2. Mượn — Trả — Rút hồ sơ
+| Param | Type | Required | Mô tả |
+|---|---|---|---|
+| `mssv` | string | ✓ | Mã số sinh viên |
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| `POST` | `/api/v1/loans` | Tạo phiếu Mượn tạm thời |
-| `POST` | `/api/v1/loans/{maPhieu}/return` | Ghi nhận trả |
-| `GET` | `/api/v1/loans` | Tra cứu phiếu mượn/trả |
-| `POST` | `/api/v1/withdrawals` | Tạo phiếu Rút hồ sơ vĩnh viễn (toàn bộ) |
-| `POST` | `/api/v1/withdrawals/{maPhieu}/complete` | Hoàn tất rút, khóa chỉnh sửa |
+**Response `200 OK`:**
 
-### 5.3. Lịch sử & Audit
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "mssv": "B23DCCN001",
+    "tongSo": 13,
+    "daNop": 5,
+    "chuaNop": 6,
+    "thieu": 1,
+    "khongHopLe": 1
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| `GET` | `/api/v1/audits` | Tra cứu theo hồ sơ / phiếu / thời gian |
-| `GET` | `/api/v1/students/{mssv}/audits` | Toàn bộ audit của 1 sinh viên |
+**Ví dụ test:**
+
+```bash
+curl -X GET "http://localhost:8081/api/ho-so-giay-to/stats?mssv=B23DCCN001" \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 
-## 6. Bảng mã lỗi tham chiếu nhanh
+### 7.4. `POST /api/ho-so-giay-to`
+
+Tạo hồ sơ giấy tờ mới.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Request body:**
+
+```json
+{
+  "trangThaiNop": "Chưa nộp",
+  "banGocBanSao": null,
+  "viTriLuuKho": "Kệ A1-01",
+  "ghiChu": null
+}
+```
+
+| Field | Type | Required | Mô tả |
+|---|---|---|---|
+| `trangThaiNop` | string | ✓ | `Chưa nộp`, `Đã nộp`, `Thiếu`, `Không hợp lệ` |
+| `banGocBanSao` | string | | `Bản gốc`, `Bản sao` |
+| `viTriLuuKho` | string | | Vị trí lưu trữ |
+| `ghiChu` | string | | Ghi chú |
+
+**Response `201 Created`:**
+
+```json
+{
+  "success": true,
+  "status": 201,
+  "code": "SUCCESS",
+  "message": "Tạo hồ sơ giấy tờ thành công",
+  "data": {
+    "maHoSo": "HS014",
+    "mssv": "B23DCCN001",
+    "maLoai": "GT01",
+    "tenGiayTo": "Giấy khai sinh",
+    "trangThaiNop": "Chưa nộp",
+    "banGocBanSao": null,
+    "fileDinhKem": null,
+    "viTriLuuKho": "Kệ A1-01",
+    "ghiChu": null,
+    "ngayTao": "2026-09-28T10:30:00.123456",
+    "ngayCapNhat": null
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Dữ liệu không hợp lệ |
+| 404 | `NOT_FOUND` | MSSV hoặc MaLoai không tồn tại |
+| 409 | `ALREADY_EXISTS` | Đã tồn tại hồ sơ cho loại giấy tờ này |
+
+**Ví dụ test:**
+
+```bash
+curl -X POST "http://localhost:8081/api/ho-so-giay-to?mssv=B23DCCN001&maLoai=GT01" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"trangThaiNop":"Chưa nộp","viTriLuuKho":"Kệ A1-01"}'
+```
+
+---
+
+### 7.5. `PUT /api/ho-so-giay-to/{maHoSo}`
+
+Cập nhật hồ sơ giấy tờ.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Request body:**
+
+```json
+{
+  "trangThaiNop": "Đã nộp",
+  "banGocBanSao": "Bản gốc",
+  "viTriLuuKho": "Kệ A2-05",
+  "ghiChu": "Đã kiểm tra"
+}
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Cập nhật hồ sơ giấy tờ thành công",
+  "data": {
+    "maHoSo": "HS001",
+    "mssv": "B23DCCN001",
+    "maLoai": "GT01",
+    "tenGiayTo": "Giấy khai sinh",
+    "trangThaiNop": "Đã nộp",
+    "banGocBanSao": "Bản gốc",
+    "fileDinhKem": null,
+    "viTriLuuKho": "Kệ A2-05",
+    "ghiChu": "Đã kiểm tra",
+    "ngayTao": "2026-09-26T00:51:30.618768",
+    "ngayCapNhat": "2026-09-28T10:30:00.123456"
+  },
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Không tồn tại hồ sơ |
+
+**Ví dụ test:**
+
+```bash
+curl -X PUT http://localhost:8081/api/ho-so-giay-to/HS001 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"trangThaiNop":"Đã nộp","banGocBanSao":"Bản gốc","viTriLuuKho":"Kệ A2-05"}'
+```
+
+---
+
+### 7.6. `PATCH /api/ho-so-giay-to/{maHoSo}/trang-thai`
+
+Cập nhật trạng thái nộp giấy tờ (tick/bỏ tick). **Tự động tạo bản ghi `LICHSUNOP`**.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Path parameters:**
+
+| Param | Type | Mô tả |
+|---|---|---|
+| `maHoSo` | string | Mã hồ sơ giấy tờ |
+
+**Query parameters:**
+
+| Param | Type | Required | Mô tả |
+|---|---|---|---|
+| `trangThaiMoi` | string | ✓ | Trạng thái mới: `Chưa nộp`, `Đã nộp`, `Thiếu`, `Không hợp lệ` |
+| `ghiChu` | string | | Ghi chú cho lịch sử |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Cập nhật trạng thái thành công",
+  "data": {
+    "maHoSo": "HS001",
+    "mssv": "B23DCCN001",
+    "maLoai": "GT01",
+    "tenGiayTo": "Giấy khai sinh",
+    "trangThaiNop": "Đã nộp",
+    "banGocBanSao": "Bản gốc",
+    "fileDinhKem": null,
+    "viTriLuuKho": "Kệ A1-01",
+    "ghiChu": null,
+    "ngayTao": "2026-09-26T00:51:30.618768",
+    "ngayCapNhat": "2026-09-28T10:35:00.123456"
+  },
+  "timestamp": "2026-09-28T10:35:00.123Z"
+}
+```
+
+> **Nghiệp vụ**: Mỗi lần cập nhật trạng thái sẽ tự động tạo bản ghi trong `LICHSUNOP`.
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Không tồn tại hồ sơ |
+| 400 | `VALIDATION_ERROR` | Trạng thái không hợp lệ |
+
+**Ví dụ test:**
+
+```bash
+# Tick "Đã nộp"
+curl -X PATCH "http://localhost:8081/api/ho-so-giay-to/HS001/trang-thai?trangThaiMoi=%C4%90%C3%A3%20n%E1%BB%99p" \
+  -H "Authorization: Bearer <token>"
+
+# Tick "Thiếu" với ghi chú
+curl -X PATCH "http://localhost:8081/api/ho-so-giay-to/HS001/trang-thai?trangThaiMoi=Thi%E1%BA%BFu&ghiChu=Thi%E1%BA%BFu%20trang%201" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 7.7. `DELETE /api/ho-so-giay-to/{maHoSo}`
+
+Xóa hồ sơ giấy tờ.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Xóa hồ sơ giấy tờ thành công",
+  "data": null,
+  "timestamp": "2026-09-28T10:30:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Không tồn tại hồ sơ |
+
+**Ví dụ test:**
+
+```bash
+curl -X DELETE http://localhost:8081/api/ho-so-giay-to/HS001 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## 8. Endpoints — Module Lịch Sử Nộp
+
+### 8.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/lich-su-nop` | ADMIN, STAFF | Lịch sử nộp theo MSSV (phân trang) |
+| `GET` | `/api/lich-su-nop/ho-so/{maHoSo}` | ADMIN, STAFF | Lịch sử nộp theo mã hồ sơ |
+| `GET` | `/api/lich-su-nop/{maLog}` | ADMIN, STAFF | Chi tiết một bản ghi lịch sử |
+
+---
+
+### 8.1. `GET /api/lich-su-nop`
+
+Lấy lịch sử nộp giấy tờ theo MSSV.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+- **ADMIN**: xem lịch sử của bất kỳ sinh viên nào
+- **STAFF**: chỉ xem lịch sử của chính mình
+
+**Query parameters:**
+
+| Param | Type | Required | Mô tả |
+|---|---|---|---|
+| `mssv` | string | ✓ | Mã số sinh viên |
+| `page` | int | | Số trang. Default: `0` |
+| `size` | int | | Số phần tử/trang. Default: `20` |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "content": [
+      {
+        "maLog": "LS001",
+        "maHoSo": "HS001",
+        "mssv": "B23DCCN001",
+        "tenGiayTo": "Giấy khai sinh",
+        "hanhDong": "Cập nhật trạng thái",
+        "trangThaiCu": "Chưa nộp",
+        "trangThaiMoi": "Đã nộp",
+        "ghiChu": null,
+        "nguoiThucHien": "Kieuvanson",
+        "ngayThucHien": "2026-09-28T10:35:00.123456"
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalElements": 5,
+    "totalPages": 1,
+    "first": true,
+    "last": true
+  },
+  "timestamp": "2026-09-28T10:40:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 403 | `FORBIDDEN` | STAFF cố xem lịch sử người khác |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET "http://localhost:8081/api/lich-su-nop?mssv=B23DCCN001&page=0&size=10" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 8.2. `GET /api/lich-su-nop/ho-so/{maHoSo}`
+
+Lấy lịch sử nộp giấy tờ theo mã hồ sơ.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": [
+    {
+      "maLog": "LS001",
+      "maHoSo": "HS001",
+      "mssv": "B23DCCN001",
+      "tenGiayTo": "Giấy khai sinh",
+      "hanhDong": "Cập nhật trạng thái",
+      "trangThaiCu": "Chưa nộp",
+      "trangThaiMoi": "Đã nộp",
+      "ghiChu": null,
+      "nguoiThucHien": "Kieuvanson",
+      "ngayThucHien": "2026-09-28T10:35:00.123456"
+    }
+  ],
+  "timestamp": "2026-09-28T10:40:00.123Z"
+}
+```
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/lich-su-nop/ho-so/HS001 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 8.3. `GET /api/lich-su-nop/{maLog}`
+
+Lấy chi tiết một bản ghi lịch sử.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "maLog": "LS001",
+    "maHoSo": "HS001",
+    "mssv": "B23DCCN001",
+    "tenGiayTo": "Giấy khai sinh",
+    "hanhDong": "Cập nhật trạng thái",
+    "trangThaiCu": "Chưa nộp",
+    "trangThaiMoi": "Đã nộp",
+    "ghiChu": null,
+    "nguoiThucHien": "Kieuvanson",
+    "ngayThucHien": "2026-09-28T10:35:00.123456"
+  },
+  "timestamp": "2026-09-28T10:40:00.123Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Không tìm thấy bản ghi |
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## 9. Bảng mã lỗi tham chiếu nhanh
 
 | HTTP | Code | Ý nghĩa | Frontend gợi ý |
 |---|---|---|---|
 | 400 | `VALIDATION_ERROR` | Sai ràng buộc field | Hiển thị `errors[]` |
 | 400 | `MALFORMED_JSON` | Body không phải JSON | "Body không hợp lệ" |
 | 400 | `MISSING_PARAMETER` | Thiếu query/path param | "Thiếu tham số X" |
+| 400 | `MISSING_PARAM` | Thiếu tham số bắt buộc | "Thiếu tham số X" |
 | 400 | `INVALID_PARAMETER` | Sai kiểu dữ liệu param | "Tham số X sai định dạng" |
+| 400 | `USERNAME_EXISTS` | Username đã tồn tại | "Tên đăng nhập đã được sử dụng" |
+| 400 | `EMAIL_EXISTS` | Email đã được sử dụng | "Email đã được sử dụng" |
+| 400 | `MSSV_NOT_FOUND` | MSSV không tồn tại | "Mã số sinh viên không tồn tại" |
 | 401 | `UNAUTHORIZED` | Không có token | Gọi refresh → fail thì logout |
 | 401 | `INVALID_CREDENTIALS` | Sai username/password | "Sai tài khoản hoặc mật khẩu" |
 | 401 | `ACCOUNT_DISABLED` | Tài khoản bị khoá | "Tài khoản đã bị vô hiệu hoá" |
 | 401 | `INSUFFICIENT_ROLE` | Role không đủ quyền | "Tài khoản không có quyền truy cập" |
-| 401 | `MISSING_REFRESH_TOKEN` | Không có refresh token | Redirect về /login |
+| 401 | `NO_REFRESH_TOKEN` | Không có refresh token | Redirect về /login |
 | 401 | `INVALID_REFRESH_TOKEN` | Token sai / hết hạn | Redirect về /login |
 | 401 | `REFRESH_TOKEN_REVOKED` | Đã bị thu hồi / reuse | Redirect về /login |
 | 401 | `USER_NOT_FOUND` | User không còn tồn tại | Redirect về /login |
 | 403 | `FORBIDDEN` | Không đủ quyền | "Bạn không có quyền" |
+| 403 | `NO_MSSV` | Staff chưa được gán MSSV | "Tài khoản chưa được gán MSSV" |
 | 404 | `ENDPOINT_NOT_FOUND` | URL sai | "API không tồn tại" |
 | 404 | `NOT_FOUND` | Resource không tồn tại | "Không tìm thấy" |
 | 405 | `METHOD_NOT_ALLOWED` | Sai HTTP method | "Phương thức không hỗ trợ" |
+| 409 | `ALREADY_EXISTS` | Resource đã tồn tại | "Đã tồn tại" |
 | 429 | `TOO_MANY_REQUESTS` | Rate limit | Disable form, đếm ngược `Retry-After` |
 | 500 | `INTERNAL_ERROR` | Lỗi hệ thống | "Lỗi hệ thống, thử lại sau" |
 
 ---
 
-## 7. Luồng sử dụng mẫu cho Frontend
+## 10. Luồng sử dụng mẫu cho Frontend
 
-### 7.1. Login flow
+### 10.1. Login flow
 
 ```text
 [UI] User nhập username + password
@@ -673,7 +1557,19 @@ Xóa sinh viên khỏi hệ thống. **Hiện tại chưa triển khai — trả
 [FE] Redirect về dashboard
 ```
 
-### 7.2. Auto-refresh khi access token hết hạn
+### 10.2. Register flow (Staff)
+
+```text
+[UI] Admin nhập thông tin Staff mới (username, password, hoTen, email, mssv)
+  ↓
+[FE] POST /api/auth/register
+  ↓
+[BE] Tạo user + gán mssv → trả 200 + cookie
+  ↓
+[FE] Lưu token + user info → redirect
+```
+
+### 10.3. Auto-refresh khi access token hết hạn
 
 ```text
 [FE] GET /api/whatever  (Authorization: Bearer <expired-accessToken>)
@@ -691,7 +1587,7 @@ Xóa sinh viên khỏi hệ thống. **Hiện tại chưa triển khai — trả
 [FE] Redirect về /login
 ```
 
-### 7.3. Logout flow
+### 10.4. Logout flow
 
 ```text
 [UI] User click "Đăng xuất"
@@ -703,7 +1599,7 @@ Xóa sinh viên khỏi hệ thống. **Hiện tại chưa triển khai — trả
 [FE] Xoá accessToken khỏi memory → Redirect /login
 ```
 
-### 7.4. Ví dụ axios config (React/Vue)
+### 10.5. Ví dụ axios config (React/Vue)
 
 ```javascript
 // axios instance
@@ -743,7 +1639,7 @@ api.interceptors.response.use(
 
 ---
 
-## 8. Test nhanh bằng curl
+## 11. Test nhanh bằng curl
 
 ```bash
 # 1. Login — lưu cookie vào cookies.txt
@@ -752,34 +1648,76 @@ curl -i -X POST http://localhost:8081/api/auth/login \
   -d '{"username":"Kieuvanson","password":"332003"}' \
   -c cookies.txt
 
-# 2. Danh sách sinh viên
+# 2. Thông tin user hiện tại
+curl -X GET http://localhost:8081/api/users/me \
+  -H "Authorization: Bearer <token>"
+
+# 3. Danh sách sinh viên
 curl -X GET http://localhost:8081/api/sinh-vien \
   -H "Authorization: Bearer <token>"
 
-# 3. Chi tiết sinh viên
+# 4. Chi tiết sinh viên
 curl -X GET http://localhost:8081/api/sinh-vien/B23DCCN001 \
   -H "Authorization: Bearer <token>"
 
-# 4. Thống kê
+# 5. Thống kê sinh viên
 curl -X GET http://localhost:8081/api/sinh-vien/stats \
   -H "Authorization: Bearer <token>"
 
-# 5. Tìm kiếm
+# 6. Tìm kiếm sinh viên
 curl -X GET "http://localhost:8081/api/sinh-vien?keyword=An" \
   -H "Authorization: Bearer <token>"
 
-# 6. Refresh — gửi cookie từ file
+# 7. Danh sách loại giấy tờ
+curl -X GET http://localhost:8081/api/loai-giay-to \
+  -H "Authorization: Bearer <token>"
+
+# 8. Loại giấy tờ bắt buộc
+curl -X GET http://localhost:8081/api/loai-giay-to/bat-buoc \
+  -H "Authorization: Bearer <token>"
+
+# 9. Thống kê loại giấy tờ
+curl -X GET http://localhost:8081/api/loai-giay-to/stats \
+  -H "Authorization: Bearer <token>"
+
+# 10. Hồ sơ giấy tờ theo MSSV
+curl -X GET "http://localhost:8081/api/ho-so-giay-to?mssv=B23DCCN001" \
+  -H "Authorization: Bearer <token>"
+
+# 11. Thống kê hồ sơ giấy tờ
+curl -X GET "http://localhost:8081/api/ho-so-giay-to/stats?mssv=B23DCCN001" \
+  -H "Authorization: Bearer <token>"
+
+# 12. Tạo hồ sơ giấy tờ mới
+curl -X POST "http://localhost:8081/api/ho-so-giay-to?mssv=B23DCCN001&maLoai=GT01" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"trangThaiNop":"Chưa nộp","viTriLuuKho":"Kệ A1-01"}'
+
+# 13. Cập nhật trạng thái (tạo lịch sử)
+curl -X PATCH "http://localhost:8081/api/ho-so-giay-to/HS001/trang-thai?trangThaiMoi=%C4%90%C3%A3%20n%E1%BB%99p" \
+  -H "Authorization: Bearer <token>"
+
+# 14. Lịch sử nộp theo MSSV
+curl -X GET "http://localhost:8081/api/lich-su-nop?mssv=B23DCCN001" \
+  -H "Authorization: Bearer <token>"
+
+# 15. Lịch sử nộp theo mã hồ sơ
+curl -X GET http://localhost:8081/api/lich-su-nop/ho-so/HS001 \
+  -H "Authorization: Bearer <token>"
+
+# 16. Refresh token — gửi cookie từ file
 curl -i -X POST http://localhost:8081/api/auth/refresh \
   -b cookies.txt -c cookies.txt
 
-# 7. Logout
+# 17. Logout
 curl -i -X POST http://localhost:8081/api/auth/logout \
   -b cookies.txt -c cookies.txt
 ```
 
 ---
 
-## 9. Quy tắc cho Frontend
+## 12. Quy tắc cho Frontend
 
 - **Không lưu `accessToken` vào localStorage / sessionStorage** — chỉ giữ trong memory (state / ref). Token có thể bị XSS đánh cắp nếu lưu persistent storage.
 - **Bật `withCredentials: true`** cho mọi request tới backend (axios) hoặc `credentials: 'include'` (fetch).
@@ -788,10 +1726,11 @@ curl -i -X POST http://localhost:8081/api/auth/logout \
 - **Không retry** với status `400`, `409`, `429` — chỉ retry `5xx` tối đa 1 lần.
 - **Không tự suy đoán kết quả** thay đổi trạng thái (tick giấy, tạo phiếu...) — luôn chờ response từ backend để cập nhật UI.
 - **Mọi endpoint protected cần `Authorization: Bearer <token>`**, trừ `/api/auth/**`.
+- **STAFF chỉ xem dữ liệu của chính mình** — backend tự kiểm tra và trả 403 nếu cố truy cập người khác.
 
 ---
 
-## 10. Tài liệu liên quan
+## 13. Tài liệu liên quan
 
 - `AGENTS.md` (root) — tổng quan dự án, ERD, business rules
 - `backend/AGENTS.md` — engineering guide cho backend

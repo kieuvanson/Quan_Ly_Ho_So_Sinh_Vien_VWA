@@ -50,6 +50,9 @@ public class User {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "mssv", length = 20)
+    private String mssv;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
@@ -61,4 +64,7 @@ public class User {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
+
+    public String getMssv() { return mssv; }
+    public void setMssv(String mssv) { this.mssv = mssv; }
 }

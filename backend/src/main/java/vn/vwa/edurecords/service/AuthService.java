@@ -44,7 +44,7 @@ public class AuthService {
             throw new RuntimeException("Account is disabled");
         }
 
-        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
+        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
         String refreshToken = jwtService.generateRefreshToken(user.getUsername());
         String familyId = refreshTokenService.generateFamilyId();
 
@@ -83,7 +83,7 @@ public class AuthService {
 
         user = userRepository.save(user);
 
-        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
+        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
         String refreshToken = jwtService.generateRefreshToken(user.getUsername());
         String familyId = refreshTokenService.generateFamilyId();
 
@@ -115,7 +115,7 @@ public class AuthService {
 
         refreshTokenService.revokeToken(refreshToken);
 
-        String newAccessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
+        String newAccessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
         String newRefreshToken = jwtService.generateRefreshToken(user.getUsername());
         String newFamilyId = refreshTokenService.generateFamilyId();
 

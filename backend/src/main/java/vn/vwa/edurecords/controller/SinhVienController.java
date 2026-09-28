@@ -3,11 +3,14 @@ package vn.vwa.edurecords.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.entity.SinhVien;
+import vn.vwa.edurecords.security.JwtService;
 import vn.vwa.edurecords.service.SinhVienService;
 
 import java.util.HashMap;
@@ -20,15 +23,42 @@ import java.util.Map;
 public class SinhVienController {
 
     private final SinhVienService sinhVienService;
+    private final JwtService jwtService;
 
-    public SinhVienController(SinhVienService sinhVienService) {
+    public SinhVienController(SinhVienService sinhVienService, JwtService jwtService) {
         this.sinhVienService = sinhVienService;
+        this.jwtService = jwtService;
+    }
+
+    /**
+     * GET /api/sinh-vien/me
+     * Lấy thông tin sinh viên của chính Staff đang đăng nhập.
+     * STAFF bắt buộc phải có mssv được gán.
+     */
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STAFF')")
+    public ResponseEntity<ApiResponse<SinhVien>> getMyProfile(
+            @RequestHeader("Authorization") String authHeader) {
+
+        String token = authHeader.replace("Bearer ", "");
+        String mssvFromToken = jwtService.extractMssv(token);
+
+        if (mssvFromToken == null || mssvFromToken.isEmpty()) {
+            return ResponseEntity.status(403).body(
+                    ApiResponse.error(403, "NO_MSSV", "Tài khoản Staff chưa được gán MSSV. Liên hệ Admin."));
+        }
+
+        return sinhVienService.getByMssv(mssvFromToken)
+                .map(sv -> ResponseEntity.ok(ApiResponse.success(sv)))
+                .orElseGet(() -> ResponseEntity.status(404).body(
+                        ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy sinh viên với MSSV: " + mssvFromToken)));
     }
 
     /**
      * GET /api/sinh-vien
      * Tìm kiếm + lọc + phân trang.
-     * Tất cả query params được áp dụng đồng thời (AND).
+     * ADMIN: xem toàn bộ danh sách
+     * STAFF: chỉ xem thông tin của chính mình
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
@@ -42,8 +72,29 @@ public class SinhVienController {
             @RequestParam(required = false) String heDaoTao,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "0") int sortDirection) {
+            @RequestParam(defaultValue = "0") int sortDirection,
+            @RequestHeader("Authorization") String authHeader) {
 
+        String role = jwtService.extractRole(authHeader.replace("Bearer ", ""));
+        String mssvFromToken = jwtService.extractMssv(authHeader.replace("Bearer ", ""));
+
+        // STAFF: chỉ xem thông tin cá nhân của mình
+        if ("STAFF".equals(role)) {
+            if (mssvFromToken == null || mssvFromToken.isEmpty()) {
+                return ResponseEntity.status(403).body(
+                        ApiResponse.error(403, "NO_MSSV", "Tài khoản Staff chưa được gán MSSV. Liên hệ Admin."));
+            }
+            // Staff chỉ xem 1 bản ghi - chính mình
+            SinhVienSearchRequest req = new SinhVienSearchRequest();
+            req.setKeyword(mssvFromToken);
+            req.setPage(0);
+            req.setSize(1);
+            req.setSortDirection(0);
+            PagedResponse<List<SinhVien>> result = sinhVienService.search(req);
+            return ResponseEntity.ok(ApiResponse.success(result));
+        }
+
+        // ADMIN: xem toàn bộ danh sách với filter
         SinhVienSearchRequest req = new SinhVienSearchRequest();
         req.setKeyword(keyword);
         req.setTrangThaiHocVu(trangThaiHocVu);
@@ -63,22 +114,39 @@ public class SinhVienController {
     /**
      * GET /api/sinh-vien/{mssv}
      * Chi tiết sinh viên.
+     * ADMIN: xem bất kỳ sinh viên nào
+     * STAFF: chỉ xem chính mình
      */
     @GetMapping("/{mssv}")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<SinhVien>> getByMssv(@PathVariable String mssv) {
+    public ResponseEntity<ApiResponse<SinhVien>> getByMssv(
+            @PathVariable String mssv,
+            @RequestHeader("Authorization") String authHeader) {
+
+        String role = jwtService.extractRole(authHeader.replace("Bearer ", ""));
+        String mssvFromToken = jwtService.extractMssv(authHeader.replace("Bearer ", ""));
+
+        // STAFF: chỉ cho xem chính mình
+        if ("STAFF".equals(role)) {
+            if (!mssv.equals(mssvFromToken)) {
+                return ResponseEntity.status(403).body(
+                        ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem thông tin cá nhân của mình"));
+            }
+        }
+
         return sinhVienService.getByMssv(mssv)
                 .map(sv -> ResponseEntity.ok(ApiResponse.success(sv)))
-                .orElse(ResponseEntity.ok(ApiResponse.error(
-                        404, "NOT_FOUND", "Không tìm thấy sinh viên với MSSV: " + mssv)));
+                .orElseGet(() -> ResponseEntity.status(404).body(
+                        ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy sinh viên với MSSV: " + mssv)));
     }
 
     /**
      * GET /api/sinh-vien/stats
      * Thống kê tổng quan.
+     * Chỉ ADMIN mới được xem thống kê
      */
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("tongSoSinhVien", sinhVienService.getTotalCount());
@@ -93,6 +161,7 @@ public class SinhVienController {
     /**
      * POST /api/sinh-vien
      * Tạo sinh viên mới.
+     * Chỉ ADMIN
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -103,6 +172,7 @@ public class SinhVienController {
     /**
      * PUT /api/sinh-vien/{mssv}
      * Cập nhật sinh viên.
+     * Chỉ ADMIN
      */
     @PutMapping("/{mssv}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -115,6 +185,7 @@ public class SinhVienController {
     /**
      * DELETE /api/sinh-vien/{mssv}
      * Xóa sinh viên.
+     * Chỉ ADMIN
      */
     @DeleteMapping("/{mssv}")
     @PreAuthorize("hasRole('ADMIN')")

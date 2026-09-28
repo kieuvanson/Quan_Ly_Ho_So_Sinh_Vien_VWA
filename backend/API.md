@@ -11,6 +11,7 @@
 |---|---|---|---|
 | **Auth** | `AuthController` | 3 | ✅ Đã triển khai |
 | **Sinh Viên** (`/api/sinh-vien`) | `SinhVienController` | 6 | ✅ Đã triển khai (3 placeholder) |
+| **Loại Giấy Tờ** (`/api/loai-giay-to`) | `LoaiGiayToController` | 4 | ✅ Đã triển khai |
 | Hồ sơ giấy tờ | — | — | 🔜 MVP |
 | Mượn — Trả — Rút | — | — | 🔜 MVP |
 | Lịch sử & Audit | — | — | 🔜 MVP |

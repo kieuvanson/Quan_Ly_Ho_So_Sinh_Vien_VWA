@@ -48,7 +48,7 @@ public class JwtService {
         return 3600000L;
     }
 
-    public String generateAccessToken(String username, String role) {
+    public String generateAccessToken(String username, String role, String mssv) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + accessTokenTtlMs);
         String jti = UUID.randomUUID().toString();
@@ -56,6 +56,7 @@ public class JwtService {
         return Jwts.builder()
                 .subject(username)
                 .claim("role", role)
+                .claim("mssv", mssv)
                 .claim("type", "access")
                 .id(jti)
                 .issuer(issuer)
@@ -87,6 +88,10 @@ public class JwtService {
 
     public String extractRole(String token) {
         return extractClaims(token).get("role", String.class);
+    }
+
+    public String extractMssv(String token) {
+        return extractClaims(token).get("mssv", String.class);
     }
 
     public String extractJti(String token) {
