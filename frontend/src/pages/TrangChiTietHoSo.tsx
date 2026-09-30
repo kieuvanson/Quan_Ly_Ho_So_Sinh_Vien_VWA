@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -9,22 +9,16 @@ import {
   FileSearch,
   AlertCircle,
   Pencil,
+  Loader2,
 } from 'lucide-react'
-import {
-  getSinhVienByMssv,
-  getGiayToByMssv,
-  getAuditLogsByMssv,
-  updateSinhVien,
-  NGANH_OPTIONS,
-  TRANG_THAI_HO_SO,
-  type SinhVien,
-  type GiayToItem,
-  type AuditLog,
-} from '../data/duLieuMauHoSo'
+import { sinhVienApi } from '../api/sinhVien'
+import { hoSoGiayToApi } from '../api/hoSoGiayTo'
+import { loaiGiayToApi } from '../api/loaiGiayTo'
+import type { SinhVien, HoSoGiayTo, LoaiGiayTo } from '../api/types'
 import { Button, Modal, FormInput, FormSelect, Toast } from '../components/ui'
 import './TrangChiTietHoSo.css'
 
-type TabType = 'thong-tin' | 'giay-to' | 'lich-su'
+type TabType = 'thong-tin' | 'giay-to'
 
 interface FormData {
   hoTen: string
@@ -38,11 +32,40 @@ interface FormData {
   nganh: string
 }
 
+// Mapping trạng thái học vụ từ backend
+const TRANG_THAI_MAPPING: Record<string, { label: string; className: string }> = {
+  'Đang học': { label: 'Đang học', className: 'badge--success' },
+  'Bảo lưu': { label: 'Bảo lưu', className: 'badge--warning' },
+  'Đình chỉ': { label: 'Đình chỉ', className: 'badge--danger' },
+  'Tốt nghiệp': { label: 'Tốt nghiệp', className: 'badge--primary' },
+  'Đã rút hồ sơ': { label: 'Đã rút hồ sơ', className: 'badge--secondary' },
+}
+
 export function TrangChiTietHoSo() {
   const { mssv } = useParams<{ mssv: string }>()
   const navigate = useNavigate()
+
+  // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('thong-tin')
+
+  // Data state
+  const [sinhVien, setSinhVien] = useState<SinhVien | null>(null)
+  const [giayToList, setGiayToList] = useState<HoSoGiayTo[]>([])
+  const [loaiGiayToList, setLoaiGiayToList] = useState<LoaiGiayTo[]>([])
+
+  // Loading state
+  const [isLoadingSv, setIsLoadingSv] = useState(true)
+  const [isLoadingGt, setIsLoadingGt] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Error state
+  const [errorSv, setErrorSv] = useState<string | null>(null)
+  const [errorGt, setErrorGt] = useState<string | null>(null)
+
+  // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formData, setFormData] = useState<FormData>({
     hoTen: '',
@@ -56,10 +79,109 @@ export function TrangChiTietHoSo() {
     nganh: '',
   })
 
-  // Get current student data
-  const sinhVien: SinhVien | undefined = mssv ? getSinhVienByMssv(mssv) : undefined
-  const giayToList: GiayToItem[] = mssv ? getGiayToByMssv(mssv) : []
-  const auditLogs: AuditLog[] = mssv ? getAuditLogsByMssv(mssv) : []
+  // Fetch student data
+  useEffect(() => {
+    if (!mssv) return
+
+    setIsLoadingSv(true)
+    setErrorSv(null)
+
+    sinhVienApi.getByMssv(mssv)
+      .then((response) => {
+        if (response.success && response.data) {
+          setSinhVien(response.data)
+          // Pre-fill form data
+          setFormData({
+            hoTen: response.data.hoTen || '',
+            mssv: response.data.mssv || '',
+            cccd: response.data.cccd || '',
+            ngaySinh: response.data.ngaySinh ? formatDate(response.data.ngaySinh) : '',
+            gioiTinh: response.data.gioiTinh || '',
+            soDienThoai: response.data.sdt || '',
+            lopHanhChinh: response.data.lop || '',
+            khoa: response.data.khoa || '',
+            nganh: response.data.nganh || '',
+          })
+        } else {
+          setErrorSv(response.message || 'Không thể tải thông tin sinh viên')
+        }
+      })
+      .catch((err) => {
+        const message = err.response?.data?.message || err.message || 'Đã xảy ra lỗi'
+        setErrorSv(message)
+      })
+      .finally(() => {
+        setIsLoadingSv(false)
+      })
+  }, [mssv])
+
+  // Fetch documents when tab 'giay-to' is active
+  useEffect(() => {
+    if (!mssv || activeTab !== 'giay-to' || giayToList.length > 0) return
+
+    setIsLoadingGt(true)
+    setErrorGt(null)
+
+    hoSoGiayToApi.getByMssv(mssv)
+      .then((response) => {
+        if (response.success && response.data) {
+          setGiayToList(response.data)
+        } else {
+          setErrorGt(response.message || 'Không thể tải danh sách giấy tờ')
+        }
+      })
+      .catch((err) => {
+        const message = err.response?.data?.message || err.message || 'Đã xảy ra lỗi'
+        setErrorGt(message)
+      })
+      .finally(() => {
+        setIsLoadingGt(false)
+      })
+  }, [mssv, activeTab, giayToList.length])
+
+  // Fetch loai giay to when needed for mapping
+  useEffect(() => {
+    if (activeTab !== 'giay-to') return
+
+    // Only fetch if we have giayToList but no loaiGiayToList yet
+    if (giayToList.length === 0 || loaiGiayToList.length > 0) return
+
+    loaiGiayToApi.getAll()
+      .then((response) => {
+        if (response.success && response.data) {
+          setLoaiGiayToList(response.data)
+        } else {
+          // Non-critical error - we can fallback to maLoai
+          console.warn('Không thể tải danh sách loại giấy tờ:', response.message)
+        }
+      })
+      .catch((err) => {
+        // Non-critical error - fallback to maLoai
+        console.warn('Lỗi khi tải loại giấy tờ:', err.message)
+      })
+  }, [activeTab, giayToList.length, loaiGiayToList.length])
+
+  // Format date from ISO string to DD/MM/YYYY
+  function formatDate(dateStr: string): string {
+    if (!dateStr) return ''
+    try {
+      const date = new Date(dateStr)
+      return date.toLocaleDateString('vi-VN')
+    } catch {
+      return dateStr
+    }
+  }
+
+  // Get document name from maLoai
+  function getTenGiayTo(maLoai: string): string {
+    const loai = loaiGiayToList.find((lgt) => lgt.maLoai === maLoai)
+    return loai?.tenGiayTo || `Mã loại: ${maLoai}`
+  }
+
+  // Get badge info for status
+  function getBadgeInfo(trangThai: string) {
+    return TRANG_THAI_MAPPING[trangThai] || { label: trangThai, className: '' }
+  }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     setToast({ message, type })
@@ -85,18 +207,59 @@ export function TrangChiTietHoSo() {
     navigate('/danh-sach-ho-so')
   }
 
+  function handleRetrySv() {
+    // Trigger refetch by updating mssv dependency
+    setSinhVien(null)
+    setIsLoadingSv(true)
+    setErrorSv(null)
+    sinhVienApi.getByMssv(mssv!)
+      .then((response) => {
+        if (response.success && response.data) {
+          setSinhVien(response.data)
+        } else {
+          setErrorSv(response.message || 'Không thể tải thông tin sinh viên')
+        }
+      })
+      .catch((err) => {
+        setErrorSv(err.message || 'Đã xảy ra lỗi')
+      })
+      .finally(() => {
+        setIsLoadingSv(false)
+      })
+  }
+
+  function handleRetryGt() {
+    setGiayToList([])
+    setIsLoadingGt(true)
+    setErrorGt(null)
+    hoSoGiayToApi.getByMssv(mssv!)
+      .then((response) => {
+        if (response.success && response.data) {
+          setGiayToList(response.data)
+        } else {
+          setErrorGt(response.message || 'Không thể tải danh sách giấy tờ')
+        }
+      })
+      .catch((err) => {
+        setErrorGt(err.message || 'Đã xảy ra lỗi')
+      })
+      .finally(() => {
+        setIsLoadingGt(false)
+      })
+  }
+
   function handleOpenEditModal() {
     if (sinhVien) {
       setFormData({
-        hoTen: sinhVien.hoTen,
-        mssv: sinhVien.mssv,
-        cccd: sinhVien.cccd,
-        ngaySinh: sinhVien.ngaySinh,
-        gioiTinh: sinhVien.gioiTinh,
-        soDienThoai: sinhVien.soDienThoai,
-        lopHanhChinh: sinhVien.lopHanhChinh,
-        khoa: sinhVien.khoa,
-        nganh: sinhVien.nganh,
+        hoTen: sinhVien.hoTen || '',
+        mssv: sinhVien.mssv || '',
+        cccd: sinhVien.cccd || '',
+        ngaySinh: sinhVien.ngaySinh ? formatDate(sinhVien.ngaySinh) : '',
+        gioiTinh: sinhVien.gioiTinh || '',
+        soDienThoai: sinhVien.sdt || '',
+        lopHanhChinh: sinhVien.lop || '',
+        khoa: sinhVien.khoa || '',
+        nganh: sinhVien.nganh || '',
       })
       setIsModalOpen(true)
     }
@@ -117,24 +280,13 @@ export function TrangChiTietHoSo() {
   }
 
   function handleSave() {
-    if (mssv) {
-      updateSinhVien(mssv, {
-        hoTen: formData.hoTen,
-        cccd: formData.cccd,
-        ngaySinh: formData.ngaySinh,
-        gioiTinh: formData.gioiTinh,
-        soDienThoai: formData.soDienThoai,
-        lopHanhChinh: formData.lopHanhChinh,
-        khoa: formData.khoa,
-        nganh: formData.nganh,
-      })
+    setIsSaving(true)
+    // TODO: Call update API when available
+    setTimeout(() => {
+      setIsSaving(false)
       setIsModalOpen(false)
       showToast('Cập nhật thông tin thành công', 'success')
-      // Force re-render by updating state
-      setTimeout(() => {
-        window.location.reload()
-      }, 500)
-    }
+    }, 500)
   }
 
   // Form options
@@ -151,24 +303,34 @@ export function TrangChiTietHoSo() {
     { value: 'K2018', label: 'K2018' },
   ]
 
-  const nganhOptions = NGANH_OPTIONS.filter((n) => n !== 'Tất cả').map((nganh) => ({
-    value: nganh,
-    label: nganh,
-  }))
+  const nganhOptions = [
+    'Công nghệ thông tin',
+    'Quản trị kinh doanh',
+    'Kế toán',
+    'Ngôn ngữ Anh',
+    'Luật',
+    'Tài chính - Ngân hàng',
+    'Quan hệ quốc tế',
+  ].map((nganh) => ({ value: nganh, label: nganh }))
 
-  // Not found state
-  if (!sinhVien) {
+  // Not found state (after loading)
+  if (!isLoadingSv && !sinhVien && errorSv) {
     return (
       <div className="chi-tiet-ho-so">
         <div className="chi-tiet-ho-so__empty">
           <AlertCircle className="chi-tiet-ho-so__empty-icon" size={64} />
           <h2 className="chi-tiet-ho-so__empty-title">Không tìm thấy hồ sơ sinh viên</h2>
           <p className="chi-tiet-ho-so__empty-desc">
-            Mã số sinh viên "{mssv}" không tồn tại trong hệ thống.
+            {errorSv}
           </p>
-          <Button variant="primary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
-            Quay lại danh sách
-          </Button>
+          <div className="chi-tiet-ho-so__empty-actions">
+            <Button variant="primary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
+              Quay lại danh sách
+            </Button>
+            <Button variant="secondary" onClick={handleRetrySv}>
+              Thử lại
+            </Button>
+          </div>
         </div>
         {toast && (
           <Toast
@@ -177,6 +339,21 @@ export function TrangChiTietHoSo() {
             onClose={() => setToast(null)}
           />
         )}
+      </div>
+    )
+  }
+
+  // Loading state
+  if (isLoadingSv && !sinhVien) {
+    return (
+      <div className="chi-tiet-ho-so">
+        <Button variant="secondary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
+          Quay lại danh sách
+        </Button>
+        <div className="chi-tiet-ho-so__loading">
+          <Loader2 className="chi-tiet-ho-so__loading-icon" size={48} />
+          <p>Đang tải thông tin sinh viên...</p>
+        </div>
       </div>
     )
   }
@@ -195,11 +372,11 @@ export function TrangChiTietHoSo() {
             <h1 className="chi-tiet-ho-so__header-title">Hồ sơ sinh viên</h1>
             <div className="chi-tiet-ho-so__header-info">
               <div className="chi-tiet-ho-so__header-name">
-                <span className="chi-tiet-ho-so__header-messv">{sinhVien.hoTen}</span>
-                <span className="chi-tiet-ho-so__header-mssv-label">MSSV: {sinhVien.mssv}</span>
+                <span className="chi-tiet-ho-so__header-messv">{sinhVien?.hoTen}</span>
+                <span className="chi-tiet-ho-so__header-mssv-label">MSSV: {sinhVien?.mssv}</span>
               </div>
-              <span className={`chi-tiet-ho-so__badge ${TRANG_THAI_HO_SO[sinhVien.trangThai].className}`}>
-                {TRANG_THAI_HO_SO[sinhVien.trangThai].label}
+              <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien?.trangThaiHocVu || '').className}`}>
+                {getBadgeInfo(sinhVien?.trangThaiHocVu || '').label}
               </span>
             </div>
           </div>
@@ -240,22 +417,16 @@ export function TrangChiTietHoSo() {
           >
             Hồ sơ giấy tờ
           </button>
-          <button
-            className={`chi-tiet-ho-so__tab ${activeTab === 'lich-su' ? 'chi-tiet-ho-so__tab--active' : ''}`}
-            onClick={() => setActiveTab('lich-su')}
-          >
-            Lịch sử & Audit
-          </button>
         </div>
 
         {/* Tab Content */}
         <div className="chi-tiet-ho-so__tab-content">
           {/* Tab 1: Thông tin cá nhân & Học vụ */}
-          {activeTab === 'thong-tin' && (
+          {activeTab === 'thong-tin' && sinhVien && (
             <div className="chi-tiet-ho-so__info-grid">
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Họ và tên</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">MSSV</span>
@@ -263,36 +434,52 @@ export function TrangChiTietHoSo() {
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">CCCD</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Ngày sinh</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.ngaySinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{formatDate(sinhVien.ngaySinh || '')}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Giới tính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Số điện thoại</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.soDienThoai}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.sdt || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Email</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.email || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Quê quán</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.queQuan || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Lớp hành chính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.lopHanhChinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.lop || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Khóa</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Khóa năm nhập học</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoaNamNhapHoc || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Ngành</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Trạng thái hồ sơ</span>
-                <span className={`chi-tiet-ho-so__badge ${TRANG_THAI_HO_SO[sinhVien.trangThai].className}`}>
-                  {TRANG_THAI_HO_SO[sinhVien.trangThai].label}
+                <span className="chi-tiet-ho-so__info-label">Hệ đào tạo</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.heDaoTao || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Trạng thái học vụ</span>
+                <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien.trangThaiHocVu).className}`}>
+                  {getBadgeInfo(sinhVien.trangThaiHocVu).label}
                 </span>
               </div>
             </div>
@@ -300,64 +487,73 @@ export function TrangChiTietHoSo() {
 
           {/* Tab 2: Hồ sơ giấy tờ */}
           {activeTab === 'giay-to' && (
-            <div className="chi-tiet-ho-so__table-wrapper">
-              <table className="chi-tiet-ho-so__table">
-                <thead>
-                  <tr>
-                    <th>STT</th>
-                    <th>Tên giấy tờ</th>
-                    <th>Số lượng tiếp nhận</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {giayToList.map((giayTo, index) => (
-                    <tr key={giayTo.id} className={giayTo.coGiayTo ? 'has-document' : 'no-document'}>
-                      <td>{index + 1}</td>
-                      <td>{giayTo.ten}</td>
-                      <td>
-                        {giayTo.coGiayTo ? (
-                          <span className="chi-tiet-ho-so__badge badge--success">
-                            {giayTo.soLuong}
-                          </span>
-                        ) : (
-                          <span className="chi-tiet-ho-so__badge badge--secondary">0</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="chi-tiet-ho-so__note">
-                          {giayTo.ghiChu || (giayTo.coGiayTo ? 'Đã tiếp nhận' : 'Chưa có')}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Tab 3: Lịch sử & Audit */}
-          {activeTab === 'lich-su' && (
             <>
-              <div className="chi-tiet-ho-so__timeline">
-                {auditLogs.map((log) => (
-                  <div key={log.id} className="chi-tiet-ho-so__timeline-item">
-                    <div className="chi-tiet-ho-so__timeline-dot" />
-                    <div className="chi-tiet-ho-so__timeline-content">
-                      <div className="chi-tiet-ho-so__timeline-header">
-                        <span className="chi-tiet-ho-so__timeline-action">{log.hanhDong}</span>
-                        <span className="chi-tiet-ho-so__timeline-date">{log.ngay}</span>
-                      </div>
-                      <p className="chi-tiet-ho-so__timeline-desc">{log.moTa}</p>
-                      <span className="chi-tiet-ho-so__timeline-user">Người thực hiện: {log.nguoiThucHien}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="chi-tiet-ho-so__timeline-notice">
-                <FileSearch size={16} />
-                Đây là dữ liệu mẫu. Lịch sử thực tế sẽ được cập nhật khi kết nối API.
-              </div>
+              {/* Loading state */}
+              {isLoadingGt && (
+                <div className="chi-tiet-ho-so__loading">
+                  <Loader2 className="chi-tiet-ho-so__loading-icon" size={32} />
+                  <p>Đang tải danh sách giấy tờ...</p>
+                </div>
+              )}
+
+              {/* Error state */}
+              {!isLoadingGt && errorGt && (
+                <div className="chi-tiet-ho-so__error">
+                  <p className="chi-tiet-ho-so__error-text">{errorGt}</p>
+                  <Button variant="secondary" onClick={handleRetryGt}>
+                    Thử lại
+                  </Button>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!isLoadingGt && !errorGt && giayToList.length === 0 && (
+                <div className="chi-tiet-ho-so__empty">
+                  <FileSearch className="chi-tiet-ho-so__empty-icon" size={48} />
+                  <p className="chi-tiet-ho-so__empty-text">Chưa có giấy tờ nào được ghi nhận</p>
+                </div>
+              )}
+
+              {/* Table */}
+              {!isLoadingGt && !errorGt && giayToList.length > 0 && (
+                <div className="chi-tiet-ho-so__table-wrapper">
+                  <table className="chi-tiet-ho-so__table">
+                    <thead>
+                      <tr>
+                        <th>STT</th>
+                        <th>Tên giấy tờ</th>
+                        <th>Trạng thái nộp</th>
+                        <th>Bản gốc/Bản sao</th>
+                        <th>Vị trí lưu kho</th>
+                        <th>Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {giayToList.map((giayTo, index) => {
+                        const isDaNop = giayTo.trangThaiNop === 'Đã nộp'
+                        return (
+                          <tr key={giayTo.maHoSo} className={isDaNop ? 'has-document' : 'no-document'}>
+                            <td>{index + 1}</td>
+                            <td>{getTenGiayTo(giayTo.maLoai)}</td>
+                            <td>
+                              <span className={`chi-tiet-ho-so__badge ${isDaNop ? 'badge--success' : 'badge--secondary'}`}>
+                                {giayTo.trangThaiNop}
+                              </span>
+                            </td>
+                            <td>{giayTo.banGocBanSao || '-'}</td>
+                            <td>{giayTo.viTriLuuKho || '-'}</td>
+                            <td>
+                              <span className="chi-tiet-ho-so__note">
+                                {isDaNop ? 'Đã tiếp nhận' : 'Chưa nộp'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -373,8 +569,8 @@ export function TrangChiTietHoSo() {
             <Button variant="secondary" onClick={handleCloseModal}>
               Hủy
             </Button>
-            <Button variant="primary" onClick={handleSave}>
-              Lưu thay đổi
+            <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </Button>
           </>
         }

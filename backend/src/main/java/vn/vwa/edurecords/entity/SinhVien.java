@@ -1,6 +1,7 @@
 package vn.vwa.edurecords.entity;
 
 import jakarta.persistence.*;
+import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 import java.time.LocalDateTime;
 
 @Entity
@@ -48,7 +49,7 @@ public class SinhVien {
     private String heDaoTao;
 
     @Column(name = "trang_thai_hoc_vu", nullable = false)
-    private String trangThaiHocVu = "Đang học";
+    private TrangThaiHocVu trangThaiHocVu = TrangThaiHocVu.ĐANG_HỌC;
 
     @Column(name = "ngay_tao", nullable = false)
     private LocalDateTime ngayTao = LocalDateTime.now();
@@ -96,8 +97,8 @@ public class SinhVien {
     public String getHeDaoTao() { return heDaoTao; }
     public void setHeDaoTao(String heDaoTao) { this.heDaoTao = heDaoTao; }
 
-    public String getTrangThaiHocVu() { return trangThaiHocVu; }
-    public void setTrangThaiHocVu(String trangThaiHocVu) { this.trangThaiHocVu = trangThaiHocVu; }
+    public TrangThaiHocVu getTrangThaiHocVu() { return trangThaiHocVu; }
+    public void setTrangThaiHocVu(TrangThaiHocVu trangThaiHocVu) { this.trangThaiHocVu = trangThaiHocVu; }
 
     public LocalDateTime getNgayTao() { return ngayTao; }
     public void setNgayTao(LocalDateTime ngayTao) { this.ngayTao = ngayTao; }

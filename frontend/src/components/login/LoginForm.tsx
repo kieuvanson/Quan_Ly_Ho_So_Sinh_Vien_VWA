@@ -64,7 +64,7 @@ export function LoginForm() {
       const response = await authApi.login(username.trim(), password)
       if (response.success && response.data) {
         const data = response.data
-        authStore.setAccessToken(data.accessToken)
+        authStore.setAccessToken(data.token.accessToken)
         authStore.setUser(data.user)
         try {
           if (remember) {

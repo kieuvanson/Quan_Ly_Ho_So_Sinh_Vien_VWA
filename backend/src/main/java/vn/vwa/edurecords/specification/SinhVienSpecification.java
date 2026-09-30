@@ -7,6 +7,7 @@ import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.entity.SinhVien;
+import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,11 +29,14 @@ public class SinhVienSpecification {
             }
 
             // Lọc theo trạng thái học vụ
+            // Chuyển đổi String từ request thành enum (AttributeConverter sẽ tự động xử lý khi bind)
             if (req.getTrangThaiHocVu() != null && !req.getTrangThaiHocVu().trim().isEmpty()) {
-                predicates.add(cb.equal(
-                    root.get("trangThaiHocVu"),
-                    req.getTrangThaiHocVu().trim()
-                ));
+                try {
+                    TrangThaiHocVu trangThai = TrangThaiHocVu.fromDisplayName(req.getTrangThaiHocVu().trim());
+                    predicates.add(cb.equal(root.get("trangThaiHocVu"), trangThai));
+                } catch (IllegalArgumentException e) {
+                    // Invalid enum value, ignore filter
+                }
             }
 
             // Lọc theo ngành

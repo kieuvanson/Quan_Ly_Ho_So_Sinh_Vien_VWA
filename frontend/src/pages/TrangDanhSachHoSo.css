@@ -28,7 +28,6 @@
 /* Toolbar */
 .trang-danh-sach__toolbar {
   display: flex;
-  flex-wrap: nowrap;
   gap: 16px;
   align-items: center;
   background-color: var(--color-surface);
@@ -36,21 +35,22 @@
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 1;
 }
 
 .trang-danh-sach__filters {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   flex: 1;
   min-width: 0;
 }
 
 .trang-danh-sach__search {
-  flex: 1;
-  min-width: 280px;
-  max-width: 400px;
+  flex: 1.2;
+  min-width: 240px;
+  max-width: 320px;
 }
 
 .trang-danh-sach__select-wrapper {
@@ -66,7 +66,11 @@
 }
 
 .trang-danh-sach__select-wrapper--trang-thai {
-  width: 170px;
+  width: 155px;
+}
+
+.trang-danh-sach__select-wrapper--lop {
+  width: 140px;
 }
 
 .trang-danh-sach__search-icon {
@@ -120,12 +124,13 @@
 
 .trang-danh-sach__actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .trang-danh-sach__actions .btn {
-  width: 110px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .trang-danh-sach__btn {
@@ -380,6 +385,46 @@
   box-shadow: var(--shadow-lg);
   z-index: var(--z-toast);
   animation: slideInRight var(--transition-base) ease-out;
+}
+
+/* Loading State */
+.trang-danh-sach__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  color: var(--color-text-muted);
+  gap: var(--space-4);
+}
+
+.trang-danh-sach__loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error State */
+.trang-danh-sach__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  gap: var(--space-4);
+}
+
+.trang-danh-sach__error-text {
+  color: var(--color-text-danger, #dc2626);
+  font-size: var(--font-size-base);
+  margin: 0;
 }
 
 /* Responsive */

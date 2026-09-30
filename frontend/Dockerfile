@@ -18,15 +18,15 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Create non-root user
-RUN addgroup -S vwa && adduser -S vwa -G vwa
-USER vwa
-
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Install serve to serve static files
+# Install serve (must be before USER switch, or use --unsafe-perm)
 RUN npm install -g serve
+
+# Create non-root user
+RUN addgroup -S vwa && adduser -S vwa -G vwa
+USER vwa
 
 # Expose port
 EXPOSE 5173
