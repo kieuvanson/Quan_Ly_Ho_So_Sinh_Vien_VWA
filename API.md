@@ -526,9 +526,14 @@ Lấy danh sách tất cả người dùng.
 | `GET` | `/api/sinh-vien` | ADMIN, STAFF | Danh sách sinh viên (tìm kiếm, lọc) |
 | `GET` | `/api/sinh-vien/{mssv}` | ADMIN, STAFF | Chi tiết một sinh viên |
 | `GET` | `/api/sinh-vien/stats` | ADMIN | Thống kê tổng quan sinh viên |
+| `GET` | `/api/sinh-vien/export` | ADMIN | Xuất danh sách sinh viên ra file Excel (.xlsx) |
+| `GET` | `/api/sinh-vien/import-template` | ADMIN | Tải file Excel mẫu để import |
+| `POST` | `/api/sinh-vien/import` | ADMIN | Import sinh viên từ file Excel (multipart) |
 | `POST` | `/api/sinh-vien` | ADMIN | Tạo sinh viên mới (chưa triển khai) |
 | `PUT` | `/api/sinh-vien/{mssv}` | ADMIN | Cập nhật sinh viên (chưa triển khai) |
 | `DELETE` | `/api/sinh-vien/{mssv}` | ADMIN | Xóa sinh viên (chưa triển khai) |
+
+> **Hướng dẫn người dùng cho Import/Export:** xem `frontend/README-IMPORT-EXPORT-SINHVIEN.md`.
 
 ---
 
@@ -744,7 +749,131 @@ curl -X GET http://localhost:8081/api/sinh-vien/stats \
 
 ---
 
-### 5.5. `POST /api/sinh-vien`
+### 5.5. `GET /api/sinh-vien/export`
+
+Xuất danh sách sinh viên ra file `.xlsx`, áp dụng **đúng các filter** như `GET /api/sinh-vien`.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Query parameters:** giống `GET /api/sinh-vien`, thêm:
+
+| Param | Type | Default | Mô tả |
+|---|---|---|---|
+| `scope` | string | `filtered` | `filtered` = toàn bộ kết quả lọc (tối đa 10.000 dòng), `page` = chỉ trang hiện tại |
+
+**Response:** file `.xlsx` với `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` và `Content-Disposition: attachment; filename="danh-sach-sinh-vien-<timestamp>.xlsx"`.
+
+**Cấu trúc file Excel (14 cột, theo đúng thứ tự):**
+
+| # | Header | Mô tả |
+|---|---|---|
+| 1 | MSSV | Mã số sinh viên |
+| 2 | Họ tên | |
+| 3 | Ngày sinh | Định dạng `dd/MM/yyyy` |
+| 4 | Giới tính | |
+| 5 | CCCD | |
+| 6 | SĐT | |
+| 7 | Email | |
+| 8 | Quê quán | |
+| 9 | Ngành | |
+| 10 | Lớp | |
+| 11 | Khóa | |
+| 12 | Khóa nhập học | |
+| 13 | Hệ đào tạo | |
+| 14 | Trạng thái học vụ | `Đang học` / `Bảo lưu` / `Đình chỉ` / `Tốt nghiệp` / `Đã rút hồ sơ` |
+
+**Ví dụ test:**
+
+```bash
+# Toàn bộ kết quả lọc (mặc định)
+curl -o danh-sach-sinh-vien.xlsx \
+  -X GET "http://localhost:8081/api/sinh-vien/export?keyword=An&nganh=C%C3%B4ng%20ngh%E1%BB%87%20th%C3%B4ng%20tin" \
+  -H "Authorization: Bearer <token>"
+
+# Chỉ trang hiện tại
+curl -o danh-sach-trang-1.xlsx \
+  -X GET "http://localhost:8081/api/sinh-vien/export?scope=page&page=0&size=10" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 5.6. `GET /api/sinh-vien/import-template`
+
+Tải file Excel mẫu để người dùng chuẩn bị dữ liệu import. File chứa dòng hướng dẫn, header đúng 14 cột, và 1 dòng ví dụ.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Response:** file `mau-import-sinh-vien.xlsx`.
+
+**Ví dụ test:**
+
+```bash
+curl -o mau-import-sinh-vien.xlsx \
+  -X GET http://localhost:8081/api/sinh-vien/import-template \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 5.7. `POST /api/sinh-vien/import`
+
+Upload file `.xlsx` để **thêm mới** / **cập nhật** sinh viên hàng loạt theo MSSV.
+
+**Auth yêu cầu:** `ADMIN` only.
+
+**Request:** `multipart/form-data` với field `file` (`.xlsx` hoặc `.xls`, tối đa ~10 MB).
+
+**Quy tắc xử lý từng dòng:**
+
+| Điều kiện | Kết quả |
+|---|---|
+| Dòng trống | Bỏ qua |
+| `MSSV` trống hoặc `Họ tên` trống | Dòng bị **báo lỗi**, không import |
+| `Trạng thái học vụ` không hợp lệ | Bỏ qua giá trị, mặc định `Đang học` |
+| `Ngày sinh` không parse được | Bỏ qua, để trống |
+| `MSSV` **chưa có** trong DB | Tạo mới |
+| `MSSV` **đã có** trong DB | Cập nhật (giữ `ngayTao`, cập nhật `ngayCapNhat`) |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "successCount": 5,
+    "failureCount": 1,
+    "insertedCount": 3,
+    "updatedCount": 2,
+    "errors": [
+      { "rowNumber": 7, "message": "Thiếu MSSV." }
+    ]
+  },
+  "timestamp": "2026-10-01T23:50:00.000Z"
+}
+```
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 400 | `BAD_REQUEST` | File rỗng hoặc không đúng `.xlsx` / `.xls` |
+| 500 | `IMPORT_FAILED` | Lỗi parse Excel |
+
+**Ví dụ test:**
+
+```bash
+curl -X POST http://localhost:8081/api/sinh-vien/import \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@danh-sach-sinh-vien.xlsx"
+```
+
+---
+
+### 5.8. `POST /api/sinh-vien`
 
 Tạo sinh viên mới.
 
@@ -767,7 +896,7 @@ Tạo sinh viên mới.
 
 ---
 
-### 5.6. `PUT /api/sinh-vien/{mssv}`
+### 5.9. `PUT /api/sinh-vien/{mssv}`
 
 Cập nhật toàn bộ thông tin sinh viên.
 
@@ -779,7 +908,7 @@ Cập nhật toàn bộ thông tin sinh viên.
 
 ---
 
-### 5.7. `DELETE /api/sinh-vien/{mssv}`
+### 5.10. `DELETE /api/sinh-vien/{mssv}`
 
 Xóa sinh viên khỏi hệ thống.
 
@@ -1713,6 +1842,21 @@ curl -i -X POST http://localhost:8081/api/auth/refresh \
 # 17. Logout
 curl -i -X POST http://localhost:8081/api/auth/logout \
   -b cookies.txt -c cookies.txt
+
+# 18. Xuất danh sách sinh viên ra Excel (toàn bộ kết quả lọc)
+curl -o danh-sach-sinh-vien.xlsx \
+  -X GET "http://localhost:8081/api/sinh-vien/export?scope=filtered" \
+  -H "Authorization: Bearer <token>"
+
+# 19. Tải file Excel mẫu để import
+curl -o mau-import-sinh-vien.xlsx \
+  -X GET http://localhost:8081/api/sinh-vien/import-template \
+  -H "Authorization: Bearer <token>"
+
+# 20. Import sinh viên từ file Excel
+curl -X POST http://localhost:8081/api/sinh-vien/import \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@danh-sach-sinh-vien.xlsx"
 ```
 
 ---
@@ -1736,3 +1880,4 @@ curl -i -X POST http://localhost:8081/api/auth/logout \
 - `backend/AGENTS.md` — engineering guide cho backend
 - `backend/API.md` — backend engineering reference
 - `backend/.env.example` — danh sách biến môi trường
+- `frontend/README-IMPORT-EXPORT-SINHVIEN.md` — hướng dẫn người dùng tạo file Excel cho trang Danh sách sinh viên

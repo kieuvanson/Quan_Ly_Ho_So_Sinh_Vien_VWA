@@ -1,7 +1,9 @@
 package vn.vwa.edurecords.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
 import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
+import vn.vwa.edurecords.hibernate.type.TrangThaiHocVuUserType;
 import java.time.LocalDateTime;
 
 @Entity
@@ -48,7 +50,8 @@ public class SinhVien {
     @Column(name = "he_dao_tao", length = 50)
     private String heDaoTao;
 
-    @Column(name = "trang_thai_hoc_vu", nullable = false)
+    @Type(TrangThaiHocVuUserType.class)
+    @Column(name = "trang_thai_hoc_vu", nullable = false, columnDefinition = "trangthaihocvu")
     private TrangThaiHocVu trangThaiHocVu = TrangThaiHocVu.ĐANG_HỌC;
 
     @Column(name = "ngay_tao", nullable = false)

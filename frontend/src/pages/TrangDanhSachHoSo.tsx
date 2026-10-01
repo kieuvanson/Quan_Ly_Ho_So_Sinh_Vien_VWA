@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX, Loader2, RotateCcw } from 'lucide-react'
-import { sinhVienApi } from '../api/sinhVien'
-import { CustomSelect, SearchInput, Button, Toast } from '../components/ui'
+import { ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX, Loader2, RotateCcw, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { sinhVienApi, triggerDownload } from '../api/sinhVien'
+import type { SinhVienSearchParams } from '../api/types'
+import { CustomSelect, SearchInput, Button, Toast, Modal } from '../components/ui'
 import './TrangDanhSachHoSo.css'
 
 const PAGE_SIZE = 10
@@ -90,6 +91,19 @@ export function TrangDanhSachHoSo() {
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
+  // Import modal state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    successCount: number
+    failureCount: number
+    insertedCount: number
+    updatedCount: number
+    errors: Array<{ rowNumber: number; message: string }>
+  } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
   // Fetch data from API
   const fetchData = useCallback(async () => {
     setIsLoading(true)
@@ -172,12 +186,83 @@ export function TrangDanhSachHoSo() {
     setToast({ message, type })
   }
 
-  function handleImportExcel() {
-    showToast('Chức năng đang được phát triển.', 'info')
+  // Lấy filter hiện tại dưới dạng params object (dùng cho cả export và import-result refresh)
+  function getCurrentSearchParams(): SinhVienSearchParams {
+    return {
+      keyword: searchQuery || undefined,
+      nganh: nganhFilter || undefined,
+      khoa: khoaFilter || undefined,
+      lop: lopFilter || undefined,
+      trangThaiHocVu: trangThaiFilter ? TRANG_THAI_TO_ENUM[trangThaiFilter as TrangThaiHocVuType] : undefined,
+      page: currentPage - 1,
+      size: pageSize,
+    }
   }
 
-  function handleExportExcel() {
-    showToast('Chức năng đang được phát triển.', 'info')
+  function handleImportExcel() {
+    setSelectedFile(null)
+    setImportResult(null)
+    setIsImportModalOpen(true)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function handleDownloadTemplate() {
+    try {
+      const blob = await sinhVienApi.downloadTemplate()
+      triggerDownload(blob, 'mau-import-sinh-vien.xlsx')
+      showToast('Đã tải file mẫu.', 'success')
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Không thể tải file mẫu.'
+      showToast(msg, 'error')
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null
+    setSelectedFile(f)
+    setImportResult(null)
+  }
+
+  async function handleSubmitImport() {
+    if (!selectedFile) {
+      showToast('Vui lòng chọn file Excel trước.', 'error')
+      return
+    }
+    setIsImporting(true)
+    try {
+      const res = await sinhVienApi.importExcel(selectedFile)
+      if (res.success) {
+        setImportResult(res.data)
+        showToast(`Import xong: ${res.data.insertedCount} mới, ${res.data.updatedCount} cập nhật, ${res.data.failureCount} lỗi.`, res.data.failureCount > 0 ? 'info' : 'success')
+        // Reload danh sách sau khi import thành công
+        fetchData()
+      } else {
+        showToast(res.message || 'Import thất bại.', 'error')
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Đã xảy ra lỗi khi import.'
+      showToast(msg, 'error')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  function handleCloseImportModal() {
+    setIsImportModalOpen(false)
+    setSelectedFile(null)
+    setImportResult(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function handleExportExcel() {
+    try {
+      const blob = await sinhVienApi.exportExcel(getCurrentSearchParams(), 'filtered')
+      triggerDownload(blob, `danh-sach-sinh-vien-${Date.now()}.xlsx`)
+      showToast('Đã xuất file Excel.', 'success')
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Không thể xuất file Excel.'
+      showToast(msg, 'error')
+    }
   }
 
   // Generate page numbers
@@ -430,6 +515,79 @@ export function TrangDanhSachHoSo() {
           </div>
         )}
       </div>
+
+      {/* Modal Import Excel */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={handleCloseImportModal}
+        title="Import sinh viên từ Excel"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleCloseImportModal} disabled={isImporting}>
+              Đóng
+            </Button>
+            {!importResult && (
+              <Button variant="primary" onClick={handleSubmitImport} disabled={!selectedFile || isImporting}>
+                {isImporting ? 'Đang import...' : 'Import'}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="trang-danh-sach__import">
+          <div className="trang-danh-sach__import-info">
+            <p>
+              Chọn file Excel (.xlsx) theo đúng định dạng mẫu. Hệ thống sẽ tự động <strong>cập nhật</strong> sinh viên có MSSV trùng hoặc <strong>thêm mới</strong> nếu chưa tồn tại.
+            </p>
+            <Button variant="ghost" size="sm" onClick={handleDownloadTemplate}>
+              <FileDown size={16} /> Tải file mẫu
+            </Button>
+          </div>
+
+          <div className="trang-danh-sach__import-upload">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+              disabled={isImporting}
+            />
+            {selectedFile && (
+              <p className="trang-danh-sach__import-filename">
+                <CheckCircle2 size={14} /> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+          </div>
+
+          {importResult && (
+            <div className="trang-danh-sach__import-result">
+              <h4>Kết quả import</h4>
+              <ul>
+                <li><strong>Tổng thành công:</strong> {importResult.successCount}</li>
+                <li><strong>Thêm mới:</strong> {importResult.insertedCount}</li>
+                <li><strong>Cập nhật:</strong> {importResult.updatedCount}</li>
+                <li><strong>Lỗi:</strong> {importResult.failureCount}</li>
+              </ul>
+              {importResult.errors.length > 0 && (
+                <div className="trang-danh-sach__import-errors">
+                  <h5>Chi tiết lỗi:</h5>
+                  <ul>
+                    {importResult.errors.slice(0, 20).map((e, i) => (
+                      <li key={i}>
+                        <AlertCircle size={14} /> Dòng {e.rowNumber}: {e.message}
+                      </li>
+                    ))}
+                    {importResult.errors.length > 20 && (
+                      <li>... và {importResult.errors.length - 20} lỗi khác</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Toast */}
       {toast && (

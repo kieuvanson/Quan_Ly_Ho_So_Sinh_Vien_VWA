@@ -9,7 +9,7 @@ import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
  * - Database lưu: 'Đang học', 'Bảo lưu', ...
  * - Java dùng: ĐANG_HỌC, BẢO_LƯU, ...
  */
-@Converter(autoApply = true)
+@Converter
 public class TrangThaiHocVuConverter implements AttributeConverter<TrangThaiHocVu, String> {
 
     @Override
