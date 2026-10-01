@@ -44,7 +44,7 @@ public class AuthService {
             throw new RuntimeException("Account is disabled");
         }
 
-        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
+        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
         String refreshToken = jwtService.generateRefreshToken(user.getUsername());
         String familyId = refreshTokenService.generateFamilyId();
 
@@ -63,12 +63,13 @@ public class AuthService {
 
         String hashedPassword = passwordEncoder.encode(request.getPassword());
 
-        Role role = Role.STAFF;
+        Role role = Role.ADMIN;
         if (request.getRole() != null) {
             try {
-                role = Role.valueOf(request.getRole().toUpperCase());
+                Role parsed = Role.valueOf(request.getRole().toUpperCase());
+                role = parsed;
             } catch (IllegalArgumentException e) {
-                role = Role.STAFF;
+                role = Role.ADMIN;
             }
         }
 
@@ -83,7 +84,7 @@ public class AuthService {
 
         user = userRepository.save(user);
 
-        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
+        String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
         String refreshToken = jwtService.generateRefreshToken(user.getUsername());
         String familyId = refreshTokenService.generateFamilyId();
 
@@ -115,7 +116,7 @@ public class AuthService {
 
         refreshTokenService.revokeToken(refreshToken);
 
-        String newAccessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name(), user.getMssv());
+        String newAccessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
         String newRefreshToken = jwtService.generateRefreshToken(user.getUsername());
         String newFamilyId = refreshTokenService.generateFamilyId();
 

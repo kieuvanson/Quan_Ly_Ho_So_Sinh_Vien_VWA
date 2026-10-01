@@ -37,7 +37,7 @@ public class User {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "role", nullable = false, columnDefinition = "user_role")
     @Builder.Default
-    private Role role = Role.STAFF;
+    private Role role = Role.ADMIN;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
@@ -50,9 +50,6 @@ public class User {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "mssv", length = 20)
-    private String mssv;
-
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
@@ -64,7 +61,4 @@ public class User {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-
-    public String getMssv() { return mssv; }
-    public void setMssv(String mssv) { this.mssv = mssv; }
 }

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.entity.SinhVien;
+import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 import vn.vwa.edurecords.repository.SinhVienRepository;
 import vn.vwa.edurecords.specification.SinhVienSpecification;
 
@@ -64,9 +65,11 @@ public class SinhVienService {
 
     /**
      * Đếm sinh viên theo trạng thái học vụ.
-     * Dùng nativeQuery vì cột là ENUM type.
+     * Truyền vào displayName tiếng Việt (vd: "Đang học") khớp với giá trị ENUM trong DB.
+     * Service sẽ convert sang enum để Hibernate tự cast qua TrangThaiHocVuConverter.
      */
     public long countByTrangThai(String trangThaiHocVu) {
-        return sinhVienRepository.countByTrangThaiHocVu(trangThaiHocVu);
+        TrangThaiHocVu trangThai = TrangThaiHocVu.fromDisplayName(trangThaiHocVu);
+        return sinhVienRepository.countByTrangThaiHocVu(trangThai);
     }
 }

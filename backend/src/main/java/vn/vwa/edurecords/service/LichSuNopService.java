@@ -13,6 +13,7 @@ import vn.vwa.edurecords.repository.SinhVienRepository;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -82,6 +83,10 @@ public class LichSuNopService {
         return logs.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    public Optional<LichSuNopResponse> getByMaLog(String maLog) {
+        return lichSuNopRepository.findById(maLog).map(this::toResponse);
     }
 
     private LichSuNopResponse toResponse(LichSuNop log) {

@@ -28,98 +28,42 @@ public class HoSoGiayToController {
     }
 
     /**
-     * GET /api/ho-so-giay-to
-     * Lấy danh sách hồ sơ giấy tờ
-     * ADMIN: xem tất cả sinh viên (query theo mssv)
-     * STAFF: chỉ xem giấy tờ của chính mình
+     * GET /api/ho-so-giay-to?mssv=XXX
+     * Lấy danh sách hồ sơ giấy tờ theo MSSV (ADMIN).
      */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<HoSoGiayTo>>> getAll(
-            @RequestParam(required = false) String mssv,
-            @RequestHeader("Authorization") String authHeader) {
+            @RequestParam(required = false) String mssv) {
 
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
-        // STAFF: chỉ xem giấy tờ của chính mình
-        if ("STAFF".equals(role)) {
-            if (mssvFromToken == null || mssvFromToken.isEmpty()) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "NO_MSSV", "Tài khoản Staff chưa được gán MSSV. Liên hệ Admin."));
-            }
-            // Staff chỉ được xem giấy tờ của mình
-            if (mssv != null && !mssv.equals(mssvFromToken)) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem giấy tờ của chính mình"));
-            }
-            List<HoSoGiayTo> result = hoSoGiayToService.getByMssv(mssvFromToken);
-            return ResponseEntity.ok(ApiResponse.success(result));
+        if (mssv == null || mssv.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                    ApiResponse.error(400, "MISSING_PARAM", "Thiếu tham số mssv"));
         }
-
-        // ADMIN: xem tất cả, có thể filter theo mssv
-        if (mssv != null && !mssv.isEmpty()) {
-            List<HoSoGiayTo> result = hoSoGiayToService.getByMssv(mssv);
-            return ResponseEntity.ok(ApiResponse.success(result));
-        }
-        return ResponseEntity.badRequest().body(
-                ApiResponse.error(400, "MISSING_PARAM", "Thiếu tham số mssv"));
+        List<HoSoGiayTo> result = hoSoGiayToService.getByMssv(mssv);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
      * GET /api/ho-so-giay-to/{maHoSo}
-     * Chi tiết một hồ sơ giấy tờ
-     * ADMIN: xem bất kỳ
-     * STAFF: chỉ xem của chính mình
+     * Chi tiết một hồ sơ giấy tờ (ADMIN).
      */
     @GetMapping("/{maHoSo}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<HoSoGiayTo>> getByMaHoSo(
-            @PathVariable String maHoSo,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<HoSoGiayTo>> getByMaHoSo(@PathVariable String maHoSo) {
         return hoSoGiayToService.getByMaHoSo(maHoSo)
-                .map(hoSo -> {
-                    // STAFF: kiểm tra hồ sơ thuộc về mình
-                    if ("STAFF".equals(role) && !hoSo.getMssv().equals(mssvFromToken)) {
-                        return ResponseEntity.status(403).body(
-                                ApiResponse.<HoSoGiayTo>error(403, "FORBIDDEN", "Bạn chỉ có thể xem giấy tờ của chính mình"));
-                    }
-                    return ResponseEntity.ok(ApiResponse.success(hoSo));
-                })
+                .map(hoSo -> ResponseEntity.ok(ApiResponse.success(hoSo)))
                 .orElseGet(() -> ResponseEntity.status(404).body(
                         ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy hồ sơ giấy tờ")));
     }
 
     /**
-     * GET /api/ho-so-giay-to/stats
-     * Thống kê giấy tờ theo mssv
-     * ADMIN: xem thống kê của bất kỳ sinh viên nào
-     * STAFF: chỉ xem thống kê của chính mình
+     * GET /api/ho-so-giay-to/stats?mssv=XXX
+     * Thống kê giấy tờ theo MSSV (ADMIN).
      */
     @GetMapping("/stats")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getStats(
-            @RequestParam String mssv,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
-        // STAFF: chỉ xem thống kê của chính mình
-        if ("STAFF".equals(role)) {
-            if (!mssv.equals(mssvFromToken)) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem thống kê của chính mình"));
-            }
-        }
-
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getStats(@RequestParam String mssv) {
         List<HoSoGiayTo> hoSos = hoSoGiayToService.getByMssv(mssv);
         long total = hoSos.size();
         long daNop = hoSos.stream().filter(h -> "Đã nộp".equals(h.getTrangThaiNop())).count();
@@ -139,9 +83,7 @@ public class HoSoGiayToController {
     }
 
     /**
-     * POST /api/ho-so-giay-to
-     * Tạo hồ sơ giấy tờ mới
-     * Chỉ ADMIN
+     * POST /api/ho-so-giay-to - Tạo mới (ADMIN).
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -159,9 +101,7 @@ public class HoSoGiayToController {
     }
 
     /**
-     * PUT /api/ho-so-giay-to/{maHoSo}
-     * Cập nhật hồ sơ giấy tờ
-     * Chỉ ADMIN
+     * PUT /api/ho-so-giay-to/{maHoSo} - Cập nhật (ADMIN).
      */
     @PutMapping("/{maHoSo}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -178,9 +118,7 @@ public class HoSoGiayToController {
     }
 
     /**
-     * PATCH /api/ho-so-giay-to/{maHoSo}/trang-thai
-     * Cập nhật trạng thái nộp giấy tờ (tick/bỏ tick)
-     * ADMIN: cập nhật bất kỳ giấy tờ nào
+     * PATCH /api/ho-so-giay-to/{maHoSo}/trang-thai - Cập nhật trạng thái nộp (ADMIN).
      */
     @PatchMapping("/{maHoSo}/trang-thai")
     @PreAuthorize("hasRole('ADMIN')")
@@ -198,9 +136,7 @@ public class HoSoGiayToController {
     }
 
     /**
-     * DELETE /api/ho-so-giay-to/{maHoSo}
-     * Xóa hồ sơ giấy tờ
-     * Chỉ ADMIN
+     * DELETE /api/ho-so-giay-to/{maHoSo} - Xóa (ADMIN).
      */
     @DeleteMapping("/{maHoSo}")
     @PreAuthorize("hasRole('ADMIN')")

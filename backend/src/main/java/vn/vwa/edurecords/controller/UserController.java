@@ -24,11 +24,10 @@ public class UserController {
 
     /**
      * GET /api/users/me
-     * Lấy thông tin cá nhân của người dùng đang đăng nhập
-     * Cả ADMIN và STAFF đều có thể xem
+     * Lấy thông tin cá nhân của người dùng đang đăng nhập (ADMIN).
      */
     @GetMapping("/me")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> getCurrentUser(
             @RequestHeader("Authorization") String authHeader) {
 

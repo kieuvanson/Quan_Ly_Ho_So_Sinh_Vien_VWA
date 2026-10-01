@@ -9,7 +9,6 @@ public class UserResponse {
     private String email;
     private String role;
     private Boolean isActive;
-    private String mssv;
     private String createdAt;
     private String updatedAt;
 
@@ -22,7 +21,6 @@ public class UserResponse {
         response.setHoTen(user.getHoTen());
         response.setEmail(user.getEmail());
         response.setRole(user.getRole().name());
-        response.setMssv(user.getMssv());
         response.setIsActive(user.getIsActive());
         response.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
         response.setUpdatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null);
@@ -45,6 +43,4 @@ public class UserResponse {
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
-    public String getMssv() { return mssv; }
-    public void setMssv(String mssv) { this.mssv = mssv; }
 }

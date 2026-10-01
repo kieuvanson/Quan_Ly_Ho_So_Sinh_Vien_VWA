@@ -8,7 +8,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.LichSuNopResponse;
-import vn.vwa.edurecords.security.JwtService;
 import vn.vwa.edurecords.service.LichSuNopService;
 
 import java.util.HashMap;
@@ -21,38 +20,21 @@ import java.util.Map;
 public class LichSuNopController {
 
     private final LichSuNopService lichSuNopService;
-    private final JwtService jwtService;
 
-    public LichSuNopController(LichSuNopService lichSuNopService, JwtService jwtService) {
+    public LichSuNopController(LichSuNopService lichSuNopService) {
         this.lichSuNopService = lichSuNopService;
-        this.jwtService = jwtService;
     }
 
     /**
-     * GET /api/lich-su-nop
-     * Lấy lịch sử nộp theo MSSV
-     * ADMIN: xem lịch sử của bất kỳ sinh viên nào
-     * STAFF: chỉ xem lịch sử của chính mình
+     * GET /api/lich-su-nop?mssv=XXX&page=0&size=20
+     * Lấy lịch sử nộp theo MSSV (ADMIN).
      */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getByMssv(
             @RequestParam String mssv,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
-        // STAFF: chỉ xem lịch sử của chính mình
-        if ("STAFF".equals(role)) {
-            if (!mssv.equals(mssvFromToken)) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem lịch sử của chính mình"));
-            }
-        }
+            @RequestParam(defaultValue = "20") int size) {
 
         Pageable pageable = PageRequest.of(page, size);
         Page<LichSuNopResponse> pageResult = lichSuNopService.getByMssv(mssv, pageable);
@@ -71,70 +53,25 @@ public class LichSuNopController {
 
     /**
      * GET /api/lich-su-nop/ho-so/{maHoSo}
-     * Lấy lịch sử nộp theo mã hồ sơ giấy tờ
+     * Lấy lịch sử nộp theo mã hồ sơ (ADMIN).
      */
     @GetMapping("/ho-so/{maHoSo}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<List<LichSuNopResponse>>> getByMaHoSo(
-            @PathVariable String maHoSo,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<LichSuNopResponse>>> getByMaHoSo(@PathVariable String maHoSo) {
         List<LichSuNopResponse> result = lichSuNopService.getByMaHoSo(maHoSo);
-
-        // STAFF: kiểm tra hồ sơ thuộc về mình
-        if ("STAFF".equals(role)) {
-            if (result.isEmpty()) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "FORBIDDEN", "Bạn không có quyền xem hồ sơ này"));
-            }
-            String firstMssv = result.get(0).getMssv();
-            if (!firstMssv.equals(mssvFromToken)) {
-                return ResponseEntity.status(403).body(
-                        ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem lịch sử của chính mình"));
-            }
-        }
-
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
      * GET /api/lich-su-nop/{maLog}
-     * Lấy chi tiết một bản ghi lịch sử
+     * Lấy chi tiết một bản ghi lịch sử (ADMIN).
      */
     @GetMapping("/{maLog}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<LichSuNopResponse>> getByMaLog(
-            @PathVariable String maLog,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String role = jwtService.extractRole(token);
-        String mssvFromToken = jwtService.extractMssv(token);
-
-        // Lấy tất cả lịch sử để tìm bản ghi
-        List<LichSuNopResponse> allHistory = lichSuNopService.getByMssvAll(mssvFromToken);
-
-        // Tìm bản ghi cụ thể
-        LichSuNopResponse found = allHistory.stream()
-                .filter(r -> r.getMaLog().equals(maLog))
-                .findFirst()
-                .orElse(null);
-
-        if (found == null) {
-            return ResponseEntity.status(404).body(
-                    ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy bản ghi"));
-        }
-
-        // STAFF: kiểm tra hồ sơ thuộc về mình
-        if ("STAFF".equals(role) && !found.getMssv().equals(mssvFromToken)) {
-            return ResponseEntity.status(403).body(
-                    ApiResponse.error(403, "FORBIDDEN", "Bạn chỉ có thể xem lịch sử của chính mình"));
-        }
-
-        return ResponseEntity.ok(ApiResponse.success(found));
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<LichSuNopResponse>> getByMaLog(@PathVariable String maLog) {
+        return lichSuNopService.getByMaLog(maLog)
+                .map(r -> ResponseEntity.ok(ApiResponse.success(r)))
+                .orElseGet(() -> ResponseEntity.status(404).body(
+                        ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy bản ghi")));
     }
 }
