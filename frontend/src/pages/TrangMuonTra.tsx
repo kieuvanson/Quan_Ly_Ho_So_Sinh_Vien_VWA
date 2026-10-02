@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle } from 'lucide-react'
 import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput, FormSelect } from '../components/ui'
-import { phieuMuonApi } from '../api/phieuMuon'
-import type { PhieuMuon } from '../api/types'
+import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
+import { authStore } from '../lib/authStore'
+import type { PhieuMuon, SinhVien as ApiSinhVien, HoSoGiayTo } from '../api/types'
 import './TrangMuonTra.css'
 
 const PAGE_SIZE = 10
@@ -11,7 +12,7 @@ const PAGE_SIZE = 10
 // Type definitions
 // =========================================================================
 
-/** Sinh viên dùng cho lookup MSSV ở form Mượn (backend chưa có endpoint lookup riêng → giữ mock). */
+/** Sinh viên dùng cho form Mượn — lấy từ API /api/sinh-vien/{mssv}. */
 interface SinhVien {
   mssv: string
   hoTen: string
@@ -36,6 +37,8 @@ interface DangMuonItem {
   hanTra: string
   trangThai: string
   ghiChu: string
+  /** Danh sách mã hồ sơ thuộc phiếu (để user chọn khi tạo / xem chi tiết). */
+  danhSachMaHoSo: string[]
 }
 
 /** Row "Lịch sử mượn / trả" — map từ PhieuMuon (backend) + format thời gian cho UI. */
@@ -57,20 +60,6 @@ interface LichSuItem {
 // =========================================================================
 // Mock data — TODO: replace khi backend bổ sung endpoint tương ứng.
 // =========================================================================
-
-// TODO(backend): thay bằng GET /api/sinh-vien/{mssv} khi cần lookup thông tin SV trong form Mượn.
-const MOCK_SINHVIEN: Record<string, SinhVien> = {
-  'B23DCCN001': { mssv: 'B23DCCN001', hoTen: 'Nguyễn Văn An', cccd: '079205001234', sdt: '0912345678', khoa: 'K23', lop: 'CNTT-2023.1' },
-  'B23DCCN002': { mssv: 'B23DCCN002', hoTen: 'Trần Thị Bình', cccd: '079205001235', sdt: '0912345679', khoa: 'K23', lop: 'CNTT-2023.1' },
-  'B23DCCN003': { mssv: 'B23DCCN003', hoTen: 'Lê Minh Cường', cccd: '079205001236', sdt: '0912345680', khoa: 'K23', lop: 'QTKD-2023.1' },
-  'B23DCCN004': { mssv: 'B23DCCN004', hoTen: 'Hoàng Thị E', cccd: '079205001237', sdt: '0912345681', khoa: 'K23', lop: 'KTTN-2023.1' },
-  'B23DCCN005': { mssv: 'B23DCCN005', hoTen: 'Đặng Thị F', cccd: '079205001238', sdt: '0912345682', khoa: 'K23', lop: 'NNA-2023.1' },
-  'B23DCCN006': { mssv: 'B23DCCN006', hoTen: 'Bùi Văn G', cccd: '079205001239', sdt: '0912345683', khoa: 'K23', lop: 'L-2023.1' },
-  'B23DCCN007': { mssv: 'B23DCCN007', hoTen: 'Phạm Thị H', cccd: '079205001240', sdt: '0912345684', khoa: 'K23', lop: 'TCNH-2023.1' },
-  'B23DCCN008': { mssv: 'B23DCCN008', hoTen: 'Vũ Văn I', cccd: '079205001241', sdt: '0912345685', khoa: 'K23', lop: 'QHQT-2023.1' },
-  'B23DCCN009': { mssv: 'B23DCCN009', hoTen: 'Trần Văn J', cccd: '079205001242', sdt: '0912345686', khoa: 'K23', lop: 'CNTT-2023.2' },
-  'B23DCCN010': { mssv: 'B23DCCN010', hoTen: 'Lê Thị L', cccd: '079205001243', sdt: '0912345687', khoa: 'K23', lop: 'QTKD-2023.2' },
-}
 
 // =========================================================================
 // Mapping constants
@@ -122,22 +111,21 @@ const HANH_DONG_OPTIONS = [
   { value: 'Từ chối', label: 'Từ chối' },
 ]
 
-// TODO(backend): danh sách cán bộ — cần endpoint /api/users (lọc role=STAFF/ADMIN) để chọn từ DB.
-const CAN_BO_OPTIONS = [
-  { value: '', label: 'Chọn cán bộ phụ trách' },
-  { value: 'Nguyễn Thị A', label: 'Nguyễn Thị A' },
-  { value: 'Trần Văn B', label: 'Trần Văn B' },
-  { value: 'Phạm Thị D', label: 'Phạm Thị D' },
-  { value: 'Lê Văn E', label: 'Lê Văn E' },
-  { value: 'Nguyễn Văn F', label: 'Nguyễn Văn F' },
-  { value: 'Trần Thị G', label: 'Trần Thị G' },
-  { value: 'Bùi Văn H', label: 'Bùi Văn H' },
-  { value: 'Đặng Văn I', label: 'Đặng Văn I' },
-]
-
 // =========================================================================
 // Component
 // =========================================================================
+
+/** Tính hạn trả mặc định = ngày mượn + 7 ngày. */
+function defaultHanTra(ngayMuon: string): string {
+  if (!ngayMuon) return ''
+  try {
+    const d = new Date(ngayMuon)
+    d.setDate(d.getDate() + 7)
+    return d.toISOString().split('T')[0]
+  } catch {
+    return ''
+  }
+}
 
 export function TrangMuonTra() {
   // ----- Tab state -----
@@ -175,17 +163,26 @@ export function TrangMuonTra() {
   const [modalChiTietOpen, setModalChiTietOpen] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<DangMuonItem | null>(null)
 
-  // ----- Student info (form Mượn) — giữ mock cho đến khi có endpoint lookup -----
+  // ----- Student info (form Mượn) — lookup từ API /api/sinh-vien/{mssv} -----
   const [sinhVienInfo, setSinhVienInfo] = useState<SinhVien | null>(null)
+  const [isLookingUpSv, setIsLookingUpSv] = useState(false)
   const [mssvError, setMssvError] = useState('')
+
+  // ----- Danh sách hồ sơ giấy tờ của SV (để user tick chọn khi tạo phiếu) -----
+  const [hoSoList, setHoSoList] = useState<HoSoGiayTo[]>([])
+  const [isLoadingHoSo, setIsLoadingHoSo] = useState(false)
+  const [selectedMaHoSo, setSelectedMaHoSo] = useState<string[]>([])
+
+  // ----- Cán bộ phụ trách = user đang đăng nhập (lấy từ auth store) -----
+  const currentUser = authStore.getUser()
+  const canBoPhuTrach = currentUser?.hoTen || currentUser?.username || '—'
 
   // ----- Form state: Mượn -----
   const [muonForm, setMuonForm] = useState({
     mssv: '',
-    loaiHoSo: '',
-    canBoPhuTrach: '',
+    loaiHoSo: 'Mượn tạm thời',
     ngayMuon: new Date().toISOString().split('T')[0],
-    hanTra: '',
+    hanTra: defaultHanTra(new Date().toISOString().split('T')[0]),
     ghiChu: '',
   })
 
@@ -201,9 +198,6 @@ export function TrangMuonTra() {
   // Map PhieuMuon (backend DTO) → DangMuonItem (UI row)
   // =========================================================================
   function mapPhieuMuonToRow(p: PhieuMuon): DangMuonItem {
-    // Backend không trả cccd/sdt/khoa/lop trong PhieuMuonResponse (chỉ có hoTenSinhVien).
-    // Những field này UI đang hiển thị — tạm để rỗng; nếu cần, bổ sung endpoint detail phiếu.
-    // canBoPhuTrach: backend không có — dùng nguoiTao làm proxy.
     return {
       maPhieu: p.maPhieu,
       mssv: p.mssv,
@@ -218,6 +212,7 @@ export function TrangMuonTra() {
       hanTra: p.ngayTraDuKien || '',
       trangThai: p.trangThai,
       ghiChu: p.ghiChu || p.lyDo || '',
+      danhSachMaHoSo: p.danhSachMaHoSo || [],
     }
   }
 
@@ -360,60 +355,114 @@ export function TrangMuonTra() {
   }
 
   function openModalMuon() {
+    const today = new Date().toISOString().split('T')[0]
     setMuonForm({
       mssv: '',
-      loaiHoSo: '',
-      canBoPhuTrach: '',
-      ngayMuon: new Date().toISOString().split('T')[0],
-      hanTra: '',
+      loaiHoSo: 'Mượn tạm thời',
+      ngayMuon: today,
+      hanTra: defaultHanTra(today),
       ghiChu: '',
     })
     setSinhVienInfo(null)
     setMssvError('')
+    setHoSoList([])
+    setSelectedMaHoSo([])
     setModalMuonOpen(true)
   }
 
-  function handleMssvChange(value: string) {
+  /** Lookup sinh viên qua API; nếu có → load luôn danh sách hồ sơ giấy tờ. */
+  const handleMssvChange = useCallback(async (value: string) => {
     setMuonForm((prev) => ({ ...prev, mssv: value }))
 
     if (!value.trim()) {
       setSinhVienInfo(null)
       setMssvError('')
+      setHoSoList([])
+      setSelectedMaHoSo([])
       return
     }
 
-    const sv = MOCK_SINHVIEN[value.toUpperCase()]
-    if (sv) {
-      setSinhVienInfo(sv)
-      setMssvError('')
-    } else {
-      setSinhVienInfo(null)
-      setMssvError('Không tìm thấy sinh viên với MSSV này.')
-    }
-  }
+    setIsLookingUpSv(true)
+    setMssvError('')
+    try {
+      const sv = await lookupApi.getSinhVien(value.trim())
+      if (sv) {
+        setSinhVienInfo({
+          mssv: sv.mssv,
+          hoTen: sv.hoTen,
+          cccd: sv.cccd || '',
+          sdt: sv.sdt || '',
+          khoa: sv.khoa || '',
+          lop: sv.lop || '',
+        })
 
-  /**
-   * TODO(backend): chức năng Mượn hồ sơ.
-   * Hiện KHÔNG có endpoint POST /api/phieu-muon trong backend (đã verify PhieuXuatHoSoController).
-   * Khi backend sẵn sàng, thay bằng:
-   *   await phieuMuonApi.create({ mssv, loaiPhieu, lyDo, ngayMuon, ngayTraDuKien, danhSachMaHoSo })
-   * rồi gọi fetchDangMuon() để refresh.
-   */
-  function handleSubmitMuon() {
+        // Load danh sách hồ sơ giấy tờ của SV
+        setIsLoadingHoSo(true)
+        const hoSos = await lookupApi.getHoSoGiayTo(value.trim())
+        setHoSoList(hoSos)
+        setSelectedMaHoSo([]) // user phải tự tick
+        setIsLoadingHoSo(false)
+      } else {
+        setSinhVienInfo(null)
+        setHoSoList([])
+        setSelectedMaHoSo([])
+        setMssvError('Không tìm thấy sinh viên với MSSV này.')
+      }
+    } catch {
+      setSinhVienInfo(null)
+      setHoSoList([])
+      setSelectedMaHoSo([])
+      setMssvError('Lỗi tra cứu sinh viên. Vui lòng thử lại.')
+    } finally {
+      setIsLookingUpSv(false)
+    }
+  }, [])
+
+  /** Submit tạo phiếu mượn / rút hồ sơ — gọi POST /api/phieu-muon. */
+  async function handleSubmitMuon() {
     if (!muonForm.mssv || !sinhVienInfo) {
       showToast('Vui lòng nhập MSSV hợp lệ', 'error')
       return
     }
-    if (!muonForm.loaiHoSo || !muonForm.canBoPhuTrach || !muonForm.hanTra) {
-      showToast('Vui lòng điền đầy đủ thông tin bắt buộc', 'error')
+    if (!muonForm.loaiHoSo) {
+      showToast('Vui lòng chọn loại hồ sơ', 'error')
+      return
+    }
+    if (muonForm.loaiHoSo === 'Mượn tạm thời' && !muonForm.hanTra) {
+      showToast('Phiếu mượn tạm thời phải có hạn trả', 'error')
+      return
+    }
+    if (selectedMaHoSo.length === 0) {
+      showToast('Vui lòng chọn ít nhất 1 hồ sơ giấy tờ', 'error')
+      return
+    }
+    if (!muonForm.ghiChu.trim()) {
+      showToast('Vui lòng nhập lý do mượn / rút', 'error')
       return
     }
 
-    showToast(
-      'Chức năng tạo phiếu mượn chưa được backend hỗ trợ. Sẽ hoạt động khi bổ sung POST /api/phieu-muon.',
-      'info'
-    )
-    setModalMuonOpen(false)
+    try {
+      const res = await phieuMuonApi.create({
+        mssv: muonForm.mssv,
+        loaiPhieu: muonForm.loaiHoSo,
+        ngayMuon: muonForm.ngayMuon,
+        ngayTraDuKien: muonForm.loaiHoSo === 'Mượn tạm thời' ? muonForm.hanTra : undefined,
+        lyDo: muonForm.ghiChu,
+        ghiChu: undefined,
+        danhSachMaHoSo: selectedMaHoSo,
+      })
+      if (res.success) {
+        showToast('Tạo phiếu thành công. Mã phiếu: ' + (res.data?.maPhieu || ''), 'success')
+        setModalMuonOpen(false)
+        fetchDangMuon()
+        fetchLichSu()
+      } else {
+        showToast(res.message || 'Tạo phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    }
   }
 
   function openModalTra(record: DangMuonItem) {
@@ -423,20 +472,27 @@ export function TrangMuonTra() {
     setModalChiTietOpen(false)
   }
 
-  /**
-   * TODO(backend): chức năng Trả hồ sơ.
-   * Backend chưa có endpoint PUT /api/phieu-muon/{maPhieu}/tra.
-   * Hiện chỉ là demo local; refresh trang sẽ mất thay đổi.
-   */
-  function handleSubmitTra() {
+  /** Submit trả hồ sơ — gọi PUT /api/phieu-muon/{maPhieu}/tra. */
+  async function handleSubmitTra() {
     if (!selectedRecord) return
 
-    showToast(
-      'Chức năng trả hồ sơ chưa được backend hỗ trợ. Sẽ hoạt động khi bổ sung PUT /api/phieu-muon/{id}/tra.',
-      'info'
-    )
-    setModalTraOpen(false)
-    setSelectedRecord(null)
+    try {
+      const res = await phieuMuonApi.tra(selectedRecord.maPhieu, {
+        ghiChu: traForm.ghiChuTra || undefined,
+      })
+      if (res.success) {
+        showToast('Trả hồ sơ thành công', 'success')
+        setModalTraOpen(false)
+        setSelectedRecord(null)
+        fetchDangMuon()
+        fetchLichSu()
+      } else {
+        showToast(res.message || 'Trả hồ sơ thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    }
   }
 
   // Page numbers cho pagination UI
@@ -903,11 +959,11 @@ export function TrangMuonTra() {
         )}
       </div>
 
-      {/* Modal Mượn hồ sơ — TODO: chưa nối backend */}
+      {/* Modal Mượn hồ sơ — nối API POST /api/phieu-muon */}
       <Modal
         isOpen={modalMuonOpen}
         onClose={() => setModalMuonOpen(false)}
-        title="Mượn hồ sơ"
+        title="Mượn / rút hồ sơ"
         size="lg"
         footer={
           <>
@@ -915,7 +971,7 @@ export function TrangMuonTra() {
               Hủy
             </Button>
             <Button variant="primary" onClick={handleSubmitMuon}>
-              Xác nhận mượn
+              Xác nhận
             </Button>
           </>
         }
@@ -928,6 +984,12 @@ export function TrangMuonTra() {
               onChange={(e) => handleMssvChange(e.target.value)}
               placeholder="Nhập MSSV (VD: B23DCCN001)"
             />
+            {isLookingUpSv && (
+              <div className="trang-muon-tra__info-row" style={{ marginTop: 6, color: '#6b7280' }}>
+                <Loader2 size={14} className="trang-muon-tra__loading-icon" />
+                <span>Đang tra cứu sinh viên...</span>
+              </div>
+            )}
             {mssvError && (
               <div className="trang-muon-tra__error-message">
                 <AlertCircle size={14} />
@@ -947,62 +1009,118 @@ export function TrangMuonTra() {
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Số CCCD</span>
-                    <span className="trang-muon-tra__info-value">{sinhVienInfo.cccd}</span>
+                    <span className="trang-muon-tra__info-value">{sinhVienInfo.cccd || '—'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Số điện thoại</span>
-                    <span className="trang-muon-tra__info-value">{sinhVienInfo.sdt}</span>
+                    <span className="trang-muon-tra__info-value">{sinhVienInfo.sdt || '—'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Khóa</span>
-                    <span className="trang-muon-tra__info-value">{sinhVienInfo.khoa}</span>
+                    <span className="trang-muon-tra__info-value">{sinhVienInfo.khoa || '—'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Lớp</span>
-                    <span className="trang-muon-tra__info-value">{sinhVienInfo.lop}</span>
+                    <span className="trang-muon-tra__info-value">{sinhVienInfo.lop || '—'}</span>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
+          {sinhVienInfo && (
+            <div className="trang-muon-tra__form-section">
+              <h3 className="trang-muon-tra__form-section-title">
+                Chọn hồ sơ giấy tờ * ({selectedMaHoSo.length}/{hoSoList.length} đã chọn)
+              </h3>
+              {isLoadingHoSo ? (
+                <div className="trang-muon-tra__loading" style={{ padding: 16 }}>
+                  <Loader2 className="trang-muon-tra__loading-icon" size={20} />
+                  <p>Đang tải hồ sơ giấy tờ...</p>
+                </div>
+              ) : hoSoList.length === 0 ? (
+                <p style={{ color: '#6b7280' }}>Sinh viên chưa có hồ sơ giấy tờ nào.</p>
+              ) : (
+                <div className="trang-muon-tra__hoso-list">
+                  {hoSoList.map((hs) => (
+                    <label key={hs.maHoSo} className="trang-muon-tra__hoso-item">
+                      <input
+                        type="checkbox"
+                        checked={selectedMaHoSo.includes(hs.maHoSo)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
+                          } else {
+                            setSelectedMaHoSo((prev) => prev.filter((id) => id !== hs.maHoSo))
+                          }
+                        }}
+                      />
+                      <span className="trang-muon-tra__hoso-code">{hs.maHoSo}</span>
+                      <span className="trang-muon-tra__hoso-loai">{hs.maLoai}</span>
+                      <span className="trang-muon-tra__hoso-trangthai">{hs.trangThaiNop}</span>
+                      {hs.viTriLuuKho && (
+                        <span className="trang-muon-tra__hoso-vitri">{hs.viTriLuuKho}</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="trang-muon-tra__form-section">
-            <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu mượn</h3>
+            <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu</h3>
             <div className="trang-muon-tra__form-grid">
               <FormSelect
                 label="Loại hồ sơ *"
                 value={muonForm.loaiHoSo}
-                onChange={(e) => setMuonForm((prev) => ({ ...prev, loaiHoSo: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setMuonForm((prev) => ({
+                    ...prev,
+                    loaiHoSo: v,
+                    hanTra: v === 'Mượn tạm thời' ? defaultHanTra(prev.ngayMuon) : '',
+                  }))
+                }}
                 options={LOAI_HO_SO_CHON_OPTIONS}
                 placeholder="Chọn loại hồ sơ"
               />
-              <FormSelect
-                label="Cán bộ phụ trách *"
-                value={muonForm.canBoPhuTrach}
-                onChange={(e) =>
-                  setMuonForm((prev) => ({ ...prev, canBoPhuTrach: e.target.value }))
-                }
-                options={CAN_BO_OPTIONS}
-                placeholder="Chọn cán bộ phụ trách"
-              />
+              <div className="trang-muon-tra__form-item">
+                <label className="trang-muon-tra__form-label">Cán bộ phụ trách</label>
+                <input
+                  className="trang-muon-tra__form-input"
+                  type="text"
+                  value={canBoPhuTrach}
+                  disabled
+                />
+              </div>
               <FormInput
                 label="Ngày mượn *"
                 type="date"
                 value={muonForm.ngayMuon}
-                onChange={(e) => setMuonForm((prev) => ({ ...prev, ngayMuon: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setMuonForm((prev) => ({
+                    ...prev,
+                    ngayMuon: v,
+                    hanTra: prev.loaiHoSo === 'Mượn tạm thời' ? defaultHanTra(v) : prev.hanTra,
+                  }))
+                }}
               />
-              <FormInput
-                label="Hạn trả *"
-                type="date"
-                value={muonForm.hanTra}
-                onChange={(e) => setMuonForm((prev) => ({ ...prev, hanTra: e.target.value }))}
-              />
+              {muonForm.loaiHoSo === 'Mượn tạm thời' && (
+                <FormInput
+                  label="Hạn trả *"
+                  type="date"
+                  value={muonForm.hanTra}
+                  onChange={(e) => setMuonForm((prev) => ({ ...prev, hanTra: e.target.value }))}
+                />
+              )}
               <div className="trang-muon-tra__form-full">
                 <FormInput
-                  label="Ghi chú"
+                  label="Lý do mượn / rút *"
                   value={muonForm.ghiChu}
                   onChange={(e) => setMuonForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
-                  placeholder="Nhập ghi chú (nếu có)"
+                  placeholder="Nhập lý do mượn hoặc rút hồ sơ"
                 />
               </div>
             </div>

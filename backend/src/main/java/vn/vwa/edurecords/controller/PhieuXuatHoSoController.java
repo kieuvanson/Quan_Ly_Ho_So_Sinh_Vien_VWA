@@ -1,13 +1,22 @@
 package vn.vwa.edurecords.controller;
 
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import vn.vwa.edurecords.dto.request.PhieuMuonRequest;
 import vn.vwa.edurecords.dto.request.PhieuMuonSearchRequest;
+import vn.vwa.edurecords.dto.request.PhieuTraRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.dto.response.PhieuMuonResponse;
@@ -28,16 +37,6 @@ public class PhieuXuatHoSoController {
 
     /**
      * GET /api/phieu-muon/dang-muon
-     *
-     * Danh sách hồ sơ đang mượn (mỗi dòng = 1 phiếu xuất hồ sơ).
-     *
-     * Filter:
-     * - keyword  : tìm trên maPhieu | mssv | hoTen | lyDo (LIKE, không phân biệt hoa thường)
-     * - trangThai: trạng thái phiếu. Mặc định 'Đang mượn' nếu không truyền.
-     * - loaiHoSo : 'Mượn tạm thời' | 'Rút vĩnh viễn'
-     * - page, size: phân trang (mặc định 0, 10)
-     *
-     * Yêu cầu JWT (đã được cấu hình qua SecurityFilterChain — endpoint bất kỳ ngoài /api/auth/** đều yêu cầu xác thực).
      */
     @GetMapping("/dang-muon")
     public ResponseEntity<ApiResponse<PagedResponse<List<PhieuMuonResponse>>>> getDanhSachDangMuon(
@@ -66,18 +65,6 @@ public class PhieuXuatHoSoController {
 
     /**
      * GET /api/phieu-muon/lich-su
-     *
-     * Lịch sử mượn / trả (mỗi dòng = 1 phiếu xuất hồ sơ, MỌI trạng thái).
-     *
-     * Filter (tất cả optional):
-     * - keyword  : tìm trên maPhieu | mssv | hoTen | lyDo
-     * - trangThai: lọc theo trạng thái (7 giá trị ENUM). Mặc định = NULL = lấy tất cả.
-     * - loaiHoSo : 'Mượn tạm thời' | 'Rút vĩnh viễn'
-     * - fromDate : yyyy-MM-dd, lọc phiếu có ngayTao >= fromDate
-     * - toDate   : yyyy-MM-dd, lọc phiếu có ngayTao < toDate + 1 day (inclusive)
-     * - page, size: phân trang (mặc định 0, 10)
-     *
-     * Yêu cầu JWT.
      */
     @GetMapping("/lich-su")
     public ResponseEntity<ApiResponse<PagedResponse<List<PhieuMuonResponse>>>> getLichSuMuonTra(
@@ -106,5 +93,49 @@ public class PhieuXuatHoSoController {
                 new PagedResponse<>(result.getContent(), meta);
 
         return ResponseEntity.ok(ApiResponse.success("Lấy lịch sử mượn trả thành công", paged));
+    }
+
+    /**
+     * GET /api/phieu-muon/{maPhieu}
+     * Lấy chi tiết 1 phiếu.
+     */
+    @GetMapping("/{maPhieu}")
+    public ResponseEntity<ApiResponse<PhieuMuonResponse>> getById(@PathVariable String maPhieu) {
+        PhieuMuonResponse result = phieuXuatHoSoService.getById(maPhieu);
+        return ResponseEntity.ok(ApiResponse.success("Lấy chi tiết phiếu thành công", result));
+    }
+
+    /**
+     * POST /api/phieu-muon
+     * Tạo phiếu mượn / rút hồ sơ mới.
+     *
+     * Body: { mssv, loaiPhieu, ngayMuon, ngayTraDuKien, lyDo, ghiChu, danhSachMaHoSo[] }
+     *
+     * Cán bộ phụ trách (nguoiTao) = user đang đăng nhập (lấy từ JWT).
+     * Mặc định trạng thái mới = 'Chờ duyệt' (cán bộ duyệt sau).
+     */
+    @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<PhieuMuonResponse>> createPhieu(
+            @Valid @RequestBody PhieuMuonRequest req) {
+        PhieuMuonResponse result = phieuXuatHoSoService.createPhieu(req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Tạo phiếu mượn / rút hồ sơ thành công", result));
+    }
+
+    /**
+     * PUT /api/phieu-muon/{maPhieu}/tra
+     * Trả hồ sơ: set trangThai = 'Đã trả' (Mượn) hoặc 'Hoàn tất' (Rút), set ngayTraThucTe = hôm nay.
+     *
+     * Body (optional): { ghiChu }
+     */
+    @PutMapping("/{maPhieu}/tra")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<PhieuMuonResponse>> traPhieu(
+            @PathVariable String maPhieu,
+            @RequestBody(required = false) PhieuTraRequest req) {
+        PhieuMuonResponse result = phieuXuatHoSoService.traPhieu(maPhieu,
+                req != null ? req : new PhieuTraRequest());
+        return ResponseEntity.ok(ApiResponse.success("Trả hồ sơ thành công", result));
     }
 }

@@ -445,6 +445,92 @@
   color: var(--color-text);
 }
 
+/* ========================================
+   Form item (label + input) — dùng cho input readonly "Cán bộ phụ trách"
+   ======================================== */
+.trang-muon-tra__form-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.trang-muon-tra__form-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.trang-muon-tra__form-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+}
+
+.trang-muon-tra__form-input:disabled {
+  opacity: 1;
+}
+
+/* ========================================
+   Danh sách hồ sơ giấy tờ (checkbox list trong modal Mượn)
+   ======================================== */
+.trang-muon-tra__hoso-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+}
+
+.trang-muon-tra__hoso-item {
+  display: grid;
+  grid-template-columns: auto 80px 60px 110px 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  font-size: var(--font-size-sm);
+}
+
+.trang-muon-tra__hoso-item:hover {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.trang-muon-tra__hoso-item input[type='checkbox'] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.trang-muon-tra__hoso-code {
+  font-family: var(--font-mono, monospace);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.trang-muon-tra__hoso-loai {
+  color: var(--color-text-secondary);
+}
+
+.trang-muon-tra__hoso-trangthai {
+  color: var(--color-text);
+}
+
+.trang-muon-tra__hoso-vitri {
+  color: var(--color-text-tertiary, #6b7280);
+  font-style: italic;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .trang-muon-tra__form-grid,

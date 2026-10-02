@@ -10,10 +10,13 @@ import {
   AlertCircle,
   Pencil,
   Loader2,
+  Trash2,
+  Save,
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
 import { hoSoGiayToApi } from '../api/hoSoGiayTo'
 import { loaiGiayToApi } from '../api/loaiGiayTo'
+import { apiClient } from '../api/client'
 import type { SinhVien, HoSoGiayTo, LoaiGiayTo } from '../api/types'
 import { Button, Modal, FormInput, FormSelect, Toast } from '../components/ui'
 import './TrangChiTietHoSo.css'
@@ -39,6 +42,14 @@ const TRANG_THAI_MAPPING: Record<string, { label: string; className: string }> =
   'Đình chỉ': { label: 'Đình chỉ', className: 'badge--danger' },
   'Tốt nghiệp': { label: 'Tốt nghiệp', className: 'badge--primary' },
   'Đã rút hồ sơ': { label: 'Đã rút hồ sơ', className: 'badge--secondary' },
+}
+
+// Mapping trạng thái nộp giấy tờ
+const TRANG_THAI_NOP_MAPPING: Record<string, { label: string; className: string }> = {
+  'Đã nộp': { label: 'Đã nộp', className: 'badge--success' },
+  'Chưa nộp': { label: 'Chưa nộp', className: 'badge--secondary' },
+  'Thiếu': { label: 'Thiếu', className: 'badge--warning' },
+  'Không hợp lệ': { label: 'Không hợp lệ', className: 'badge--danger' },
 }
 
 export function TrangChiTietHoSo() {
@@ -67,6 +78,18 @@ export function TrangChiTietHoSo() {
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
+  // Modal Bổ sung giấy tờ
+  const [isBoSungModalOpen, setIsBoSungModalOpen] = useState(false)
+  const [isSubmittingBoSung, setIsSubmittingBoSung] = useState(false)
+  /** Loại giấy tờ CHƯA có trong hồ sơ SV (để user chọn khi bổ sung). */
+  const [availableLoaiGiayTo, setAvailableLoaiGiayTo] = useState<LoaiGiayTo[]>([])
+  const [boSungForm, setBoSungForm] = useState({
+    maLoai: '',
+    trangThaiNop: 'Đã nộp',
+    banGocBanSao: 'Bản sao',
+    viTriLuuKho: '',
+    ghiChu: '',
+  })
   const [formData, setFormData] = useState<FormData>({
     hoTen: '',
     mssv: '',
@@ -187,8 +210,106 @@ export function TrangChiTietHoSo() {
     setToast({ message, type })
   }
 
-  function handleBoSung() {
-    showToast('Chức năng đang được phát triển.')
+  /** Mở modal Bổ sung giấy tờ — load loại giấy tờ chưa có trong hồ sơ SV. */
+  function handleOpenBoSungModal() {
+    if (!sinhVien) return
+
+    // Lấy loại giấy tờ CHƯA có trong giayToList
+    const existingMaLoai = new Set(giayToList.map((g) => g.maLoai))
+    const available = loaiGiayToList.filter(
+      (lgt) => lgt.dangSuDung && !existingMaLoai.has(lgt.maLoai)
+    )
+    setAvailableLoaiGiayTo(available)
+    setBoSungForm({
+      maLoai: available[0]?.maLoai || '',
+      trangThaiNop: 'Đã nộp',
+      banGocBanSao: 'Bản sao',
+      viTriLuuKho: '',
+      ghiChu: '',
+    })
+    setIsBoSungModalOpen(true)
+  }
+
+  function handleCloseBoSungModal() {
+    setIsBoSungModalOpen(false)
+  }
+
+  /** Submit form Bổ sung — gọi POST /api/ho-so-giay-to. */
+  async function handleSubmitBoSung() {
+    if (!mssv) return
+    if (!boSungForm.maLoai) {
+      showToast('Vui lòng chọn loại giấy tờ', 'error')
+      return
+    }
+
+    setIsSubmittingBoSung(true)
+    try {
+      const res = await hoSoGiayToApi.create(mssv, boSungForm.maLoai, {
+        trangThaiNop: boSungForm.trangThaiNop,
+        banGocBanSao: boSungForm.banGocBanSao,
+        viTriLuuKho: boSungForm.viTriLuuKho || undefined,
+        ghiChu: boSungForm.ghiChu || undefined,
+      })
+      if (res.success) {
+        showToast(
+          `Bổ sung giấy tờ thành công. Mã hồ sơ: ${res.data?.maHoSo || ''}`,
+          'success'
+        )
+        setIsBoSungModalOpen(false)
+        // Refresh danh sách giấy tờ
+        setGiayToList([])
+      } else {
+        showToast(res.message || 'Bổ sung giấy tờ thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(
+        e.response?.data?.message || 'Lỗi kết nối máy chủ. Vui lòng thử lại.',
+        'error'
+      )
+    } finally {
+      setIsSubmittingBoSung(false)
+    }
+  }
+
+  /** Tick / bỏ tick nhanh trạng thái nộp — gọi PATCH /trang-thai. */
+  async function handleToggleTrangThaiNop(giayTo: HoSoGiayTo) {
+    const newTrangThai = giayTo.trangThaiNop === 'Đã nộp' ? 'Chưa nộp' : 'Đã nộp'
+    try {
+      const res = await hoSoGiayToApi.capNhatTrangThai(giayTo.maHoSo, newTrangThai)
+      if (res.success) {
+        // Update local state
+        setGiayToList((prev) =>
+          prev.map((g) =>
+            g.maHoSo === giayTo.maHoSo ? { ...g, trangThaiNop: newTrangThai } : g
+          )
+        )
+        showToast(
+          newTrangThai === 'Đã nộp'
+            ? 'Đã đánh dấu ĐÃ NỘP. Lịch sử nộp đã được ghi.'
+            : 'Đã đánh dấu CHƯA NỘP. Lịch sử nộp đã được ghi.',
+          'success'
+        )
+      } else {
+        showToast(res.message || 'Cập nhật trạng thái thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    }
+  }
+
+  /** Xóa 1 hồ sơ giấy tờ — gọi DELETE. */
+  async function handleDeleteGiayTo(giayTo: HoSoGiayTo) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa hồ sơ ${giayTo.maHoSo}?`)) return
+    try {
+      await apiClient.delete(`/api/ho-so-giay-to/${encodeURIComponent(giayTo.maHoSo)}`)
+      setGiayToList((prev) => prev.filter((g) => g.maHoSo !== giayTo.maHoSo))
+      showToast('Xóa hồ sơ giấy tờ thành công', 'success')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Xóa thất bại', 'error')
+    }
   }
 
   function handleMuonTra() {
@@ -388,7 +509,7 @@ export function TrangChiTietHoSo() {
 
       {/* Quick Actions */}
       <div className="chi-tiet-ho-so__actions">
-        <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleBoSung}>
+        <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleOpenBoSungModal}>
           Bổ sung giấy tờ
         </Button>
         <Button variant="secondary" icon={<ArrowRightLeft size={18} />} onClick={handleMuonTra}>
@@ -520,24 +641,41 @@ export function TrangChiTietHoSo() {
                   <table className="chi-tiet-ho-so__table">
                     <thead>
                       <tr>
-                        <th>STT</th>
+                        <th style={{ width: 40 }}>Đã nộp</th>
+                        <th style={{ width: 90 }}>Mã hồ sơ</th>
                         <th>Tên giấy tờ</th>
-                        <th>Trạng thái nộp</th>
-                        <th>Bản gốc/Bản sao</th>
-                        <th>Vị trí lưu kho</th>
+                        <th style={{ width: 130 }}>Trạng thái nộp</th>
+                        <th style={{ width: 120 }}>Bản gốc/Bản sao</th>
+                        <th style={{ width: 140 }}>Vị trí lưu kho</th>
                         <th>Ghi chú</th>
+                        <th style={{ width: 80 }}>Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
                       {giayToList.map((giayTo, index) => {
                         const isDaNop = giayTo.trangThaiNop === 'Đã nộp'
+                        const trangThaiInfo = TRANG_THAI_NOP_MAPPING[giayTo.trangThaiNop] || {
+                          label: giayTo.trangThaiNop,
+                          className: 'badge--secondary',
+                        }
                         return (
                           <tr key={giayTo.maHoSo} className={isDaNop ? 'has-document' : 'no-document'}>
-                            <td>{index + 1}</td>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={isDaNop}
+                                onChange={() => handleToggleTrangThaiNop(giayTo)}
+                                aria-label={`Đánh dấu ${giayTo.maHoSo} đã nộp`}
+                                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              />
+                            </td>
+                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                              {giayTo.maHoSo}
+                            </td>
                             <td>{getTenGiayTo(giayTo.maLoai)}</td>
                             <td>
-                              <span className={`chi-tiet-ho-so__badge ${isDaNop ? 'badge--success' : 'badge--secondary'}`}>
-                                {giayTo.trangThaiNop}
+                              <span className={`chi-tiet-ho-so__badge ${trangThaiInfo.className}`}>
+                                {trangThaiInfo.label}
                               </span>
                             </td>
                             <td>{giayTo.banGocBanSao || '-'}</td>
@@ -546,6 +684,28 @@ export function TrangChiTietHoSo() {
                               <span className="chi-tiet-ho-so__note">
                                 {isDaNop ? 'Đã tiếp nhận' : 'Chưa nộp'}
                               </span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGiayTo(giayTo)}
+                                style={{
+                                  background: 'transparent',
+                                  border: '1px solid #dc2626',
+                                  color: '#dc2626',
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  fontSize: 12,
+                                }}
+                                title="Xóa hồ sơ giấy tờ"
+                              >
+                                <Trash2 size={14} />
+                                Xóa
+                              </button>
                             </td>
                           </tr>
                         )
@@ -639,6 +799,94 @@ export function TrangChiTietHoSo() {
               onChange={handleSelectChange}
               options={nganhOptions}
               placeholder="-- Chọn --"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Bổ sung giấy tờ */}
+      <Modal
+        isOpen={isBoSungModalOpen}
+        onClose={handleCloseBoSungModal}
+        title="Bổ sung giấy tờ"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleCloseBoSungModal}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitBoSung}
+              disabled={isSubmittingBoSung}
+              icon={isSubmittingBoSung ? <Loader2 size={16} /> : <Save size={16} />}
+            >
+              {isSubmittingBoSung ? 'Đang lưu...' : 'Bổ sung'}
+            </Button>
+          </>
+        }
+      >
+        <div className="chi-tiet-ho-so__form-grid">
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormSelect
+              label="Loại giấy tờ *"
+              name="maLoai"
+              value={boSungForm.maLoai}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, maLoai: e.target.value }))}
+              options={availableLoaiGiayTo.map((lgt) => ({
+                value: lgt.maLoai,
+                label: `${lgt.maLoai} - ${lgt.tenGiayTo}${lgt.batBuoc ? ' (Bắt buộc)' : ''}`,
+              }))}
+              placeholder="-- Chọn loại giấy tờ --"
+            />
+            {availableLoaiGiayTo.length === 0 && (
+              <p style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>
+                Sinh viên đã có đủ tất cả 13 loại giấy tờ trong hệ thống.
+              </p>
+            )}
+          </div>
+
+          <FormSelect
+            label="Trạng thái nộp *"
+            name="trangThaiNop"
+            value={boSungForm.trangThaiNop}
+            onChange={(e) => setBoSungForm((prev) => ({ ...prev, trangThaiNop: e.target.value }))}
+            options={[
+              { value: 'Đã nộp', label: 'Đã nộp' },
+              { value: 'Chưa nộp', label: 'Chưa nộp' },
+              { value: 'Thiếu', label: 'Thiếu' },
+              { value: 'Không hợp lệ', label: 'Không hợp lệ' },
+            ]}
+          />
+
+          <FormSelect
+            label="Bản gốc / Bản sao"
+            name="banGocBanSao"
+            value={boSungForm.banGocBanSao}
+            onChange={(e) => setBoSungForm((prev) => ({ ...prev, banGocBanSao: e.target.value }))}
+            options={[
+              { value: 'Bản gốc', label: 'Bản gốc' },
+              { value: 'Bản sao', label: 'Bản sao' },
+            ]}
+          />
+
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Vị trí lưu kho"
+              name="viTriLuuKho"
+              value={boSungForm.viTriLuuKho}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, viTriLuuKho: e.target.value }))}
+              placeholder="VD: Kệ A-01-05"
+            />
+          </div>
+
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Ghi chú"
+              name="ghiChu"
+              value={boSungForm.ghiChu}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
+              placeholder="VD: Bổ sung giấy khai sinh bản sao có công chứng"
             />
           </div>
         </div>
