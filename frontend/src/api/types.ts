@@ -84,6 +84,40 @@ export interface PageMetadata {
 }
 
 /**
+ * Generic paged wrapper used by backend (see backend PagedResponse.java).
+ * Field `data` chứa list các phần tử, `page` chứa metadata.
+ */
+export interface PagedResponse<T> {
+  data: T
+  page: PageMetadata
+}
+
+/**
+ * PhieuMuon (Phiếu xuất hồ sơ) — ánh xạ backend PhieuMuonResponse.
+ *
+ * Field date dùng string ISO ('YYYY-MM-DD' hoặc 'YYYY-MM-DDTHH:mm:ss')
+ * do axios tự parse JSON; UI có thể dùng new Date(...) trực tiếp.
+ */
+export interface PhieuMuon {
+  maPhieu: string
+  mssv: string
+  hoTenSinhVien: string | null
+  loaiPhieu: string
+  trangThai: string
+  lyDo: string | null
+  ngayMuon: string | null
+  ngayTraDuKien: string | null
+  ngayTraThucTe: string | null
+  ghiChu: string | null
+  nguoiTao: string | null
+  ngayTao: string | null
+  ngayCapNhat: string | null
+  /** Danh sách mã hồ sơ giấy tờ thuộc phiếu. */
+  danhSachMaHoSo?: string[] | null
+  soLuongHoSo: number
+}
+
+/**
  * Paged response from backend for sinh-vien API.
  */
 export interface SinhVienPagedResponse {

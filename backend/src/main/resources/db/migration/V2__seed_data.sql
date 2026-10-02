@@ -3,8 +3,12 @@
 -- Generated: 2026-09-26
 
 -- ===== USERS =====
--- BCrypt hash cho password "03102004"
+-- Tài khoản mặc định: Phamthuylinh / 03102004 (password đã hash bằng BCrypt)
 -- Hash: $2a$10$slYQmyNdGzTn7ZLBXBChFOC9f6kFjAqPhccnP6DxlWXx2lPk1C3G6
+-- (verify: BCryptPasswordEncoder.matches("03102004", hash) = true)
+--
+-- Nếu cần thêm tài khoản Kieuvanson / 332003 như AGENTS.md, generate BCrypt hash
+-- bằng BCryptPasswordEncoder và INSERT thêm 1 dòng tương tự.
 INSERT INTO users (username, password_hash, ho_ten, email, role, is_active) VALUES
 ('Phamthuylinh', '$2a$10$slYQmyNdGzTn7ZLBXBChFOC9f6kFjAqPhccnP6DxlWXx2lPk1C3G6', 'Phạm Thị Linh', 'phamthuylinh@vwa.edu.vn', 'ADMIN', true);
 
@@ -76,6 +80,17 @@ INSERT INTO ho_so_giay_to (ma_ho_so, mssv, ma_loai, trang_thai_nop, ban_goc_ban_
 ('HS031', 'B21DCCN004', 'GT07', 'Đã nộp', 'Bản sao', 'Kệ C-01-07'),
 ('HS032', 'B21DCCN004', 'GT08', 'Chưa nộp', NULL, NULL);
 
+-- ===== HOSOGIAYTO bổ sung (GT09..GT13, không bắt buộc) =====
+-- Thêm cho các SV đã có ở trên để có dữ liệu test chức năng mượn-trả / rút hồ sơ.
+-- Dùng loại giấy tờ không bắt buộc (GT09..GT13) để tránh trùng (mssv, ma_loai).
+INSERT INTO ho_so_giay_to (ma_ho_so, mssv, ma_loai, trang_thai_nop, ban_goc_ban_sao, vi_tri_luu_kho) VALUES
+('HS033', 'B23DCCN002', 'GT09', 'Đã nộp', 'Bản gốc', 'Kệ A-02-08'),
+('HS034', 'B23DCCN001', 'GT10', 'Đã nộp', 'Bản sao', 'Kệ A-01-06'),
+('HS035', 'B22DCCN003', 'GT11', 'Đã nộp', 'Bản gốc', 'Kệ B-01-07'),
+('HS036', 'B22DCCN003', 'GT12', 'Đã nộp', 'Bản gốc', 'Kệ B-01-08'),
+('HS037', 'B22DCCN003', 'GT13', 'Đã nộp', 'Bản gốc', 'Kệ B-01-09')
+ON CONFLICT (mssv, ma_loai) DO NOTHING;
+
 -- ===== LICHSUNOP =====
 INSERT INTO lich_su_nop (ma_log, ma_ho_so, mssv, hanh_dong, trang_thai_cu, trang_thai_moi, ghi_chu, nguoi_thuc_hien) VALUES
 ('LS001', 'HS001', 'B23DCCN001', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp bản gốc giấy khai sinh', 'Phamthuylinh'),
@@ -83,13 +98,38 @@ INSERT INTO lich_su_nop (ma_log, ma_ho_so, mssv, hanh_dong, trang_thai_cu, trang
 ('LS003', 'HS003', 'B23DCCN001', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp bản gốc học bạ THPT', 'Phamthuylinh'),
 ('LS004', 'HS004', 'B23DCCN001', 'Yêu cầu nộp', NULL, 'Chưa nộp', 'Yêu cầu bổ sung giấy xác nhận học lực', 'Phamthuylinh'),
 ('LS005', 'HS009', 'B23DCCN002', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp đầy đủ hồ sơ', 'Phamthuylinh'),
-('LS006', 'HS016', 'B23DCCN002', 'Cập nhật', 'Đã nộp', 'Không hợp lệ', 'Giấy xác nhận ưu tiên hết hạn', 'Phamthuylinh');
+('LS006', 'HS016', 'B23DCCN002', 'Cập nhật', 'Đã nộp', 'Không hợp lệ', 'Giấy xác nhận ưu tiên hết hạn', 'Phamthuylinh'),
+-- Audit cho hồ sơ bổ sung GT09..GT13 (HS033..HS037)
+('LS007', 'HS033', 'B23DCCN002', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp giấy chuyển trường bản gốc', 'Phamthuylinh'),
+('LS008', 'HS034', 'B23DCCN001', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp bảng điểm các kỳ bản sao', 'Phamthuylinh'),
+('LS009', 'HS035', 'B22DCCN003', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp giấy xác nhận hoàn thành NVQS bản gốc', 'Phamthuylinh'),
+('LS010', 'HS036', 'B22DCCN003', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp chứng chỉ ngoại ngữ bản gốc', 'Phamthuylinh'),
+('LS011', 'HS037', 'B22DCCN003', 'Nộp lần đầu', NULL, 'Đã nộp', 'Nộp giấy tờ khác bản gốc', 'Phamthuylinh');
 
 -- ===== PHIEUXUATHOSO =====
 INSERT INTO phieu_xuat_ho_so (ma_phieu, mssv, loai_phieu, trang_thai, ly_do, ngay_muon, ngay_tra_du_kien, nguoi_tao) VALUES
 ('PX001', 'B23DCCN001', 'Mượn tạm thời', 'Đã duyệt', 'Sinh viên cần photo bản sao bằng tốt nghiệp để xin việc', '2024-01-15', '2024-01-25', 'Phamthuylinh'),
 ('PX002', 'B23DCCN002', 'Mượn tạm thời', 'Chờ duyệt', 'Cần xuất trình CCCD gốc để làm thủ tục', '2024-01-20', '2024-01-27', 'Phamthuylinh'),
 ('PX003', 'B21DCCN004', 'Rút vĩnh viễn', 'Hoàn tất', 'Sinh viên đã tốt nghiệp, rút hồ sơ về trường gốc', '2024-01-10', '2024-01-10', 'Phamthuylinh');
+
+-- Phiếu ĐANG MƯỢN + QUÁ HẠN bổ sung — dùng để test UI trang /muon-tra-ho-so tab "Hồ sơ đang mượn".
+-- Ngày dùng hàm PostgreSQL CURRENT_DATE để luôn còn "Đang mượn" hoặc "Quá hạn" bất kể seed chạy lúc nào.
+INSERT INTO phieu_xuat_ho_so (ma_phieu, mssv, loai_phieu, trang_thai, ly_do, ngay_muon, ngay_tra_du_kien, nguoi_tao) VALUES
+('PX004', 'B23DCCN001', CAST('Mượn tạm thời' AS loaiphieu), CAST('Đang mượn' AS trangthaiphieu),
+  'Sinh viên cần CCCD gốc để làm thủ tục ngân hàng', CURRENT_DATE - INTERVAL '7 days',
+  CURRENT_DATE + INTERVAL '3 days', 'Phamthuylinh'),
+('PX005', 'B23DCCN002', CAST('Mượn tạm thời' AS loaiphieu), CAST('Đang mượn' AS trangthaiphieu),
+  'Cần bằng tốt nghiệp photo công chứng để xin việc', CURRENT_DATE - INTERVAL '3 days',
+  CURRENT_DATE + INTERVAL '7 days', 'Phamthuylinh'),
+('PX006', 'B22DCCN003', CAST('Mượn tạm thời' AS loaiphieu), CAST('Đang mượn' AS trangthaiphieu),
+  'Rút giấy khai sinh + bằng THPT bản gốc để làm thẻ SV', CURRENT_DATE - INTERVAL '1 day',
+  CURRENT_DATE + INTERVAL '14 days', 'Phamthuylinh'),
+('PX007', 'B21DCCN004', CAST('Mượn tạm thời' AS loaiphieu), CAST('Quá hạn' AS trangthaiphieu),
+  'Mượn học bạ photo để nộp hồ sơ xin việc - QUÁ HẠN 5 ngày', CURRENT_DATE - INTERVAL '20 days',
+  CURRENT_DATE - INTERVAL '5 days', 'Phamthuylinh'),
+('PX008', 'B22DCCN003', CAST('Mượn tạm thời' AS loaiphieu), CAST('Quá hạn' AS trangthaiphieu),
+  'Mượn CCCD gốc để xác minh - QUÁ HẠN 12 ngày', CURRENT_DATE - INTERVAL '30 days',
+  CURRENT_DATE - INTERVAL '12 days', 'Phamthuylinh');
 
 -- ===== CHITIETPHIEU =====
 INSERT INTO chi_tiet_phieu (ma_ct, ma_phieu, ma_ho_so, ghi_chu) VALUES
@@ -100,3 +140,13 @@ INSERT INTO chi_tiet_phieu (ma_ct, ma_phieu, ma_ho_so, ghi_chu) VALUES
 ('CT005', 'PX003', 'HS026', 'Rút bản gốc bằng tốt nghiệp THPT'),
 ('CT006', 'PX003', 'HS027', 'Rút học bạ THPT bản gốc'),
 ('CT007', 'PX003', 'HS028', 'Rút bản sao học bạ');
+
+-- Chi tiết các phiếu Đang mượn / Quá hạn bổ sung (PX004..PX008)
+INSERT INTO chi_tiet_phieu (ma_ct, ma_phieu, ma_ho_so, ghi_chu) VALUES
+('CT008', 'PX004', 'HS006', 'Rút CCCD gốc - B23DCCN001 (hẹn trả +3 ngày)'),
+('CT009', 'PX005', 'HS010', 'Rút bằng tốt nghiệp THPT - B23DCCN002 (hẹn trả +7 ngày)'),
+('CT010', 'PX005', 'HS011', 'Rút học bạ THPT photo - B23DCCN002 (hẹn trả +7 ngày)'),
+('CT011', 'PX006', 'HS035', 'Rút giấy xác nhận NVQS - B22DCCN003 (hẹn trả +14 ngày)'),
+('CT012', 'PX006', 'HS036', 'Rút chứng chỉ ngoại ngữ - B22DCCN003 (hẹn trả +14 ngày)'),
+('CT013', 'PX007', 'HS027', 'Rút học bạ THPT - QUÁ HẠN 5 ngày - B21DCCN004'),
+('CT014', 'PX008', 'HS022', 'Rút CCCD gốc - QUÁ HẠN 12 ngày - B22DCCN003');

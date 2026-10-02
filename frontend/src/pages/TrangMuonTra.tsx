@@ -1,11 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle } from 'lucide-react'
 import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput, FormSelect } from '../components/ui'
+import { phieuMuonApi } from '../api/phieuMuon'
+import type { PhieuMuon } from '../api/types'
 import './TrangMuonTra.css'
 
 const PAGE_SIZE = 10
 
+// =========================================================================
 // Type definitions
+// =========================================================================
+
+/** Sinh viên dùng cho lookup MSSV ở form Mượn (backend chưa có endpoint lookup riêng → giữ mock). */
 interface SinhVien {
   mssv: string
   hoTen: string
@@ -15,6 +21,7 @@ interface SinhVien {
   lop: string
 }
 
+/** Row hiển thị trên bảng "Hồ sơ đang mượn" — map từ PhieuMuon (backend) + mở rộng vài field cho UI. */
 interface DangMuonItem {
   maPhieu: string
   mssv: string
@@ -31,18 +38,27 @@ interface DangMuonItem {
   ghiChu: string
 }
 
+/** Row "Lịch sử mượn / trả" — map từ PhieuMuon (backend) + format thời gian cho UI. */
 interface LichSuItem {
-  maLog: number
+  maPhieu: string
   mssv: string
   hoTen: string
   loaiHoSo: string
-  hanhDong: string
+  trangThai: string
+  /** Format vi-VN: dd/MM/yyyy HH:mm */
   thoiGian: string
   nguoiThucHien: string
   ghiChu: string
+  ngayMuon: string
+  hanTra: string
+  ngayTraThucTe: string
 }
 
-// Mock data sinh viên đầy đủ
+// =========================================================================
+// Mock data — TODO: replace khi backend bổ sung endpoint tương ứng.
+// =========================================================================
+
+// TODO(backend): thay bằng GET /api/sinh-vien/{mssv} khi cần lookup thông tin SV trong form Mượn.
 const MOCK_SINHVIEN: Record<string, SinhVien> = {
   'B23DCCN001': { mssv: 'B23DCCN001', hoTen: 'Nguyễn Văn An', cccd: '079205001234', sdt: '0912345678', khoa: 'K23', lop: 'CNTT-2023.1' },
   'B23DCCN002': { mssv: 'B23DCCN002', hoTen: 'Trần Thị Bình', cccd: '079205001235', sdt: '0912345679', khoa: 'K23', lop: 'CNTT-2023.1' },
@@ -56,31 +72,10 @@ const MOCK_SINHVIEN: Record<string, SinhVien> = {
   'B23DCCN010': { mssv: 'B23DCCN010', hoTen: 'Lê Thị L', cccd: '079205001243', sdt: '0912345687', khoa: 'K23', lop: 'QTKD-2023.2' },
 }
 
-// Mock data cho hồ sơ đang mượn (đầy đủ thông tin)
-const MOCK_DANGMUON: DangMuonItem[] = [
-  { maPhieu: 'PM001', mssv: 'B23DCCN001', hoTen: 'Nguyễn Văn An', cccd: '079205001234', sdt: '0912345678', khoa: 'K23', lop: 'CNTT-2023.1', loaiHoSo: 'Hồ sơ sinh viên', ngayMuon: '2026-09-30', canBoPhuTrach: 'Nguyễn Thị A', hanTra: '2026-10-05', trangThai: 'Đang mượn', ghiChu: 'Phục vụ đối chiếu hồ sơ' },
-  { maPhieu: 'PM002', mssv: 'B23DCCN002', hoTen: 'Trần Thị Bình', cccd: '079205001235', sdt: '0912345679', khoa: 'K23', lop: 'CNTT-2023.1', loaiHoSo: 'Giấy tờ gốc', ngayMuon: '2026-09-28', canBoPhuTrach: 'Trần Văn B', hanTra: '2026-10-02', trangThai: 'Quá hạn', ghiChu: '' },
-  { maPhieu: 'PM003', mssv: 'B23DCCN003', hoTen: 'Lê Minh Cường', cccd: '079205001236', sdt: '0912345680', khoa: 'K23', lop: 'QTKD-2023.1', loaiHoSo: 'Hồ sơ sinh viên', ngayMuon: '2026-09-25', canBoPhuTrach: 'Phạm Thị D', hanTra: '2026-09-30', trangThai: 'Quá hạn', ghiChu: 'Mượn gấp' },
-  { maPhieu: 'PM004', mssv: 'B23DCCN004', hoTen: 'Hoàng Thị E', cccd: '079205001237', sdt: '0912345681', khoa: 'K23', lop: 'KTTN-2023.1', loaiHoSo: 'Hồ sơ khác', ngayMuon: '2026-09-29', canBoPhuTrach: 'Lê Văn E', hanTra: '2026-10-06', trangThai: 'Đang mượn', ghiChu: '' },
-  { maPhieu: 'PM005', mssv: 'B23DCCN005', hoTen: 'Đặng Thị F', cccd: '079205001238', sdt: '0912345682', khoa: 'K23', lop: 'NNA-2023.1', loaiHoSo: 'Giấy tờ gốc', ngayMuon: '2026-09-27', canBoPhuTrach: 'Nguyễn Văn F', hanTra: '2026-10-01', trangThai: 'Quá hạn', ghiChu: '' },
-  { maPhieu: 'PM006', mssv: 'B23DCCN006', hoTen: 'Bùi Văn G', cccd: '079205001239', sdt: '0912345683', khoa: 'K23', lop: 'L-2023.1', loaiHoSo: 'Hồ sơ sinh viên', ngayMuon: '2026-09-29', canBoPhuTrach: 'Trần Thị G', hanTra: '2026-10-07', trangThai: 'Đang mượn', ghiChu: 'Photo hồ sơ' },
-  { maPhieu: 'PM007', mssv: 'B23DCCN007', hoTen: 'Phạm Thị H', cccd: '079205001240', sdt: '0912345684', khoa: 'K23', lop: 'TCNH-2023.1', loaiHoSo: 'Hồ sơ sinh viên', ngayMuon: '2026-09-30', canBoPhuTrach: 'Bùi Văn H', hanTra: '2026-10-08', trangThai: 'Đang mượn', ghiChu: '' },
-  { maPhieu: 'PM008', mssv: 'B23DCCN008', hoTen: 'Vũ Văn I', cccd: '079205001241', sdt: '0912345685', khoa: 'K23', lop: 'QHQT-2023.1', loaiHoSo: 'Giấy tờ gốc', ngayMuon: '2026-09-26', canBoPhuTrach: 'Đặng Văn I', hanTra: '2026-09-29', trangThai: 'Quá hạn', ghiChu: '' },
-]
+// =========================================================================
+// Mapping constants
+// =========================================================================
 
-// Mock data cho lịch sử mượn/trả
-const MOCK_LICHSU: LichSuItem[] = [
-  { maLog: 1, mssv: 'B23DCCN001', hoTen: 'Nguyễn Văn An', loaiHoSo: 'Hồ sơ sinh viên', hanhDong: 'Mượn', thoiGian: '2026-09-30 09:15', nguoiThucHien: 'Nguyễn Thị A', ghiChu: 'Mượn để photo' },
-  { maLog: 2, mssv: 'B23DCCN009', hoTen: 'Trần Văn J', loaiHoSo: 'Hồ sơ sinh viên', hanhDong: 'Trả', thoiGian: '2026-09-29 16:30', nguoiThucHien: 'Phạm Thị K', ghiChu: 'Trả đúng hạn' },
-  { maLog: 3, mssv: 'B23DCCN010', hoTen: 'Lê Thị L', loaiHoSo: 'Giấy tờ gốc', hanhDong: 'Mượn', thoiGian: '2026-09-29 10:00', nguoiThucHien: 'Trần Văn L', ghiChu: 'Mượn gấp' },
-  { maLog: 4, mssv: 'B23DCCN011', hoTen: 'Nguyễn Văn M', loaiHoSo: 'Hồ sơ khác', hanhDong: 'Trả', thoiGian: '2026-09-28 14:45', nguoiThucHien: 'Nguyễn Thị M', ghiChu: 'Trả trễ 2 ngày' },
-  { maLog: 5, mssv: 'B23DCCN012', hoTen: 'Phạm Thị N', loaiHoSo: 'Hồ sơ sinh viên', hanhDong: 'Mượn', thoiGian: '2026-09-28 08:30', nguoiThucHien: 'Lê Văn N', ghiChu: '' },
-  { maLog: 6, mssv: 'B23DCCN013', hoTen: 'Bùi Văn O', loaiHoSo: 'Giấy tờ gốc', hanhDong: 'Trả', thoiGian: '2026-09-27 11:20', nguoiThucHien: 'Vũ Văn O', ghiChu: 'Đã kiểm tra đủ giấy tờ' },
-  { maLog: 7, mssv: 'B23DCCN014', hoTen: 'Đặng Thị P', loaiHoSo: 'Hồ sơ sinh viên', hanhDong: 'Mượn', thoiGian: '2026-09-27 09:00', nguoiThucHien: 'Hoàng Văn P', ghiChu: 'Mượn hồ sơ gốc' },
-  { maLog: 8, mssv: 'B23DCCN015', hoTen: 'Trần Văn Q', loaiHoSo: 'Hồ sơ khác', hanhDong: 'Trả', thoiGian: '2026-09-26 15:00', nguoiThucHien: 'Phạm Thị Q', ghiChu: '' },
-]
-
-// Badge styling
 const TRANG_THAI_MUON_MAPPING: Record<string, { label: string; className: string }> = {
   'Đang mượn': { label: 'Đang mượn', className: 'badge--primary' },
   'Quá hạn': { label: 'Quá hạn', className: 'badge--danger' },
@@ -89,9 +84,16 @@ const TRANG_THAI_MUON_MAPPING: Record<string, { label: string; className: string
 const HANH_DONG_MAPPING: Record<string, { label: string; className: string }> = {
   'Mượn': { label: 'Mượn', className: 'badge--warning' },
   'Trả': { label: 'Trả', className: 'badge--success' },
+  // Mapping trạng thái phiếu (backend) → nhãn hiển thị trong tab Lịch sử.
+  'Chờ duyệt': { label: 'Chờ duyệt', className: 'badge--info' },
+  'Đã duyệt': { label: 'Đã duyệt', className: 'badge--primary' },
+  'Từ chối': { label: 'Từ chối', className: 'badge--danger' },
+  'Đang mượn': { label: 'Đang mượn', className: 'badge--primary' },
+  'Đã trả': { label: 'Đã trả', className: 'badge--success' },
+  'Quá hạn': { label: 'Quá hạn', className: 'badge--danger' },
+  'Hoàn tất': { label: 'Hoàn tất', className: 'badge--success' },
 }
 
-// Options cho dropdown
 const TRANG_THAI_OPTIONS = [
   { value: '', label: 'Tất cả trạng thái' },
   { value: 'Đang mượn', label: 'Đang mượn' },
@@ -100,23 +102,27 @@ const TRANG_THAI_OPTIONS = [
 
 const LOAI_HO_SO_OPTIONS = [
   { value: '', label: 'Tất cả loại hồ sơ' },
-  { value: 'Hồ sơ sinh viên', label: 'Hồ sơ sinh viên' },
-  { value: 'Giấy tờ gốc', label: 'Giấy tờ gốc' },
-  { value: 'Hồ sơ khác', label: 'Hồ sơ khác' },
+  { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
+  { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
 ]
 
 const LOAI_HO_SO_CHON_OPTIONS = [
-  { value: 'Hồ sơ sinh viên', label: 'Hồ sơ sinh viên' },
-  { value: 'Giấy tờ gốc', label: 'Giấy tờ gốc' },
-  { value: 'Hồ sơ khác', label: 'Hồ sơ khác' },
+  { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
+  { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
 ]
 
 const HANH_DONG_OPTIONS = [
-  { value: '', label: 'Tất cả' },
-  { value: 'Mượn', label: 'Mượn' },
-  { value: 'Trả', label: 'Trả' },
+  { value: '', label: 'Tất cả trạng thái' },
+  { value: 'Chờ duyệt', label: 'Chờ duyệt' },
+  { value: 'Đã duyệt', label: 'Đã duyệt' },
+  { value: 'Đang mượn', label: 'Đang mượn' },
+  { value: 'Đã trả', label: 'Đã trả' },
+  { value: 'Quá hạn', label: 'Quá hạn' },
+  { value: 'Hoàn tất', label: 'Hoàn tất' },
+  { value: 'Từ chối', label: 'Từ chối' },
 ]
 
+// TODO(backend): danh sách cán bộ — cần endpoint /api/users (lọc role=STAFF/ADMIN) để chọn từ DB.
 const CAN_BO_OPTIONS = [
   { value: '', label: 'Chọn cán bộ phụ trách' },
   { value: 'Nguyễn Thị A', label: 'Nguyễn Thị A' },
@@ -129,42 +135,51 @@ const CAN_BO_OPTIONS = [
   { value: 'Đặng Văn I', label: 'Đặng Văn I' },
 ]
 
+// =========================================================================
+// Component
+// =========================================================================
+
 export function TrangMuonTra() {
-  // Tab state
+  // ----- Tab state -----
   const [activeTab, setActiveTab] = useState<'dangmuon' | 'lichsu'>('dangmuon')
-  
-  // Data state - Tab 1
-  const [dangMuonList, setDangMuonList] = useState<DangMuonItem[]>(MOCK_DANGMUON)
-  const [isLoading] = useState(false)
-  
-  // Data state - Tab 2
-  const [lichSuList] = useState<LichSuItem[]>(MOCK_LICHSU)
-  
-  // Filter state - Tab 1
+
+  // ----- Data: tab "Đang mượn" — fetch từ API thật -----
+  const [dangMuonList, setDangMuonList] = useState<DangMuonItem[]>([])
+  const [isLoadingDangMuon, setIsLoadingDangMuon] = useState(false)
+  const [errorDangMuon, setErrorDangMuon] = useState<string | null>(null)
+  const [totalElements, setTotalElements] = useState(0)
+
+  // ----- Data: tab "Lịch sử" — fetch từ API thật (GET /api/phieu-muon/lich-su) -----
+  const [lichSuList, setLichSuList] = useState<LichSuItem[]>([])
+  const [isLoadingLichSu, setIsLoadingLichSu] = useState(false)
+  const [errorLichSu, setErrorLichSu] = useState<string | null>(null)
+  const [totalElementsLichSu, setTotalElementsLichSu] = useState(0)
+
+  // ----- Filter state: tab 1 -----
   const [searchDangMuon, setSearchDangMuon] = useState('')
   const [trangThaiDangMuon, setTrangThaiDangMuon] = useState('')
   const [loaiHoSoDangMuon, setLoaiHoSoDangMuon] = useState('')
-  
-  // Filter state - Tab 2
+
+  // ----- Filter state: tab 2 -----
   const [searchLichSu, setSearchLichSu] = useState('')
   const [hanhDongLichSu, setHanhDongLichSu] = useState('')
   const [tuNgay, setTuNgay] = useState('')
   const [denNgay, setDenNgay] = useState('')
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  
-  // Modal state
+
+  // ----- Pagination (server-side cho tab 1, client-side cho tab 2) -----
+  const [currentPage, setCurrentPage] = useState(0) // 0-based cho server
+
+  // ----- Modal state -----
   const [modalMuonOpen, setModalMuonOpen] = useState(false)
   const [modalTraOpen, setModalTraOpen] = useState(false)
   const [modalChiTietOpen, setModalChiTietOpen] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<DangMuonItem | null>(null)
-  
-  // Student info state (for MSSV lookup)
+
+  // ----- Student info (form Mượn) — giữ mock cho đến khi có endpoint lookup -----
   const [sinhVienInfo, setSinhVienInfo] = useState<SinhVien | null>(null)
   const [mssvError, setMssvError] = useState('')
-  
-  // Form state - Mượn
+
+  // ----- Form state: Mượn -----
   const [muonForm, setMuonForm] = useState({
     mssv: '',
     loaiHoSo: '',
@@ -173,46 +188,156 @@ export function TrangMuonTra() {
     hanTra: '',
     ghiChu: '',
   })
-  
-  // Form state - Trả
+
+  // ----- Form state: Trả -----
   const [traForm, setTraForm] = useState({
     ghiChuTra: '',
   })
-  
-  // Toast state
+
+  // ----- Toast -----
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  // Filter data - Tab 1
-  const filteredDangMuon = useMemo(() => {
-    return dangMuonList.filter(item => {
-      const matchSearch = !searchDangMuon || 
-        item.mssv.toLowerCase().includes(searchDangMuon.toLowerCase()) ||
-        item.hoTen.toLowerCase().includes(searchDangMuon.toLowerCase())
-      const matchTrangThai = !trangThaiDangMuon || item.trangThai === trangThaiDangMuon
-      const matchLoaiHoSo = !loaiHoSoDangMuon || item.loaiHoSo === loaiHoSoDangMuon
-      return matchSearch && matchTrangThai && matchLoaiHoSo
-    })
-  }, [dangMuonList, searchDangMuon, trangThaiDangMuon, loaiHoSoDangMuon])
+  // =========================================================================
+  // Map PhieuMuon (backend DTO) → DangMuonItem (UI row)
+  // =========================================================================
+  function mapPhieuMuonToRow(p: PhieuMuon): DangMuonItem {
+    // Backend không trả cccd/sdt/khoa/lop trong PhieuMuonResponse (chỉ có hoTenSinhVien).
+    // Những field này UI đang hiển thị — tạm để rỗng; nếu cần, bổ sung endpoint detail phiếu.
+    // canBoPhuTrach: backend không có — dùng nguoiTao làm proxy.
+    return {
+      maPhieu: p.maPhieu,
+      mssv: p.mssv,
+      hoTen: p.hoTenSinhVien || '',
+      cccd: '',
+      sdt: '',
+      khoa: '',
+      lop: '',
+      loaiHoSo: p.loaiPhieu,
+      canBoPhuTrach: p.nguoiTao || '',
+      ngayMuon: p.ngayMuon || '',
+      hanTra: p.ngayTraDuKien || '',
+      trangThai: p.trangThai,
+      ghiChu: p.ghiChu || p.lyDo || '',
+    }
+  }
 
-  // Filter data - Tab 2
-  const filteredLichSu = useMemo(() => {
-    return lichSuList.filter(item => {
-      const matchSearch = !searchLichSu || 
-        item.mssv.toLowerCase().includes(searchLichSu.toLowerCase()) ||
-        item.hoTen.toLowerCase().includes(searchLichSu.toLowerCase())
-      const matchHanhDong = !hanhDongLichSu || item.hanhDong === hanhDongLichSu
-      return matchSearch && matchHanhDong
-    })
-  }, [lichSuList, searchLichSu, hanhDongLichSu])
+  // =========================================================================
+  // Effects: gọi backend mỗi khi filter / page đổi
+  // =========================================================================
 
-  // Pagination
-  const totalElements = activeTab === 'dangmuon' ? filteredDangMuon.length : filteredLichSu.length
-  const totalPages = Math.ceil(totalElements / PAGE_SIZE)
-  const paginatedData = activeTab === 'dangmuon' 
-    ? filteredDangMuon.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-    : filteredLichSu.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const fetchDangMuon = useCallback(async () => {
+    setIsLoadingDangMuon(true)
+    setErrorDangMuon(null)
+    try {
+      const res = await phieuMuonApi.getDangMuon({
+        keyword: searchDangMuon.trim() || undefined,
+        trangThai: trangThaiDangMuon || undefined,
+        loaiHoSo: loaiHoSoDangMuon || undefined,
+        page: currentPage,
+        size: PAGE_SIZE,
+      })
 
+      if (res.success && res.data) {
+        const items: DangMuonItem[] = (res.data.data || []).map(mapPhieuMuonToRow)
+        setDangMuonList(items)
+        setTotalElements(res.data.page?.totalElements ?? items.length)
+      } else {
+        setErrorDangMuon(res.message || 'Không thể tải danh sách hồ sơ đang mượn.')
+        setDangMuonList([])
+        setTotalElements(0)
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setErrorDangMuon(
+        e.response?.data?.message ||
+            'Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend đang chạy ở http://localhost:8081.'
+      )
+      setDangMuonList([])
+      setTotalElements(0)
+    } finally {
+      setIsLoadingDangMuon(false)
+    }
+  }, [searchDangMuon, trangThaiDangMuon, loaiHoSoDangMuon, currentPage])
+
+  const fetchLichSu = useCallback(async () => {
+    setIsLoadingLichSu(true)
+    setErrorLichSu(null)
+    try {
+      const res = await phieuMuonApi.getLichSu({
+        keyword: searchLichSu.trim() || undefined,
+        trangThai: hanhDongLichSu || undefined,
+        loaiHoSo: loaiHoSoDangMuon || undefined,
+        fromDate: tuNgay || undefined,
+        toDate: denNgay || undefined,
+        page: currentPage,
+        size: PAGE_SIZE,
+      })
+
+      if (res.success && res.data) {
+        const items: LichSuItem[] = (res.data.data || []).map(mapPhieuMuonToLichSu)
+        setLichSuList(items)
+        setTotalElementsLichSu(res.data.page?.totalElements ?? items.length)
+      } else {
+        setErrorLichSu(res.message || 'Không thể tải lịch sử mượn trả.')
+        setLichSuList([])
+        setTotalElementsLichSu(0)
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setErrorLichSu(
+        e.response?.data?.message ||
+            'Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend đang chạy ở http://localhost:8081.'
+      )
+      setLichSuList([])
+      setTotalElementsLichSu(0)
+    } finally {
+      setIsLoadingLichSu(false)
+    }
+  }, [searchLichSu, hanhDongLichSu, loaiHoSoDangMuon, tuNgay, denNgay, currentPage])
+
+  useEffect(() => {
+    if (activeTab === 'dangmuon') {
+      // setState bên trong fetchDangMuon là async (sau await) nên đây là pattern hợp lệ.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchDangMuon()
+    } else if (activeTab === 'lichsu') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchLichSu()
+    }
+  }, [activeTab, fetchDangMuon, fetchLichSu])
+
+  // =========================================================================
+  // Map PhieuMuon (backend DTO) → LichSuItem (UI row)
+  // =========================================================================
+  function mapPhieuMuonToLichSu(p: PhieuMuon): LichSuItem {
+    return {
+      maPhieu: p.maPhieu,
+      mssv: p.mssv,
+      hoTen: p.hoTenSinhVien || '',
+      loaiHoSo: p.loaiPhieu,
+      trangThai: p.trangThai,
+      // Lấy ngày tạo phiếu làm "thời gian" trong tab lịch sử.
+      thoiGian: p.ngayTao || '',
+      nguoiThucHien: p.nguoiTao || '',
+      ghiChu: p.ghiChu || p.lyDo || '',
+      ngayMuon: p.ngayMuon || '',
+      hanTra: p.ngayTraDuKien || '',
+      ngayTraThucTe: p.ngayTraThucTe || '',
+    }
+  }
+
+  // Pagination cho UI (server-side cho cả 2 tab)
+  const lichSuTotalPages = Math.max(1, Math.ceil(totalElementsLichSu / PAGE_SIZE))
+  const dangMuonTotalPages = Math.max(1, Math.ceil(totalElements / PAGE_SIZE))
+  const totalPages = activeTab === 'dangmuon' ? dangMuonTotalPages : lichSuTotalPages
+  const paginatedData =
+    activeTab === 'dangmuon'
+      ? dangMuonList // server đã trả đúng trang
+      : lichSuList // server đã trả đúng trang
+
+  // =========================================================================
   // Handlers
+  // =========================================================================
   function handleResetFilters() {
     setSearchDangMuon('')
     setTrangThaiDangMuon('')
@@ -221,7 +346,7 @@ export function TrangMuonTra() {
     setHanhDongLichSu('')
     setTuNgay('')
     setDenNgay('')
-    setCurrentPage(1)
+    setCurrentPage(0)
   }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -229,13 +354,11 @@ export function TrangMuonTra() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Xem chi tiết phiếu mượn (mở modal)
   function openModalChiTiet(record: DangMuonItem) {
     setSelectedRecord(record)
     setModalChiTietOpen(true)
   }
 
-  // Mượn hồ sơ
   function openModalMuon() {
     setMuonForm({
       mssv: '',
@@ -251,14 +374,14 @@ export function TrangMuonTra() {
   }
 
   function handleMssvChange(value: string) {
-    setMuonForm(prev => ({ ...prev, mssv: value }))
-    
+    setMuonForm((prev) => ({ ...prev, mssv: value }))
+
     if (!value.trim()) {
       setSinhVienInfo(null)
       setMssvError('')
       return
     }
-    
+
     const sv = MOCK_SINHVIEN[value.toUpperCase()]
     if (sv) {
       setSinhVienInfo(sv)
@@ -269,6 +392,13 @@ export function TrangMuonTra() {
     }
   }
 
+  /**
+   * TODO(backend): chức năng Mượn hồ sơ.
+   * Hiện KHÔNG có endpoint POST /api/phieu-muon trong backend (đã verify PhieuXuatHoSoController).
+   * Khi backend sẵn sàng, thay bằng:
+   *   await phieuMuonApi.create({ mssv, loaiPhieu, lyDo, ngayMuon, ngayTraDuKien, danhSachMaHoSo })
+   * rồi gọi fetchDangMuon() để refresh.
+   */
   function handleSubmitMuon() {
     if (!muonForm.mssv || !sinhVienInfo) {
       showToast('Vui lòng nhập MSSV hợp lệ', 'error')
@@ -279,79 +409,83 @@ export function TrangMuonTra() {
       return
     }
 
-    const newRecord: DangMuonItem = {
-      maPhieu: `PM${String(dangMuonList.length + 1).padStart(3, '0')}`,
-      mssv: sinhVienInfo.mssv,
-      hoTen: sinhVienInfo.hoTen,
-      cccd: sinhVienInfo.cccd,
-      sdt: sinhVienInfo.sdt,
-      khoa: sinhVienInfo.khoa,
-      lop: sinhVienInfo.lop,
-      loaiHoSo: muonForm.loaiHoSo,
-      ngayMuon: muonForm.ngayMuon,
-      canBoPhuTrach: muonForm.canBoPhuTrach,
-      hanTra: muonForm.hanTra,
-      trangThai: 'Đang mượn',
-      ghiChu: muonForm.ghiChu,
-    }
-
-    setDangMuonList(prev => [newRecord, ...prev])
+    showToast(
+      'Chức năng tạo phiếu mượn chưa được backend hỗ trợ. Sẽ hoạt động khi bổ sung POST /api/phieu-muon.',
+      'info'
+    )
     setModalMuonOpen(false)
-    showToast('Mượn hồ sơ thành công', 'success')
-    setCurrentPage(1)
   }
 
-  // Trả hồ sơ
   function openModalTra(record: DangMuonItem) {
     setSelectedRecord(record)
     setTraForm({ ghiChuTra: '' })
     setModalTraOpen(true)
-    setModalChiTietOpen(false) // Close chi tiết modal if open
+    setModalChiTietOpen(false)
   }
 
+  /**
+   * TODO(backend): chức năng Trả hồ sơ.
+   * Backend chưa có endpoint PUT /api/phieu-muon/{maPhieu}/tra.
+   * Hiện chỉ là demo local; refresh trang sẽ mất thay đổi.
+   */
   function handleSubmitTra() {
     if (!selectedRecord) return
 
-    // Xóa khỏi danh sách đang mượn
-    setDangMuonList(prev => prev.filter(item => item.maPhieu !== selectedRecord.maPhieu))
-    
+    showToast(
+      'Chức năng trả hồ sơ chưa được backend hỗ trợ. Sẽ hoạt động khi bổ sung PUT /api/phieu-muon/{id}/tra.',
+      'info'
+    )
     setModalTraOpen(false)
     setSelectedRecord(null)
-    showToast('Trả hồ sơ thành công', 'success')
-    setCurrentPage(1)
   }
 
-  // Generate page numbers
-  function getPageNumbers() {
+  // Page numbers cho pagination UI
+  function getPageNumbers(): (number | '...')[] {
     const pages: (number | '...')[] = []
     if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i)
+      for (let i = 0; i < totalPages; i++) pages.push(i + 1)
+    } else if (currentPage + 1 <= 4) {
+      for (let i = 0; i < 5; i++) pages.push(i + 1)
+      pages.push('...')
+      pages.push(totalPages)
+    } else if (currentPage + 1 >= totalPages - 3) {
+      pages.push(1)
+      pages.push('...')
+      for (let i = totalPages - 5; i < totalPages; i++) pages.push(i + 1)
     } else {
-      if (currentPage <= 4) {
-        for (let i = 1; i <= 5; i++) pages.push(i)
-        pages.push('...')
-        pages.push(totalPages)
-      } else if (currentPage >= totalPages - 3) {
-        pages.push(1)
-        pages.push('...')
-        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i)
-      } else {
-        pages.push(1)
-        pages.push('...')
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i)
-        pages.push('...')
-        pages.push(totalPages)
-      }
+      pages.push(1)
+      pages.push('...')
+      pages.push(currentPage)
+      pages.push(currentPage + 1)
+      pages.push(currentPage + 2)
+      pages.push('...')
+      pages.push(totalPages)
     }
     return pages
   }
 
-  // Format date
+  // Format date ISO → vi-VN
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('vi-VN')
+    if (!dateStr) return '—'
+    try {
+      return new Date(dateStr).toLocaleDateString('vi-VN')
+    } catch {
+      return dateStr
+    }
   }
 
-  // Get badge for trangThai
+  // Format datetime ISO → vi-VN (dd/MM/yyyy HH:mm)
+  function formatDateTime(dateStr: string) {
+    if (!dateStr) return '—'
+    try {
+      const d = new Date(dateStr)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    } catch {
+      return dateStr
+    }
+  }
+
   function getTrangThaiBadge(trangThai: string) {
     const info = TRANG_THAI_MUON_MAPPING[trangThai] || { label: trangThai, className: '' }
     return (
@@ -361,6 +495,9 @@ export function TrangMuonTra() {
     )
   }
 
+  // =========================================================================
+  // Render
+  // =========================================================================
   return (
     <div className="trang-muon-tra">
       {/* Header */}
@@ -373,14 +510,20 @@ export function TrangMuonTra() {
       <div className="trang-muon-tra__tabs">
         <button
           className={`trang-muon-tra__tab ${activeTab === 'dangmuon' ? 'trang-muon-tra__tab--active' : ''}`}
-          onClick={() => { setActiveTab('dangmuon'); setCurrentPage(1); }}
+          onClick={() => {
+            setActiveTab('dangmuon')
+            setCurrentPage(0)
+          }}
         >
           <ArrowRightLeft size={18} />
           Hồ sơ đang mượn
         </button>
         <button
           className={`trang-muon-tra__tab ${activeTab === 'lichsu' ? 'trang-muon-tra__tab--active' : ''}`}
-          onClick={() => { setActiveTab('lichsu'); setCurrentPage(1); }}
+          onClick={() => {
+            setActiveTab('lichsu')
+            setCurrentPage(0)
+          }}
         >
           <FileX size={18} />
           Lịch sử mượn / trả
@@ -389,23 +532,28 @@ export function TrangMuonTra() {
 
       {/* Content */}
       <div className="trang-muon-tra__content">
-        {/* Tab 1: Hồ sơ đang mượn */}
+        {/* Tab 1: Hồ sơ đang mượn — DATA TỪ API THẬT */}
         {activeTab === 'dangmuon' && (
           <>
-            {/* Toolbar */}
             <div className="trang-muon-tra__toolbar">
               <div className="trang-muon-tra__filters">
                 <SearchInput
                   value={searchDangMuon}
-                  onChange={(v) => { setSearchDangMuon(v); setCurrentPage(1); }}
-                  placeholder="Tìm theo MSSV hoặc họ tên..."
+                  onChange={(v) => {
+                    setSearchDangMuon(v)
+                    setCurrentPage(0)
+                  }}
+                  placeholder="Tìm theo MSSV / mã phiếu / họ tên / lý do..."
                   className="trang-muon-tra__search"
                 />
                 <div className="trang-muon-tra__select-wrapper">
                   <CustomSelect
                     value={trangThaiDangMuon}
                     options={TRANG_THAI_OPTIONS}
-                    onChange={(v) => { setTrangThaiDangMuon(v); setCurrentPage(1); }}
+                    onChange={(v) => {
+                      setTrangThaiDangMuon(v)
+                      setCurrentPage(0)
+                    }}
                     placeholder="Tất cả trạng thái"
                   />
                 </div>
@@ -413,7 +561,10 @@ export function TrangMuonTra() {
                   <CustomSelect
                     value={loaiHoSoDangMuon}
                     options={LOAI_HO_SO_OPTIONS}
-                    onChange={(v) => { setLoaiHoSoDangMuon(v); setCurrentPage(1); }}
+                    onChange={(v) => {
+                      setLoaiHoSoDangMuon(v)
+                      setCurrentPage(0)
+                    }}
                     placeholder="Tất cả loại hồ sơ"
                   />
                 </div>
@@ -426,12 +577,19 @@ export function TrangMuonTra() {
               </Button>
             </div>
 
-            {/* Table */}
             <div className="trang-muon-tra__table-card">
-              {isLoading ? (
+              {isLoadingDangMuon ? (
                 <div className="trang-muon-tra__loading">
                   <Loader2 className="trang-muon-tra__loading-icon" size={32} />
-                  <p>Đang tải dữ liệu...</p>
+                  <p>Đang tải dữ liệu từ máy chủ...</p>
+                </div>
+              ) : errorDangMuon ? (
+                <div className="trang-muon-tra__empty">
+                  <AlertCircle className="trang-muon-tra__empty-icon" size={48} color="#dc2626" />
+                  <p className="trang-muon-tra__empty-text">{errorDangMuon}</p>
+                  <Button variant="secondary" onClick={fetchDangMuon} style={{ marginTop: 12 }}>
+                    Thử lại
+                  </Button>
                 </div>
               ) : paginatedData.length > 0 ? (
                 <>
@@ -453,17 +611,20 @@ export function TrangMuonTra() {
                       </thead>
                       <tbody>
                         {(paginatedData as DangMuonItem[]).map((item, index) => {
-                          const badgeInfo = TRANG_THAI_MUON_MAPPING[item.trangThai] || { label: item.trangThai, className: '' }
-                          const pageStartIndex = (currentPage - 1) * PAGE_SIZE
+                          const badgeInfo = TRANG_THAI_MUON_MAPPING[item.trangThai] || {
+                            label: item.trangThai,
+                            className: '',
+                          }
+                          const sttNum = currentPage * PAGE_SIZE + index + 1
                           return (
                             <tr key={item.maPhieu}>
-                              <td className="col-stt">{pageStartIndex + index + 1}</td>
+                              <td className="col-stt">{sttNum}</td>
                               <td className="col-mssv">{item.mssv}</td>
-                              <td>{item.hoTen}</td>
-                              <td className="col-lop">{item.lop}</td>
+                              <td>{item.hoTen || '-'}</td>
+                              <td className="col-lop">{item.lop || '-'}</td>
                               <td className="col-loai">{item.loaiHoSo}</td>
                               <td className="col-date">{formatDate(item.ngayMuon)}</td>
-                              <td className="col-nguoi">{item.canBoPhuTrach}</td>
+                              <td className="col-nguoi">{item.canBoPhuTrach || '-'}</td>
                               <td className="col-date">{formatDate(item.hanTra)}</td>
                               <td className="col-trangthai">
                                 <span className={`trang-muon-tra__badge ${badgeInfo.className}`}>
@@ -475,7 +636,12 @@ export function TrangMuonTra() {
                                   <Button variant="secondary" size="sm" onClick={() => openModalTra(item)}>
                                     Trả hồ sơ
                                   </Button>
-                                  <Button variant="ghost" size="sm" icon={<Eye size={16} />} onClick={() => openModalChiTiet(item)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon={<Eye size={16} />}
+                                    onClick={() => openModalChiTiet(item)}
+                                  >
                                     Xem
                                   </Button>
                                 </div>
@@ -487,30 +653,46 @@ export function TrangMuonTra() {
                     </table>
                   </div>
 
-                  {/* Pagination */}
                   {totalPages > 1 && (
                     <div className="trang-muon-tra__pagination">
                       <span className="trang-muon-tra__pagination-info">
-                        Hiển thị {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, totalElements)} của {totalElements} kết quả
+                        Hiển thị {currentPage * PAGE_SIZE + 1} -{' '}
+                        {Math.min((currentPage + 1) * PAGE_SIZE, totalElements)} của {totalElements} kết quả
                       </span>
                       <div className="trang-muon-tra__pagination-controls">
-                        <button className="trang-muon-tra__page-btn" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                        <button
+                          className="trang-muon-tra__page-btn"
+                          onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                          disabled={currentPage === 0}
+                        >
                           <ChevronLeft size={16} />
                         </button>
                         {getPageNumbers().map((page, index) =>
                           page === '...' ? (
-                            <span key={`ellipsis-${index}`} className="trang-muon-tra__page-btn" style={{ cursor: 'default' }}>...</span>
+                            <span
+                              key={`ellipsis-${index}`}
+                              className="trang-muon-tra__page-btn"
+                              style={{ cursor: 'default' }}
+                            >
+                              ...
+                            </span>
                           ) : (
                             <button
                               key={page}
-                              className={`trang-muon-tra__page-btn ${currentPage === page ? 'trang-muon-tra__page-btn--active' : ''}`}
-                              onClick={() => setCurrentPage(page)}
+                              className={`trang-muon-tra__page-btn ${
+                                currentPage + 1 === page ? 'trang-muon-tra__page-btn--active' : ''
+                              }`}
+                              onClick={() => setCurrentPage(page - 1)}
                             >
                               {page}
                             </button>
                           )
                         )}
-                        <button className="trang-muon-tra__page-btn" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                        <button
+                          className="trang-muon-tra__page-btn"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                          disabled={currentPage + 1 >= totalPages}
+                        >
                           <ChevronRight size={16} />
                         </button>
                       </div>
@@ -520,43 +702,71 @@ export function TrangMuonTra() {
               ) : (
                 <div className="trang-muon-tra__empty">
                   <FileX className="trang-muon-tra__empty-icon" size={48} />
-                  <p className="trang-muon-tra__empty-text">Không có hồ sơ nào đang được mượn</p>
+                  <p className="trang-muon-tra__empty-text">
+                    Không có hồ sơ nào đang được mượn
+                    {searchDangMuon || trangThaiDangMuon || loaiHoSoDangMuon
+                      ? ' khớp với bộ lọc hiện tại'
+                      : ''}
+                    .
+                  </p>
                 </div>
               )}
             </div>
           </>
         )}
 
-        {/* Tab 2: Lịch sử mượn / trả */}
+        {/* Tab 2: Lịch sử mượn / trả — DATA TỪ API THẬT (GET /api/phieu-muon/lich-su) */}
         {activeTab === 'lichsu' && (
           <>
-            {/* Toolbar */}
             <div className="trang-muon-tra__toolbar">
               <div className="trang-muon-tra__filters">
                 <SearchInput
                   value={searchLichSu}
-                  onChange={(v) => { setSearchLichSu(v); setCurrentPage(1); }}
-                  placeholder="Tìm theo MSSV hoặc họ tên..."
+                  onChange={(v) => {
+                    setSearchLichSu(v)
+                    setCurrentPage(0)
+                  }}
+                  placeholder="Tìm theo MSSV / mã phiếu / họ tên / lý do..."
                   className="trang-muon-tra__search"
                 />
                 <div className="trang-muon-tra__select-wrapper">
                   <CustomSelect
                     value={hanhDongLichSu}
                     options={HANH_DONG_OPTIONS}
-                    onChange={(v) => { setHanhDongLichSu(v); setCurrentPage(1); }}
-                    placeholder="Hành động"
+                    onChange={(v) => {
+                      setHanhDongLichSu(v)
+                      setCurrentPage(0)
+                    }}
+                    placeholder="Tất cả trạng thái"
+                  />
+                </div>
+                <div className="trang-muon-tra__select-wrapper">
+                  <CustomSelect
+                    value={loaiHoSoDangMuon}
+                    options={LOAI_HO_SO_OPTIONS}
+                    onChange={(v) => {
+                      setLoaiHoSoDangMuon(v)
+                      setCurrentPage(0)
+                    }}
+                    placeholder="Tất cả loại hồ sơ"
                   />
                 </div>
                 <FormInput
                   type="date"
                   value={tuNgay}
-                  onChange={(e) => { setTuNgay(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    setTuNgay(e.target.value)
+                    setCurrentPage(0)
+                  }}
                   placeholder="Từ ngày"
                 />
                 <FormInput
                   type="date"
                   value={denNgay}
-                  onChange={(e) => { setDenNgay(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    setDenNgay(e.target.value)
+                    setCurrentPage(0)
+                  }}
                   placeholder="Đến ngày"
                 />
                 <Button variant="secondary" icon={<RotateCcw size={16} />} onClick={handleResetFilters}>
@@ -565,41 +775,62 @@ export function TrangMuonTra() {
               </div>
             </div>
 
-            {/* Table */}
             <div className="trang-muon-tra__table-card">
-              {(paginatedData as LichSuItem[]).length > 0 ? (
+              {isLoadingLichSu ? (
+                <div className="trang-muon-tra__loading">
+                  <Loader2 className="trang-muon-tra__loading-icon" size={32} />
+                  <p>Đang tải dữ liệu từ máy chủ...</p>
+                </div>
+              ) : errorLichSu ? (
+                <div className="trang-muon-tra__empty">
+                  <AlertCircle className="trang-muon-tra__empty-icon" size={48} color="#dc2626" />
+                  <p className="trang-muon-tra__empty-text">{errorLichSu}</p>
+                  <Button variant="secondary" onClick={fetchLichSu} style={{ marginTop: 12 }}>
+                    Thử lại
+                  </Button>
+                </div>
+              ) : (paginatedData as LichSuItem[]).length > 0 ? (
                 <>
                   <div className="trang-muon-tra__table-wrapper">
                     <table className="trang-muon-tra__table">
                       <thead>
                         <tr>
                           <th className="col-stt">STT</th>
+                          <th className="col-mssv">Mã phiếu</th>
                           <th className="col-mssv">MSSV</th>
                           <th>Họ và tên</th>
                           <th className="col-loai">Loại hồ sơ</th>
-                          <th className="col-hanhdong">Hành động</th>
-                          <th className="col-datetime">Thời gian</th>
-                          <th className="col-nguoi">Người thực hiện</th>
+                          <th className="col-hanhdong">Trạng thái</th>
+                          <th className="col-datetime">Thời gian tạo</th>
+                          <th className="col-date">Ngày mượn</th>
+                          <th className="col-date">Hạn trả</th>
+                          <th className="col-nguoi">Người tạo</th>
                           <th className="col-ghichu">Ghi chú</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(paginatedData as LichSuItem[]).map((item, index) => {
-                          const badgeInfo = HANH_DONG_MAPPING[item.hanhDong] || { label: item.hanhDong, className: '' }
-                          const pageStartIndex = (currentPage - 1) * PAGE_SIZE
+                          const badgeInfo = HANH_DONG_MAPPING[item.trangThai] || {
+                            label: item.trangThai,
+                            className: '',
+                          }
+                          const sttNum = currentPage * PAGE_SIZE + index + 1
                           return (
-                            <tr key={item.maLog}>
-                              <td className="col-stt">{pageStartIndex + index + 1}</td>
+                            <tr key={item.maPhieu}>
+                              <td className="col-stt">{sttNum}</td>
+                              <td className="col-mssv">{item.maPhieu}</td>
                               <td className="col-mssv">{item.mssv}</td>
-                              <td>{item.hoTen}</td>
+                              <td>{item.hoTen || '-'}</td>
                               <td className="col-loai">{item.loaiHoSo}</td>
                               <td className="col-hanhdong">
                                 <span className={`trang-muon-tra__badge ${badgeInfo.className}`}>
                                   {badgeInfo.label}
                                 </span>
                               </td>
-                              <td className="col-datetime">{item.thoiGian}</td>
-                              <td className="col-nguoi">{item.nguoiThucHien}</td>
+                              <td className="col-datetime">{formatDateTime(item.thoiGian)}</td>
+                              <td className="col-date">{formatDate(item.ngayMuon)}</td>
+                              <td className="col-date">{formatDate(item.hanTra)}</td>
+                              <td className="col-nguoi">{item.nguoiThucHien || '-'}</td>
                               <td className="col-ghichu">{item.ghiChu || '-'}</td>
                             </tr>
                           )
@@ -608,30 +839,47 @@ export function TrangMuonTra() {
                     </table>
                   </div>
 
-                  {/* Pagination */}
                   {totalPages > 1 && (
                     <div className="trang-muon-tra__pagination">
                       <span className="trang-muon-tra__pagination-info">
-                        Hiển thị {(currentPage - 1) * PAGE_SIZE + 1} - {Math.min(currentPage * PAGE_SIZE, totalElements)} của {totalElements} kết quả
+                        Hiển thị {currentPage * PAGE_SIZE + 1} -{' '}
+                        {Math.min((currentPage + 1) * PAGE_SIZE, totalElementsLichSu)} của{' '}
+                        {totalElementsLichSu} kết quả
                       </span>
                       <div className="trang-muon-tra__pagination-controls">
-                        <button className="trang-muon-tra__page-btn" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                        <button
+                          className="trang-muon-tra__page-btn"
+                          onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                          disabled={currentPage === 0}
+                        >
                           <ChevronLeft size={16} />
                         </button>
                         {getPageNumbers().map((page, index) =>
                           page === '...' ? (
-                            <span key={`ellipsis-${index}`} className="trang-muon-tra__page-btn" style={{ cursor: 'default' }}>...</span>
+                            <span
+                              key={`ellipsis-${index}`}
+                              className="trang-muon-tra__page-btn"
+                              style={{ cursor: 'default' }}
+                            >
+                              ...
+                            </span>
                           ) : (
                             <button
                               key={page}
-                              className={`trang-muon-tra__page-btn ${currentPage === page ? 'trang-muon-tra__page-btn--active' : ''}`}
-                              onClick={() => setCurrentPage(page)}
+                              className={`trang-muon-tra__page-btn ${
+                                currentPage + 1 === page ? 'trang-muon-tra__page-btn--active' : ''
+                              }`}
+                              onClick={() => setCurrentPage(page - 1)}
                             >
                               {page}
                             </button>
                           )
                         )}
-                        <button className="trang-muon-tra__page-btn" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                        <button
+                          className="trang-muon-tra__page-btn"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                          disabled={currentPage + 1 >= totalPages}
+                        >
                           <ChevronRight size={16} />
                         </button>
                       </div>
@@ -641,7 +889,13 @@ export function TrangMuonTra() {
               ) : (
                 <div className="trang-muon-tra__empty">
                   <FileX className="trang-muon-tra__empty-icon" size={48} />
-                  <p className="trang-muon-tra__empty-text">Không có lịch sử nào</p>
+                  <p className="trang-muon-tra__empty-text">
+                    Không có lịch sử nào
+                    {searchLichSu || hanhDongLichSu || tuNgay || denNgay
+                      ? ' khớp với bộ lọc hiện tại'
+                      : ''}
+                    .
+                  </p>
                 </div>
               )}
             </div>
@@ -649,7 +903,7 @@ export function TrangMuonTra() {
         )}
       </div>
 
-      {/* Modal Mượn hồ sơ */}
+      {/* Modal Mượn hồ sơ — TODO: chưa nối backend */}
       <Modal
         isOpen={modalMuonOpen}
         onClose={() => setModalMuonOpen(false)}
@@ -667,7 +921,6 @@ export function TrangMuonTra() {
         }
       >
         <div className="trang-muon-tra__modal-content">
-          {/* Section 1: MSSV */}
           <div className="trang-muon-tra__form-section">
             <h3 className="trang-muon-tra__form-section-title">MSSV *</h3>
             <FormInput
@@ -683,7 +936,6 @@ export function TrangMuonTra() {
             )}
           </div>
 
-          {/* Section 2: Thông tin sinh viên (read-only) */}
           {sinhVienInfo && (
             <div className="trang-muon-tra__form-section">
               <h3 className="trang-muon-tra__form-section-title">Thông tin sinh viên</h3>
@@ -714,21 +966,22 @@ export function TrangMuonTra() {
             </div>
           )}
 
-          {/* Section 3: Thông tin phiếu mượn */}
           <div className="trang-muon-tra__form-section">
             <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu mượn</h3>
             <div className="trang-muon-tra__form-grid">
               <FormSelect
                 label="Loại hồ sơ *"
                 value={muonForm.loaiHoSo}
-                onChange={(e) => setMuonForm(prev => ({ ...prev, loaiHoSo: e.target.value }))}
+                onChange={(e) => setMuonForm((prev) => ({ ...prev, loaiHoSo: e.target.value }))}
                 options={LOAI_HO_SO_CHON_OPTIONS}
                 placeholder="Chọn loại hồ sơ"
               />
               <FormSelect
                 label="Cán bộ phụ trách *"
                 value={muonForm.canBoPhuTrach}
-                onChange={(e) => setMuonForm(prev => ({ ...prev, canBoPhuTrach: e.target.value }))}
+                onChange={(e) =>
+                  setMuonForm((prev) => ({ ...prev, canBoPhuTrach: e.target.value }))
+                }
                 options={CAN_BO_OPTIONS}
                 placeholder="Chọn cán bộ phụ trách"
               />
@@ -736,19 +989,19 @@ export function TrangMuonTra() {
                 label="Ngày mượn *"
                 type="date"
                 value={muonForm.ngayMuon}
-                onChange={(e) => setMuonForm(prev => ({ ...prev, ngayMuon: e.target.value }))}
+                onChange={(e) => setMuonForm((prev) => ({ ...prev, ngayMuon: e.target.value }))}
               />
               <FormInput
                 label="Hạn trả *"
                 type="date"
                 value={muonForm.hanTra}
-                onChange={(e) => setMuonForm(prev => ({ ...prev, hanTra: e.target.value }))}
+                onChange={(e) => setMuonForm((prev) => ({ ...prev, hanTra: e.target.value }))}
               />
               <div className="trang-muon-tra__form-full">
                 <FormInput
                   label="Ghi chú"
                   value={muonForm.ghiChu}
-                  onChange={(e) => setMuonForm(prev => ({ ...prev, ghiChu: e.target.value }))}
+                  onChange={(e) => setMuonForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
                   placeholder="Nhập ghi chú (nếu có)"
                 />
               </div>
@@ -768,7 +1021,8 @@ export function TrangMuonTra() {
             <Button variant="secondary" onClick={() => setModalChiTietOpen(false)}>
               Đóng
             </Button>
-            {(selectedRecord?.trangThai === 'Đang mượn' || selectedRecord?.trangThai === 'Quá hạn') && (
+            {(selectedRecord?.trangThai === 'Đang mượn' ||
+              selectedRecord?.trangThai === 'Quá hạn') && (
               <Button variant="primary" onClick={() => openModalTra(selectedRecord)}>
                 Trả hồ sơ
               </Button>
@@ -778,7 +1032,6 @@ export function TrangMuonTra() {
       >
         {selectedRecord && (
           <div className="trang-muon-tra__modal-content">
-            {/* Thông tin sinh viên */}
             <div className="trang-muon-tra__form-section">
               <h3 className="trang-muon-tra__form-section-title">Thông tin sinh viên</h3>
               <div className="trang-muon-tra__info-card">
@@ -789,29 +1042,28 @@ export function TrangMuonTra() {
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Họ và tên</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.hoTen}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.hoTen || '-'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Số CCCD</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.cccd}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.cccd || '-'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Số điện thoại</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.sdt}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.sdt || '-'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Khóa</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.khoa}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.khoa || '-'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Lớp</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.lop}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.lop || '-'}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Thông tin phiếu mượn */}
             <div className="trang-muon-tra__form-section">
               <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu mượn</h3>
               <div className="trang-muon-tra__info-card">
@@ -826,7 +1078,7 @@ export function TrangMuonTra() {
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Cán bộ phụ trách</span>
-                    <span className="trang-muon-tra__info-value">{selectedRecord.canBoPhuTrach}</span>
+                    <span className="trang-muon-tra__info-value">{selectedRecord.canBoPhuTrach || '-'}</span>
                   </div>
                   <div className="trang-muon-tra__info-item">
                     <span className="trang-muon-tra__info-label">Ngày mượn</span>
@@ -853,7 +1105,7 @@ export function TrangMuonTra() {
         )}
       </Modal>
 
-      {/* Modal Trả hồ sơ */}
+      {/* Modal Trả hồ sơ — TODO: chưa nối backend */}
       <Modal
         isOpen={modalTraOpen}
         onClose={() => setModalTraOpen(false)}
@@ -878,7 +1130,7 @@ export function TrangMuonTra() {
             </div>
             <div className="trang-muon-tra__info-row">
               <span className="trang-muon-tra__info-label">Họ và tên:</span>
-              <span className="trang-muon-tra__info-value">{selectedRecord.hoTen}</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.hoTen || '-'}</span>
             </div>
             <div className="trang-muon-tra__info-row">
               <span className="trang-muon-tra__info-label">Loại hồ sơ:</span>
@@ -886,7 +1138,7 @@ export function TrangMuonTra() {
             </div>
             <div className="trang-muon-tra__info-row">
               <span className="trang-muon-tra__info-label">Cán bộ phụ trách:</span>
-              <span className="trang-muon-tra__info-value">{selectedRecord.canBoPhuTrach}</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.canBoPhuTrach || '-'}</span>
             </div>
             <div className="trang-muon-tra__info-row">
               <span className="trang-muon-tra__info-label">Ngày mượn:</span>
@@ -907,13 +1159,7 @@ export function TrangMuonTra() {
       </Modal>
 
       {/* Toast */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }
