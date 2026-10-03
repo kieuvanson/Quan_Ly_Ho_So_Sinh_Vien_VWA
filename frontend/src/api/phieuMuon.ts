@@ -84,6 +84,44 @@ export const phieuMuonApi = {
     )
     return res.data
   },
+
+  /**
+   * Lấy danh sách phiếu đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn) của 1 SV.
+   * Endpoint: GET /api/phieu-muon/by-mssv/{mssv}
+   */
+  getActiveByMssv: async (mssv: string): Promise<ApiResponse<PhieuMuon[]>> => {
+    const res = await apiClient.get<ApiResponse<PhieuMuon[]>>(
+      `/api/phieu-muon/by-mssv/${encodeURIComponent(mssv)}`
+    )
+    return res.data
+  },
+
+  /**
+   * Duyệt phiếu: Chờ duyệt → Đang mượn (Mượn tạm thời) / Hoàn tất (Rút vĩnh viễn).
+   * Endpoint: PUT /api/phieu-muon/{maPhieu}/duyet
+   */
+  duyet: async (maPhieu: string): Promise<ApiResponse<PhieuMuon>> => {
+    const res = await apiClient.put<ApiResponse<PhieuMuon>>(
+      `/api/phieu-muon/${encodeURIComponent(maPhieu)}/duyet`
+    )
+    return res.data
+  },
+
+  /**
+   * Từ chối phiếu: Chờ duyệt → Từ chối.
+   * Endpoint: PUT /api/phieu-muon/{maPhieu}/tu-choi
+   * Body (optional): { lyDoTuChoi: "..." }
+   */
+  tuChoi: async (
+    maPhieu: string,
+    body: { lyDoTuChoi?: string } = {}
+  ): Promise<ApiResponse<PhieuMuon>> => {
+    const res = await apiClient.put<ApiResponse<PhieuMuon>>(
+      `/api/phieu-muon/${encodeURIComponent(maPhieu)}/tu-choi`,
+      body
+    )
+    return res.data
+  },
 }
 
 /** Lookup helpers dùng chung trong trang mượn / trả. */

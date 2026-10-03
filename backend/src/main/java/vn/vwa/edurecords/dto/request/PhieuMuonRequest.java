@@ -44,9 +44,13 @@ public class PhieuMuonRequest {
     @Size(max = 500)
     private String ghiChu;
 
-    /** Danh sách mã hồ sơ giấy tờ thuộc phiếu — bắt buộc >= 1 cho cả Mượn và Rút. */
-    @NotNull
-    @Size(min = 1, message = "Phải chọn ít nhất 1 hồ sơ giấy tờ")
+    /**
+     * Danh sách mã hồ sơ giấy tờ thuộc phiếu.
+     *
+     * - Mượn tạm thời: BẮT BUỘC >= 1 (validate ở service).
+     * - Rút vĩnh viễn: KHÔNG bắt buộc; nếu trống hoặc null, service tự fill
+     *   TOÀN BỘ giấy tờ hiện có của sinh viên (theo AGENTS.md mục 5).
+     */
     private List<String> danhSachMaHoSo;
 
     public String getMssv() { return mssv; }

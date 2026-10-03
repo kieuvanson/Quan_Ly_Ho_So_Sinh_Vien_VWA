@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -12,14 +12,31 @@ import {
   Loader2,
   Trash2,
   Save,
+  ClipboardList,
+  Calendar,
+  Inbox,
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
 import { hoSoGiayToApi } from '../api/hoSoGiayTo'
 import { loaiGiayToApi } from '../api/loaiGiayTo'
+import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
+import { authStore } from '../lib/authStore'
 import { apiClient } from '../api/client'
-import type { SinhVien, HoSoGiayTo, LoaiGiayTo } from '../api/types'
+import type { SinhVien, HoSoGiayTo, LoaiGiayTo, PhieuMuon } from '../api/types'
 import { Button, Modal, FormInput, FormSelect, Toast } from '../components/ui'
 import './TrangChiTietHoSo.css'
+
+/** Hạn trả mặc định = ngày mượn + 7 ngày. */
+function defaultHanTra(ngayMuon: string): string {
+  if (!ngayMuon) return ''
+  try {
+    const d = new Date(ngayMuon)
+    d.setDate(d.getDate() + 7)
+    return d.toISOString().split('T')[0]
+  } catch {
+    return ''
+  }
+}
 
 type TabType = 'thong-tin' | 'giay-to'
 
@@ -50,6 +67,17 @@ const TRANG_THAI_NOP_MAPPING: Record<string, { label: string; className: string 
   'Chưa nộp': { label: 'Chưa nộp', className: 'badge--secondary' },
   'Thiếu': { label: 'Thiếu', className: 'badge--warning' },
   'Không hợp lệ': { label: 'Không hợp lệ', className: 'badge--danger' },
+}
+
+// Mapping trạng thái phiếu mượn
+const TRANG_THAI_PHIEU_MAPPING: Record<string, { label: string; className: string }> = {
+  'Chờ duyệt': { label: 'Chờ duyệt', className: 'badge--info' },
+  'Đang mượn': { label: 'Đang mượn', className: 'badge--primary' },
+  'Quá hạn': { label: 'Quá hạn', className: 'badge--danger' },
+  'Đã duyệt': { label: 'Đã duyệt', className: 'badge--primary' },
+  'Đã trả': { label: 'Đã trả', className: 'badge--success' },
+  'Hoàn tất': { label: 'Hoàn tất', className: 'badge--success' },
+  'Từ chối': { label: 'Từ chối', className: 'badge--danger' },
 }
 
 export function TrangChiTietHoSo() {
@@ -102,6 +130,45 @@ export function TrangChiTietHoSo() {
     nganh: '',
   })
 
+  // ============================================================
+  // Phiếu mượn / trả đang hoạt động của sinh viên này
+  // ============================================================
+  const [activePhieuMuonList, setActivePhieuMuonList] = useState<PhieuMuon[]>([])
+  const [isLoadingPhieuMuon, setIsLoadingPhieuMuon] = useState(false)
+
+  /** Fetch danh sách phiếu đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn) của SV. */
+  const fetchActivePhieuMuon = useCallback(async (mssvVal: string) => {
+    setIsLoadingPhieuMuon(true)
+    try {
+      const res = await phieuMuonApi.getActiveByMssv(mssvVal)
+      if (res.success && Array.isArray(res.data)) {
+        setActivePhieuMuonList(res.data)
+      } else {
+        setActivePhieuMuonList([])
+      }
+    } catch {
+      setActivePhieuMuonList([])
+    } finally {
+      setIsLoadingPhieuMuon(false)
+    }
+  }, [])
+
+  // ============================================================
+  // Modal Mượn / trả hồ sơ
+  // ============================================================
+  const [isMuonTraModalOpen, setIsMuonTraModalOpen] = useState(false)
+  const [isSubmittingMuonTra, setIsSubmittingMuonTra] = useState(false)
+  /** Hồ sơ giấy tờ load khi mở modal Mượn/Trả. */
+  const [muonTraHoSoList, setMuonTraHoSoList] = useState<HoSoGiayTo[]>([])
+  const [isLoadingMuonTraHoSo, setIsLoadingMuonTraHoSo] = useState(false)
+  const [selectedMaHoSo, setSelectedMaHoSo] = useState<string[]>([])
+  const [muonTraForm, setMuonTraForm] = useState({
+    loaiPhieu: 'Mượn tạm thời',
+    ngayMuon: new Date().toISOString().split('T')[0],
+    ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
+    lyDo: '',
+  })
+
   // Fetch student data
   useEffect(() => {
     if (!mssv) return
@@ -136,7 +203,10 @@ export function TrangChiTietHoSo() {
       .finally(() => {
         setIsLoadingSv(false)
       })
-  }, [mssv])
+
+    // Đồng thời load danh sách phiếu mượn đang hoạt động của SV này
+    fetchActivePhieuMuon(mssv)
+  }, [mssv, fetchActivePhieuMuon])
 
   // Fetch documents when tab 'giay-to' is active
   useEffect(() => {
@@ -313,8 +383,79 @@ export function TrangChiTietHoSo() {
     }
   }
 
-  function handleMuonTra() {
-    showToast('Chức năng đang được phát triển.')
+  /** Mở modal Mượn / trả hồ sơ. Auto-load danh sách hồ sơ giấy tờ của SV đang xem. */
+  const handleMuonTra = useCallback(async () => {
+    if (!sinhVien || !mssv) return
+    setIsMuonTraModalOpen(true)
+    setIsLoadingMuonTraHoSo(true)
+    setSelectedMaHoSo([])
+    setMuonTraForm({
+      loaiPhieu: 'Mượn tạm thời',
+      ngayMuon: new Date().toISOString().split('T')[0],
+      ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
+      lyDo: '',
+    })
+    try {
+      const list = await lookupApi.getHoSoGiayTo(mssv)
+      setMuonTraHoSoList(list)
+    } catch {
+      setMuonTraHoSoList([])
+    } finally {
+      setIsLoadingMuonTraHoSo(false)
+    }
+  }, [sinhVien, mssv])
+
+  function handleCloseMuonTraModal() {
+    setIsMuonTraModalOpen(false)
+    setSelectedMaHoSo([])
+    setMuonTraForm((prev) => ({ ...prev, lyDo: '' }))
+  }
+
+  /** Submit tạo phiếu mượn / rút — gọi POST /api/phieu-muon. */
+  async function handleSubmitMuonTra() {
+    if (!sinhVien || !mssv) return
+    if (selectedMaHoSo.length === 0) {
+      showToast('Vui lòng chọn ít nhất 1 hồ sơ giấy tờ', 'error')
+      return
+    }
+    if (!muonTraForm.lyDo.trim()) {
+      showToast('Vui lòng nhập lý do mượn / rút', 'error')
+      return
+    }
+    if (muonTraForm.loaiPhieu === 'Mượn tạm thời' && !muonTraForm.ngayTraDuKien) {
+      showToast('Phiếu mượn tạm thời phải có hạn trả', 'error')
+      return
+    }
+
+    setIsSubmittingMuonTra(true)
+    try {
+      const res = await phieuMuonApi.create({
+        mssv,
+        loaiPhieu: muonTraForm.loaiPhieu,
+        ngayMuon: muonTraForm.ngayMuon,
+        ngayTraDuKien:
+          muonTraForm.loaiPhieu === 'Mượn tạm thời' ? muonTraForm.ngayTraDuKien : undefined,
+        lyDo: muonTraForm.lyDo.trim(),
+        danhSachMaHoSo: selectedMaHoSo,
+      })
+      if (res.success) {
+        showToast(
+          `Tạo phiếu thành công. Mã phiếu: ${res.data?.maPhieu || ''}`,
+          'success'
+        )
+        handleCloseMuonTraModal()
+        // Refresh lại tab giấy tờ + danh sách phiếu đang hoạt động
+        setGiayToList([])
+        if (mssv) fetchActivePhieuMuon(mssv)
+      } else {
+        showToast(res.message || 'Tạo phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmittingMuonTra(false)
+    }
   }
 
   function handleRutHoSo() {
@@ -513,7 +654,17 @@ export function TrangChiTietHoSo() {
         <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleOpenBoSungModal}>
           Bổ sung giấy tờ
         </Button>
-        <Button variant="secondary" icon={<ArrowRightLeft size={18} />} onClick={handleMuonTra}>
+        <Button
+          variant="secondary"
+          icon={<ArrowRightLeft size={18} />}
+          onClick={handleMuonTra}
+          disabled={sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'}
+          title={
+            sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'
+              ? 'Sinh viên đã rút hồ sơ — không thể tạo phiếu mượn.'
+              : ''
+          }
+        >
           Mượn / trả hồ sơ
         </Button>
         <Button variant="danger" icon={<FileX size={18} />} onClick={handleRutHoSo}>
@@ -522,6 +673,95 @@ export function TrangChiTietHoSo() {
         <Button variant="secondary" icon={<Printer size={18} />} onClick={handleInHoSo}>
           In / xuất hồ sơ
         </Button>
+      </div>
+
+      {/* Phiếu mượn / trả đang hoạt động của sinh viên này */}
+      <div className="chi-tiet-ho-so__phieu-muon-card">
+        <div className="chi-tiet-ho-so__phieu-muon-header">
+          <div className="chi-tiet-ho-so__phieu-muon-title">
+            <ClipboardList size={18} />
+            <span>Phiếu mượn / trả đang hoạt động</span>
+            <span className="chi-tiet-ho-so__phieu-muon-count">
+              {isLoadingPhieuMuon ? '...' : `(${activePhieuMuonList.length})`}
+            </span>
+          </div>
+        </div>
+
+        {isLoadingPhieuMuon ? (
+          <div className="chi-tiet-ho-so__phieu-muon-loading">
+            <Loader2 size={20} className="chi-tiet-ho-so__loading-icon" />
+            <span>Đang tải danh sách phiếu...</span>
+          </div>
+        ) : activePhieuMuonList.length === 0 ? (
+          <div className="chi-tiet-ho-so__phieu-muon-empty">
+            <Inbox size={20} />
+            <span>Sinh viên hiện không có phiếu mượn / trả nào đang hoạt động.</span>
+          </div>
+        ) : (
+          <div className="chi-tiet-ho-so__phieu-muon-list">
+            {activePhieuMuonList.map((pm) => {
+              const trangThaiInfo = TRANG_THAI_PHIEU_MAPPING[pm.trangThai] || {
+                label: pm.trangThai,
+                className: 'badge--secondary',
+              }
+              return (
+                <div key={pm.maPhieu} className="chi-tiet-ho-so__phieu-muon-item">
+                  <div className="chi-tiet-ho-so__phieu-muon-item-top">
+                    <div className="chi-tiet-ho-so__phieu-muon-item-left">
+                      <span className="chi-tiet-ho-so__phieu-muon-code">{pm.maPhieu}</span>
+                      <span className={`chi-tiet-ho-so__badge ${trangThaiInfo.className}`}>
+                        {trangThaiInfo.label}
+                      </span>
+                    </div>
+                    <div className="chi-tiet-ho-so__phieu-muon-item-right">
+                      <span className="chi-tiet-ho-so__phieu-muon-loai">
+                        {pm.loaiPhieu}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="chi-tiet-ho-so__phieu-muon-item-body">
+                    <div className="chi-tiet-ho-so__phieu-muon-field">
+                      <Calendar size={14} />
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Ngày mượn:</span>
+                      <span>{formatDate(pm.ngayMuon || '')}</span>
+                    </div>
+                    {pm.loaiPhieu === 'Mượn tạm thời' && (
+                      <div className="chi-tiet-ho-so__phieu-muon-field">
+                        <Calendar size={14} />
+                        <span className="chi-tiet-ho-so__phieu-muon-label">Hạn trả:</span>
+                        <span>{formatDate(pm.ngayTraDuKien || '')}</span>
+                      </div>
+                    )}
+                    <div className="chi-tiet-ho-so__phieu-muon-field">
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Cán bộ:</span>
+                      <span>{pm.nguoiTao || '-'}</span>
+                    </div>
+                    <div className="chi-tiet-ho-so__phieu-muon-field chi-tiet-ho-so__phieu-muon-field--hoso">
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Hồ sơ:</span>
+                      {pm.danhSachMaHoSo && pm.danhSachMaHoSo.length > 0 ? (
+                        <div className="chi-tiet-ho-so__phieu-muon-hoso-tags">
+                          {pm.danhSachMaHoSo.map((ma) => (
+                            <span key={ma} className="chi-tiet-ho-so__phieu-muon-hoso-tag">
+                              {ma}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#6b7280' }}>—</span>
+                      )}
+                    </div>
+                    {pm.lyDo && (
+                      <div className="chi-tiet-ho-so__phieu-muon-field chi-tiet-ho-so__phieu-muon-field--full">
+                        <span className="chi-tiet-ho-so__phieu-muon-label">Lý do:</span>
+                        <span>{pm.lyDo}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -889,6 +1129,271 @@ export function TrangChiTietHoSo() {
               onChange={(e) => setBoSungForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
               placeholder="VD: Bổ sung giấy khai sinh bản sao có công chứng"
             />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Mượn / trả hồ sơ (sinh viên đang được chọn) */}
+      <Modal
+        isOpen={isMuonTraModalOpen}
+        onClose={handleCloseMuonTraModal}
+        title="Mượn / trả hồ sơ"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleCloseMuonTraModal} disabled={isSubmittingMuonTra}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitMuonTra}
+              disabled={isSubmittingMuonTra}
+              icon={isSubmittingMuonTra ? <Loader2 size={16} /> : <ArrowRightLeft size={16} />}
+            >
+              {isSubmittingMuonTra ? 'Đang tạo phiếu...' : 'Tạo phiếu'}
+            </Button>
+          </>
+        }
+      >
+        <div className="chi-tiet-ho-so__form-grid">
+          {/* Thông tin sinh viên (read-only) */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
+              Sinh viên
+            </h3>
+            <div
+              className="trang-muon-tra__info-card"
+              style={{ background: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 8,
+                  fontSize: 14,
+                }}
+              >
+                <div>
+                  <span style={{ color: '#6b7280' }}>Họ tên: </span>
+                  <strong>{sinhVien?.hoTen || '-'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>MSSV: </span>
+                  <strong>{sinhVien?.mssv || mssv}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>Lớp: </span>
+                  <span>{sinhVien?.lop || '-'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>Khóa: </span>
+                  <span>{sinhVien?.khoa || '-'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Loại phiếu + cán bộ phụ trách */}
+          <FormSelect
+            label="Loại hồ sơ *"
+            name="loaiPhieu"
+            value={muonTraForm.loaiPhieu}
+            onChange={(e) => {
+              const v = e.target.value
+              setMuonTraForm((prev) => ({
+                ...prev,
+                loaiPhieu: v,
+                ngayTraDuKien:
+                  v === 'Mượn tạm thời' ? defaultHanTra(prev.ngayMuon) : '',
+              }))
+            }}
+            options={[
+              { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
+              { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
+            ]}
+          />
+          <div className="chi-tiet-ho-so__form-group">
+            <label
+              className="chi-tiet-ho-so__form-label"
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              Cán bộ phụ trách
+            </label>
+            <input
+              className="chi-tiet-ho-so__form-input"
+              type="text"
+              value={authStore.getUser()?.hoTen || authStore.getUser()?.username || '—'}
+              disabled
+              style={{
+                padding: '10px 12px',
+                border: '1px solid var(--color-border)',
+                borderRadius: 6,
+                fontSize: 14,
+                background: '#f8fafc',
+                color: 'var(--color-text-secondary)',
+              }}
+            />
+          </div>
+
+          <FormInput
+            label="Ngày mượn *"
+            name="ngayMuon"
+            type="date"
+            value={muonTraForm.ngayMuon}
+            onChange={(e) => {
+              const v = e.target.value
+              setMuonTraForm((prev) => ({
+                ...prev,
+                ngayMuon: v,
+                ngayTraDuKien:
+                  prev.loaiPhieu === 'Mượn tạm thời' ? defaultHanTra(v) : prev.ngayTraDuKien,
+              }))
+            }}
+          />
+          {muonTraForm.loaiPhieu === 'Mượn tạm thời' && (
+            <FormInput
+              label="Hạn trả *"
+              name="ngayTraDuKien"
+              type="date"
+              value={muonTraForm.ngayTraDuKien}
+              onChange={(e) =>
+                setMuonTraForm((prev) => ({ ...prev, ngayTraDuKien: e.target.value }))
+              }
+            />
+          )}
+
+          {/* Lý do mượn / rút */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Lý do mượn / rút *"
+              name="lyDo"
+              value={muonTraForm.lyDo}
+              onChange={(e) => setMuonTraForm((prev) => ({ ...prev, lyDo: e.target.value }))}
+              placeholder="Nhập lý do mượn hoặc rút hồ sơ"
+            />
+          </div>
+
+          {/* Danh sách hồ sơ giấy tờ - cho phép tick chọn */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
+              Chọn hồ sơ giấy tờ * ({selectedMaHoSo.length}/{muonTraHoSoList.length} đã chọn)
+            </h3>
+            {isLoadingMuonTraHoSo ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  color: '#6b7280',
+                  padding: 12,
+                }}
+              >
+                <Loader2 size={16} className="chi-tiet-ho-so__loading-icon" />
+                <span>Đang tải hồ sơ giấy tờ...</span>
+              </div>
+            ) : muonTraHoSoList.length === 0 ? (
+              <p style={{ color: '#6b7280', fontSize: 14 }}>
+                Sinh viên chưa có hồ sơ giấy tờ nào trong hệ thống. Hãy bổ sung giấy tờ trước.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: 6,
+                  padding: 8,
+                  background: '#fafafa',
+                }}
+              >
+                {muonTraHoSoList.map((hs) => {
+                  const loai = loaiGiayToList.find((l) => l.maLoai === hs.maLoai)
+                  return (
+                    <label
+                      key={hs.maHoSo}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 90px 1fr 110px 110px',
+                        gap: 8,
+                        alignItems: 'center',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedMaHoSo.includes(hs.maHoSo)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
+                          } else {
+                            setSelectedMaHoSo((prev) =>
+                              prev.filter((id) => id !== hs.maHoSo)
+                            )
+                          }
+                        }}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          fontWeight: 600,
+                          color: 'var(--color-primary)',
+                        }}
+                      >
+                        {hs.maHoSo}
+                      </span>
+                      <span>{loai ? loai.tenGiayTo : hs.maLoai}</span>
+                      <span style={{ color: '#6b7280' }}>{hs.trangThaiNop}</span>
+                      <span style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                        {hs.viTriLuuKho || '-'}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              <button
+                type="button"
+                onClick={() => setSelectedMaHoSo(muonTraHoSoList.map((h) => h.maHoSo))}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 4,
+                  background: 'var(--color-surface)',
+                  cursor: 'pointer',
+                }}
+                disabled={muonTraHoSoList.length === 0}
+              >
+                Chọn tất cả
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMaHoSo([])}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 4,
+                  background: 'var(--color-surface)',
+                  cursor: 'pointer',
+                }}
+                disabled={selectedMaHoSo.length === 0}
+              >
+                Bỏ chọn
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

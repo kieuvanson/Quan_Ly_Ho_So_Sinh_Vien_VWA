@@ -138,6 +138,142 @@
   transform: translateY(-1px);
 }
 
+/* ============================================================
+   Phiếu mượn / trả đang hoạt động
+   ============================================================ */
+.chi-tiet-ho-so__phieu-muon-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.chi-tiet-ho-so__phieu-muon-header {
+  margin-bottom: var(--space-4);
+}
+
+.chi-tiet-ho-so__phieu-muon-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.chi-tiet-ho-so__phieu-muon-count {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+
+.chi-tiet-ho-so__phieu-muon-loading,
+.chi-tiet-ho-so__phieu-muon-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3) 0;
+}
+
+.chi-tiet-ho-so__phieu-muon-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__phieu-muon-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  background: #f8fafc;
+  transition: all var(--transition-fast);
+}
+
+.chi-tiet-ho-so__phieu-muon-item:hover {
+  border-color: var(--color-primary-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.chi-tiet-ho-so__phieu-muon-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chi-tiet-ho-so__phieu-muon-item-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chi-tiet-ho-so__phieu-muon-code {
+  font-family: var(--font-mono, monospace);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+}
+
+.chi-tiet-ho-so__phieu-muon-loai {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.chi-tiet-ho-so__phieu-muon-item-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.chi-tiet-ho-so__phieu-muon-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text);
+}
+
+.chi-tiet-ho-so__phieu-muon-field--full {
+  grid-column: 1 / -1;
+}
+
+.chi-tiet-ho-so__phieu-muon-field--hoso {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.chi-tiet-ho-so__phieu-muon-label {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+  margin-right: 4px;
+}
+
+.chi-tiet-ho-so__phieu-muon-hoso-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chi-tiet-ho-so__phieu-muon-hoso-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  background: var(--color-primary-light, #eff6ff);
+  border: 1px solid var(--color-primary-border, #bfdbfe);
+  border-radius: var(--radius-full);
+}
+
 /* Tabs */
 .chi-tiet-ho-so__tabs-wrapper {
   background-color: var(--color-surface);

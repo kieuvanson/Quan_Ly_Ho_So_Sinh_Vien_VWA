@@ -96,6 +96,18 @@ public class PhieuXuatHoSoController {
     }
 
     /**
+     * GET /api/phieu-muon/by-mssv/{mssv}
+     * Lấy danh sách phiếu đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn) của 1 SV.
+     * Dùng cho trang chi tiết hồ sơ SV.
+     */
+    @GetMapping("/by-mssv/{mssv}")
+    public ResponseEntity<ApiResponse<List<PhieuMuonResponse>>> getActiveByMssv(@PathVariable String mssv) {
+        List<PhieuMuonResponse> result = phieuXuatHoSoService.getActiveByMssv(mssv);
+        return ResponseEntity.ok(ApiResponse.success(
+                "Lấy danh sách phiếu đang hoạt động của sinh viên thành công", result));
+    }
+
+    /**
      * GET /api/phieu-muon/{maPhieu}
      * Lấy chi tiết 1 phiếu.
      */
@@ -113,6 +125,10 @@ public class PhieuXuatHoSoController {
      *
      * Cán bộ phụ trách (nguoiTao) = user đang đăng nhập (lấy từ JWT).
      * Mặc định trạng thái mới = 'Chờ duyệt' (cán bộ duyệt sau).
+     *
+     * Với loaiPhieu = 'Rút vĩnh viễn':
+     *  - Không cho tạo nếu còn phiếu Mượn tạm thời 'Đang mượn' chưa trả.
+     *  - LUÔN áp dụng cho toàn bộ giấy tờ hiện có của SV.
      */
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
@@ -121,6 +137,33 @@ public class PhieuXuatHoSoController {
         PhieuMuonResponse result = phieuXuatHoSoService.createPhieu(req);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo phiếu mượn / rút hồ sơ thành công", result));
+    }
+
+    /**
+     * PUT /api/phieu-muon/{maPhieu}/duyet
+     * Duyệt phiếu: Chờ duyệt → Đang mượn (Mượn tạm thời) hoặc Hoàn tất + set TrangThaiHocVu (Rút vĩnh viễn).
+     */
+    @PutMapping("/{maPhieu}/duyet")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<PhieuMuonResponse>> duyetPhieu(@PathVariable String maPhieu) {
+        PhieuMuonResponse result = phieuXuatHoSoService.duyetPhieu(maPhieu);
+        return ResponseEntity.ok(ApiResponse.success("Duyệt phiếu thành công", result));
+    }
+
+    /**
+     * PUT /api/phieu-muon/{maPhieu}/tu-choi
+     * Từ chối phiếu: Chờ duyệt → Từ chối.
+     *
+     * Body (optional): { lyDoTuChoi: "..." }
+     */
+    @PutMapping("/{maPhieu}/tu-choi")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<PhieuMuonResponse>> tuChoiPhieu(
+            @PathVariable String maPhieu,
+            @RequestBody(required = false) TuChoiRequest req) {
+        String lyDo = req != null ? req.getLyDoTuChoi() : null;
+        PhieuMuonResponse result = phieuXuatHoSoService.tuChoiPhieu(maPhieu, lyDo);
+        return ResponseEntity.ok(ApiResponse.success("Từ chối phiếu thành công", result));
     }
 
     /**
@@ -137,5 +180,16 @@ public class PhieuXuatHoSoController {
         PhieuMuonResponse result = phieuXuatHoSoService.traPhieu(maPhieu,
                 req != null ? req : new PhieuTraRequest());
         return ResponseEntity.ok(ApiResponse.success("Trả hồ sơ thành công", result));
+    }
+
+    /**
+     * DTO đơn giản cho body PUT /tu-choi.
+     * Tách ra inner static class để tránh tạo thêm file DTO.
+     */
+    public static class TuChoiRequest {
+        private String lyDoTuChoi;
+
+        public String getLyDoTuChoi() { return lyDoTuChoi; }
+        public void setLyDoTuChoi(String lyDoTuChoi) { this.lyDoTuChoi = lyDoTuChoi; }
     }
 }

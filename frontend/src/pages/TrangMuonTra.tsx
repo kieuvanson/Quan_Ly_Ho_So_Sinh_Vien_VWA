@@ -66,6 +66,7 @@ interface LichSuItem {
 // =========================================================================
 
 const TRANG_THAI_MUON_MAPPING: Record<string, { label: string; className: string }> = {
+  'Chờ duyệt': { label: 'Chờ duyệt', className: 'badge--info' },
   'Đang mượn': { label: 'Đang mượn', className: 'badge--primary' },
   'Quá hạn': { label: 'Quá hạn', className: 'badge--danger' },
 }
@@ -85,6 +86,7 @@ const HANH_DONG_MAPPING: Record<string, { label: string; className: string }> = 
 
 const TRANG_THAI_OPTIONS = [
   { value: '', label: 'Tất cả trạng thái' },
+  { value: 'Chờ duyệt', label: 'Chờ duyệt' },
   { value: 'Đang mượn', label: 'Đang mượn' },
   { value: 'Quá hạn', label: 'Quá hạn' },
 ]
@@ -161,7 +163,10 @@ export function TrangMuonTra() {
   const [modalMuonOpen, setModalMuonOpen] = useState(false)
   const [modalTraOpen, setModalTraOpen] = useState(false)
   const [modalChiTietOpen, setModalChiTietOpen] = useState(false)
+  const [modalTuChoiOpen, setModalTuChoiOpen] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<DangMuonItem | null>(null)
+  const [isSubmittingDuyet, setIsSubmittingDuyet] = useState(false)
+  const [lyDoTuChoi, setLyDoTuChoi] = useState('')
 
   // ----- Student info (form Mượn) — lookup từ API /api/sinh-vien/{mssv} -----
   const [sinhVienInfo, setSinhVienInfo] = useState<SinhVien | null>(null)
@@ -495,6 +500,63 @@ export function TrangMuonTra() {
     }
   }
 
+  /** Mở modal nhập lý do từ chối phiếu. */
+  function openModalTuChoi(record: DangMuonItem) {
+    setSelectedRecord(record)
+    setLyDoTuChoi('')
+    setModalTuChoiOpen(true)
+    setModalChiTietOpen(false)
+  }
+
+  /** Duyệt phiếu: PUT /api/phieu-muon/{maPhieu}/duyet. */
+  async function handleDuyet(record?: DangMuonItem | null) {
+    const target = record || selectedRecord
+    if (!target) return
+    if (!confirm(`Duyệt phiếu ${target.maPhieu}?`)) return
+    setIsSubmittingDuyet(true)
+    try {
+      const res = await phieuMuonApi.duyet(target.maPhieu)
+      if (res.success) {
+        showToast(`Duyệt phiếu ${target.maPhieu} thành công`, 'success')
+        fetchDangMuon()
+        fetchLichSu()
+        if (modalChiTietOpen) setModalChiTietOpen(false)
+      } else {
+        showToast(res.message || 'Duyệt phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmittingDuyet(false)
+    }
+  }
+
+  /** Submit từ chối phiếu: PUT /api/phieu-muon/{maPhieu}/tu-choi. */
+  async function handleSubmitTuChoi() {
+    if (!selectedRecord) return
+    setIsSubmittingDuyet(true)
+    try {
+      const res = await phieuMuonApi.tuChoi(selectedRecord.maPhieu, {
+        lyDoTuChoi: lyDoTuChoi.trim() || undefined,
+      })
+      if (res.success) {
+        showToast(`Đã từ chối phiếu ${selectedRecord.maPhieu}`, 'success')
+        setModalTuChoiOpen(false)
+        setSelectedRecord(null)
+        fetchDangMuon()
+        fetchLichSu()
+      } else {
+        showToast(res.message || 'Từ chối phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmittingDuyet(false)
+    }
+  }
+
   // Page numbers cho pagination UI
   function getPageNumbers(): (number | '...')[] {
     const pages: (number | '...')[] = []
@@ -573,6 +635,7 @@ export function TrangMuonTra() {
         >
           <ArrowRightLeft size={18} />
           Hồ sơ đang mượn
+          <span className="trang-muon-tra__tab-hint">(Chờ duyệt · Đang mượn · Quá hạn)</span>
         </button>
         <button
           className={`trang-muon-tra__tab ${activeTab === 'lichsu' ? 'trang-muon-tra__tab--active' : ''}`}
@@ -689,9 +752,32 @@ export function TrangMuonTra() {
                               </td>
                               <td className="col-thaotac">
                                 <div className="trang-muon-tra__actions">
-                                  <Button variant="secondary" size="sm" onClick={() => openModalTra(item)}>
-                                    Trả hồ sơ
-                                  </Button>
+                                  {item.trangThai === 'Chờ duyệt' && (
+                                    <>
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={() => handleDuyet(item)}
+                                        disabled={isSubmittingDuyet}
+                                      >
+                                        Duyệt
+                                      </Button>
+                                      <Button
+                                        variant="danger"
+                                        size="sm"
+                                        onClick={() => openModalTuChoi(item)}
+                                        disabled={isSubmittingDuyet}
+                                      >
+                                        Từ chối
+                                      </Button>
+                                    </>
+                                  )}
+                                  {(item.trangThai === 'Đang mượn' ||
+                                    item.trangThai === 'Quá hạn') && (
+                                    <Button variant="secondary" size="sm" onClick={() => openModalTra(item)}>
+                                      Trả hồ sơ
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1139,6 +1225,24 @@ export function TrangMuonTra() {
             <Button variant="secondary" onClick={() => setModalChiTietOpen(false)}>
               Đóng
             </Button>
+            {selectedRecord?.trangThai === 'Chờ duyệt' && (
+              <>
+                <Button
+                  variant="primary"
+                  onClick={() => handleDuyet(selectedRecord)}
+                  disabled={isSubmittingDuyet}
+                >
+                  Duyệt phiếu
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => openModalTuChoi(selectedRecord)}
+                  disabled={isSubmittingDuyet}
+                >
+                  Từ chối
+                </Button>
+              </>
+            )}
             {(selectedRecord?.trangThai === 'Đang mượn' ||
               selectedRecord?.trangThai === 'Quá hạn') && (
               <Button variant="primary" onClick={() => openModalTra(selectedRecord)}>
@@ -1271,6 +1375,51 @@ export function TrangMuonTra() {
               value={traForm.ghiChuTra}
               onChange={(e) => setTraForm({ ghiChuTra: e.target.value })}
               placeholder="Nhập ghi chú (nếu có)"
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Từ chối phiếu — nhập lý do */}
+      <Modal
+        isOpen={modalTuChoiOpen}
+        onClose={() => setModalTuChoiOpen(false)}
+        title="Từ chối phiếu mượn / rút"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalTuChoiOpen(false)} disabled={isSubmittingDuyet}>
+              Hủy
+            </Button>
+            <Button variant="danger" onClick={handleSubmitTuChoi} disabled={isSubmittingDuyet}>
+              {isSubmittingDuyet ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+            </Button>
+          </>
+        }
+      >
+        {selectedRecord && (
+          <div className="trang-muon-tra__form">
+            <div className="trang-muon-tra__info-row">
+              <span className="trang-muon-tra__info-label">Mã phiếu:</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.maPhieu}</span>
+            </div>
+            <div className="trang-muon-tra__info-row">
+              <span className="trang-muon-tra__info-label">MSSV:</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.mssv}</span>
+            </div>
+            <div className="trang-muon-tra__info-row">
+              <span className="trang-muon-tra__info-label">Họ tên:</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.hoTen || '-'}</span>
+            </div>
+            <div className="trang-muon-tra__info-row">
+              <span className="trang-muon-tra__info-label">Loại hồ sơ:</span>
+              <span className="trang-muon-tra__info-value">{selectedRecord.loaiHoSo}</span>
+            </div>
+            <FormInput
+              label="Lý do từ chối (tuỳ chọn)"
+              value={lyDoTuChoi}
+              onChange={(e) => setLyDoTuChoi(e.target.value)}
+              placeholder="Nhập lý do từ chối (sẽ được lưu vào ghi chú phiếu)"
             />
           </div>
         )}
