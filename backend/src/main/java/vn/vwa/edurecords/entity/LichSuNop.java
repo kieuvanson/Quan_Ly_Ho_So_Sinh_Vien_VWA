@@ -1,6 +1,8 @@
 package vn.vwa.edurecords.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+import vn.vwa.edurecords.hibernate.type.PostgresEnumStringUserType;
 import java.time.LocalDateTime;
 
 @Entity
@@ -20,10 +22,14 @@ public class LichSuNop {
     @Column(name = "hanh_dong", nullable = false, length = 50)
     private String hanhDong;
 
-    @Column(name = "trang_thai_cu")
+    /** Postgres ENUM `trangthainop` (nullable cho log đầu tiên). */
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "trang_thai_cu", columnDefinition = "trangthainop")
     private String trangThaiCu;
 
-    @Column(name = "trang_thai_moi")
+    /** Postgres ENUM `trangthainop`. */
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "trang_thai_moi", columnDefinition = "trangthainop")
     private String trangThaiMoi;
 
     @Column(name = "ghi_chu", length = 500)

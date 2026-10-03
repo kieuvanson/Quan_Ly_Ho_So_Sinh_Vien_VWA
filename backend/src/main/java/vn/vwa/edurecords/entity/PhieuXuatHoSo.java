@@ -1,6 +1,8 @@
 package vn.vwa.edurecords.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+import vn.vwa.edurecords.hibernate.type.PostgresEnumStringUserType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -23,15 +25,17 @@ public class PhieuXuatHoSo {
     @Column(name = "mssv", nullable = false, length = 20)
     private String mssv;
 
-    /** 'Mượn tạm thời' | 'Rút vĩnh viễn' — kiểu ENUM trong DB. */
-    @Column(name = "loai_phieu", nullable = false)
+    /** 'Mượn tạm thời' | 'Rút vĩnh viễn' — kiểu ENUM `loaiphieu` trong DB. */
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "loai_phieu", nullable = false, columnDefinition = "loaiphieu")
     private String loaiPhieu;
 
     /**
      * 'Chờ duyệt' | 'Đã duyệt' | 'Từ chối' | 'Đang mượn' | 'Đã trả' | 'Quá hạn' | 'Hoàn tất'.
-     * Kiểu ENUM trong DB.
+     * Kiểu ENUM `trangthaiphieu` trong DB.
      */
-    @Column(name = "trang_thai", nullable = false)
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "trang_thai", nullable = false, columnDefinition = "trangthaiphieu")
     private String trangThai = "Chờ duyệt";
 
     @Column(name = "ly_do", length = 500)

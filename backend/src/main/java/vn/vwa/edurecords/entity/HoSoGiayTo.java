@@ -1,6 +1,8 @@
 package vn.vwa.edurecords.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+import vn.vwa.edurecords.hibernate.type.PostgresEnumStringUserType;
 import java.time.LocalDateTime;
 
 @Entity
@@ -17,10 +19,20 @@ public class HoSoGiayTo {
     @Column(name = "ma_loai", nullable = false, length = 10)
     private String maLoai;
 
-    @Column(name = "trang_thai_nop", nullable = false)
+    /**
+     * Postgres ENUM `trangthainop`. Java là String; dùng UserType để driver
+     * PostgreSQL nhận diện raw ENUM literal (không ép VARCHAR).
+     */
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "trang_thai_nop", nullable = false, columnDefinition = "trangthainop")
     private String trangThaiNop = "Chưa nộp";
 
-    @Column(name = "ban_goc_ban_sao")
+    /**
+     * Postgres ENUM `loaiban`. Java là String; dùng UserType để driver
+     * PostgreSQL nhận diện raw ENUM literal (không ép VARCHAR).
+     */
+    @Type(PostgresEnumStringUserType.class)
+    @Column(name = "ban_goc_ban_sao", columnDefinition = "loaiban")
     private String banGocBanSao;
 
     @Column(name = "file_dinh_kem", length = 500)

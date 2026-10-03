@@ -140,8 +140,11 @@ export function TrangChiTietHoSo() {
 
   // Fetch documents when tab 'giay-to' is active
   useEffect(() => {
-    if (!mssv || activeTab !== 'giay-to' || giayToList.length > 0) return
+    if (!mssv || activeTab !== 'giay-to') return
 
+    // Reset list khi đổi mssv để tránh hiển thị data của SV cũ
+    setGiayToList([])
+    setLoaiGiayToList([])
     setIsLoadingGt(true)
     setErrorGt(null)
 
@@ -160,14 +163,12 @@ export function TrangChiTietHoSo() {
       .finally(() => {
         setIsLoadingGt(false)
       })
-  }, [mssv, activeTab, giayToList.length])
+  }, [mssv, activeTab])
 
-  // Fetch loai giay to when needed for mapping
+  // Fetch loai giay to khi mở tab giay-to
   useEffect(() => {
     if (activeTab !== 'giay-to') return
-
-    // Only fetch if we have giayToList but no loaiGiayToList yet
-    if (giayToList.length === 0 || loaiGiayToList.length > 0) return
+    if (loaiGiayToList.length > 0) return // cache
 
     loaiGiayToApi.getAll()
       .then((response) => {
@@ -182,7 +183,7 @@ export function TrangChiTietHoSo() {
         // Non-critical error - fallback to maLoai
         console.warn('Lỗi khi tải loại giấy tờ:', err.message)
       })
-  }, [activeTab, giayToList.length, loaiGiayToList.length])
+  }, [activeTab, loaiGiayToList.length])
 
   // Format date from ISO string to DD/MM/YYYY
   function formatDate(dateStr: string): string {
