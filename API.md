@@ -1637,7 +1637,283 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 
 ---
 
-## 9. Bảng mã lỗi tham chiếu nhanh
+## 9. Endpoints — Module Phiếu Xuất Hồ Sơ (`/api/phieu-muon`)
+
+> Phiếu dùng chung cho **Mượn tạm thời** và **Rút hồ sơ vĩnh viễn**, phân biệt qua `loaiPhieu`.
+> Trạng thái ENUM: `Chờ duyệt` · `Đã duyệt` · `Từ chối` · `Đang mượn` · `Đã trả` · `Quá hạn` · `Hoàn tất`.
+
+### 9.0. Bảng tổng hợp
+
+| Method | Endpoint | Auth | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/phieu-muon/dang-muon` | Auth | Danh sách phiếu đang hoạt động (có phân trang) |
+| `GET` | `/api/phieu-muon/lich-su` | Auth | Lịch sử mượn / trả (tất cả trạng thái) |
+| `GET` | `/api/phieu-muon/by-mssv/{mssv}` | Auth | Phiếu đang hoạt động của 1 SV |
+| `GET` | `/api/phieu-muon/{maPhieu}` | Auth | Chi tiết 1 phiếu |
+| `POST` | `/api/phieu-muon` | ADMIN, STAFF | Tạo phiếu mới |
+| `PUT` | `/api/phieu-muon/{maPhieu}/duyet` | ADMIN, STAFF | Duyệt phiếu |
+| `PUT` | `/api/phieu-muon/{maPhieu}/tu-choi` | ADMIN, STAFF | Từ chối phiếu |
+| `PUT` | `/api/phieu-muon/{maPhieu}/tra` | ADMIN, STAFF | Trả hồ sơ |
+
+---
+
+### 9.1. `GET /api/phieu-muon/dang-muon`
+
+Lấy danh sách phiếu đang hoạt động (mặc định hiển thị cả `Chờ duyệt` + `Đang mượn` + `Quá hạn`, sắp xếp ưu tiên Quá hạn → Đang mượn → Chờ duyệt).
+
+**Auth yêu cầu:** Có access token hợp lệ.
+
+**Query parameters:**
+
+| Param | Type | Required | Mô tả |
+|---|---|---|---|
+| `keyword` | string | | Tìm theo mã phiếu / MSSV / họ tên / lý do |
+| `trangThai` | string | | Lọc theo 1 trạng thái cụ thể (bỏ trống = lấy tất cả đang hoạt động) |
+| `loaiHoSo` | string | | `Mượn tạm thời` / `Rút vĩnh viễn` |
+| `page` | int | | Default `0` |
+| `size` | int | | Default `10` |
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Lấy danh sách hồ sơ đang mượn thành công",
+  "data": {
+    "data": [
+      {
+        "maPhieu": "PM001",
+        "mssv": "B23DCCN001",
+        "hoTenSinhVien": "Nguyễn Văn An",
+        "loaiPhieu": "Mượn tạm thời",
+        "trangThai": "Đang mượn",
+        "ngayMuon": "2026-10-01T00:00:00",
+        "ngayTraDuKien": "2026-10-15T00:00:00",
+        "ngayTraThucTe": null,
+        "lyDo": "Xét duyệt hồ sơ",
+        "ghiChu": null,
+        "nguoiTao": "Kieuvanson",
+        "ngayTao": "2026-10-01T09:00:00",
+        "danhSachMaHoSo": ["HS001", "HS002"]
+      }
+    ],
+    "page": { "page": 0, "size": 10, "totalElements": 8, "totalPages": 1, "first": true, "last": true }
+  },
+  "timestamp": "2026-10-03T17:00:00.000Z"
+}
+```
+
+**Ví dụ test:**
+
+```bash
+# Mặc định: tất cả phiếu đang hoạt động
+curl -X GET "http://localhost:8081/api/phieu-muon/dang-muon" \
+  -H "Authorization: Bearer <token>"
+
+# Lọc theo trạng thái
+curl -X GET "http://localhost:8081/api/phieu-muon/dang-muon?trangThai=Ch%E1%BB%9D%20duy%E1%BB%87t" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 9.2. `GET /api/phieu-muon/lich-su`
+
+Lấy lịch sử mượn / trả toàn hệ thống (không filter trạng thái mặc định — trả về tất cả).
+
+**Auth yêu cầu:** Có access token hợp lệ.
+
+**Query parameters:**
+
+| Param | Type | Mô tả |
+|---|---|---|
+| `keyword` | string | Tìm theo mã phiếu / MSSV / họ tên / lý do |
+| `trangThai` | string | Lọc theo trạng thái |
+| `loaiHoSo` | string | `Mượn tạm thời` / `Rút vĩnh viễn` |
+| `fromDate` | string | Từ ngày (`yyyy-MM-dd`) |
+| `toDate` | string | Đến ngày (`yyyy-MM-dd`) |
+| `page`, `size` | int | Phân trang |
+
+**Response `200 OK`:** cùng shape với `dang-muon`.
+
+**Ví dụ test:**
+
+```bash
+curl -X GET "http://localhost:8081/api/phieu-muon/lich-su?fromDate=2026-10-01&toDate=2026-10-31" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 9.3. `GET /api/phieu-muon/by-mssv/{mssv}`
+
+Lấy danh sách phiếu **đang hoạt động** (Chờ duyệt / Đang mượn / Quá hạn) của 1 sinh viên cụ thể. Dùng cho trang chi tiết hồ sơ SV.
+
+**Auth yêu cầu:** Có access token hợp lệ.
+
+**Response `200 OK`:**
+
+```json
+{
+  "success": true,
+  "status": 200,
+  "code": "SUCCESS",
+  "message": "Lấy danh sách phiếu đang hoạt động của sinh viên thành công",
+  "data": [
+    {
+      "maPhieu": "PM005",
+      "mssv": "B23DCCN001",
+      "hoTenSinhVien": "Nguyễn Văn An",
+      "loaiPhieu": "Mượn tạm thời",
+      "trangThai": "Chờ duyệt",
+      "ngayMuon": "2026-10-03T00:00:00",
+      "ngayTraDuKien": "2026-10-10T00:00:00",
+      "danhSachMaHoSo": ["HS001"]
+    }
+  ],
+  "timestamp": "2026-10-03T17:00:00.000Z"
+}
+```
+
+**Ví dụ test:**
+
+```bash
+curl -X GET http://localhost:8081/api/phieu-muon/by-mssv/B23DCCN001 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 9.4. `GET /api/phieu-muon/{maPhieu}`
+
+Lấy chi tiết 1 phiếu.
+
+**Auth yêu cầu:** Có access token hợp lệ.
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Mã phiếu không tồn tại |
+
+---
+
+### 9.5. `POST /api/phieu-muon`
+
+Tạo phiếu mượn tạm thời / rút vĩnh viễn. Trạng thái khởi tạo = `Chờ duyệt`.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Request body:**
+
+```json
+{
+  "mssv": "B23DCCN001",
+  "loaiPhieu": "Mượn tạm thời",
+  "ngayMuon": "2026-10-03",
+  "ngayTraDuKien": "2026-10-17",
+  "lyDo": "Cán bộ xét duyệt hồ sơ tốt nghiệp",
+  "ghiChu": "Ưu tiên xử lý trước 10/10",
+  "danhSachMaHoSo": ["HS001", "HS003", "HS007"]
+}
+```
+
+| Field | Type | Required | Ràng buộc |
+|---|---|---|---|
+| `mssv` | string | ✓ | Phải tồn tại trong `SINHVIEN` |
+| `loaiPhieu` | string | ✓ | `Mượn tạm thời` / `Rút vĩnh viễn` |
+| `ngayMuon` | string | ✓ | ISO `yyyy-MM-dd` |
+| `ngayTraDuKien` | string | | Bắt buộc với `Mượn tạm thời` |
+| `lyDo` | string | ✓ | Không được trống |
+| `ghiChu` | string | | |
+| `danhSachMaHoSo` | string[] | ✓ | Danh sách `maHoSo` thuộc về SV |
+
+**Quy tắc nghiệp vụ (enforce ở Service):**
+
+- **Rút vĩnh viễn**: không cho tạo nếu còn phiếu Mượn `Đang mượn` chưa trả. Luôn áp dụng **toàn bộ** giấy tờ hiện có của SV (client không cần gửi `danhSachMaHoSo`).
+- **Mượn tạm thời**: không cho tạo khi SV `trangThaiHocVu = 'Đã rút hồ sơ'`.
+- Mỗi `maHoSo` chỉ xuất hiện trong 1 phiếu `Đang mượn` tại 1 thời điểm.
+
+**Response `201 Created`:** payload `PhieuMuonResponse` (giống shape ở `GET`).
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Thiếu field / sai enum |
+| 404 | `NOT_FOUND` | MSSV không tồn tại |
+| 409 | (custom) | SV đang bị rút hồ sơ; còn phiếu mượn chưa trả; maHoSo đang nằm trong phiếu khác |
+
+**Ví dụ test:**
+
+```bash
+curl -X POST http://localhost:8081/api/phieu-muon \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mssv": "B23DCCN001",
+    "loaiPhieu": "Mượn tạm thời",
+    "ngayMuon": "2026-10-03",
+    "ngayTraDuKien": "2026-10-17",
+    "lyDo": "Xét duyệt hồ sơ",
+    "danhSachMaHoSo": ["HS001", "HS003"]
+  }'
+```
+
+---
+
+### 9.6. `PUT /api/phieu-muon/{maPhieu}/duyet`
+
+Duyệt phiếu: `Chờ duyệt` → `Đang mượn` (Mượn tạm) hoặc `Hoàn tất` + cập nhật `TrangThaiHocVu = 'Đã rút hồ sơ'` (Rút vĩnh viễn).
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Response `200 OK`:** `ApiResponse<PhieuMuonResponse>` với `trangThai` mới.
+
+**Lỗi có thể gặp:**
+
+| Status | Code | Khi nào |
+|---|---|---|
+| 404 | `NOT_FOUND` | Mã phiếu không tồn tại |
+| 409 | (custom) | Phiếu không ở trạng thái `Chờ duyệt` |
+
+---
+
+### 9.7. `PUT /api/phieu-muon/{maPhieu}/tu-choi`
+
+Từ chối phiếu: `Chờ duyệt` → `Từ chối`. Lưu lý do vào `ghiChu`.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Request body (optional):**
+
+```json
+{ "lyDoTuChoi": "Thiếu giấy tờ bắt buộc HS001" }
+```
+
+**Response `200 OK`:** `ApiResponse<PhieuMuonResponse>`.
+
+---
+
+### 9.8. `PUT /api/phieu-muon/{maPhieu}/tra`
+
+Trả hồ sơ: `Đang mượn` → `Đã trả` (Mượn tạm) hoặc `Hoàn tất` (Rút vĩnh viễn). Set `ngayTraThucTe = hôm nay`.
+
+**Auth yêu cầu:** `ADMIN` hoặc `STAFF`.
+
+**Request body (optional):**
+
+```json
+{ "ghiChu": "Trả đầy đủ 3/3 hồ sơ" }
+```
+
+**Response `200 OK`:** `ApiResponse<PhieuMuonResponse>`.
+
+---
+
+## 10. Bảng mã lỗi tham chiếu nhanh
 
 | HTTP | Code | Ý nghĩa | Frontend gợi ý |
 |---|---|---|---|
@@ -1668,9 +1944,9 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 
 ---
 
-## 10. Luồng sử dụng mẫu cho Frontend
+## 11. Luồng sử dụng mẫu cho Frontend
 
-### 10.1. Login flow
+### 11.1. Login flow
 
 ```text
 [UI] User nhập username + password
@@ -1686,7 +1962,7 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 [FE] Redirect về dashboard
 ```
 
-### 10.2. Register flow (Staff)
+### 11.2. Register flow (Staff)
 
 ```text
 [UI] Admin nhập thông tin Staff mới (username, password, hoTen, email, mssv)
@@ -1698,7 +1974,7 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 [FE] Lưu token + user info → redirect
 ```
 
-### 10.3. Auto-refresh khi access token hết hạn
+### 11.3. Auto-refresh khi access token hết hạn
 
 ```text
 [FE] GET /api/whatever  (Authorization: Bearer <expired-accessToken>)
@@ -1716,7 +1992,7 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 [FE] Redirect về /login
 ```
 
-### 10.4. Logout flow
+### 11.4. Logout flow
 
 ```text
 [UI] User click "Đăng xuất"
@@ -1728,7 +2004,7 @@ curl -X GET http://localhost:8081/api/lich-su-nop/LS001 \
 [FE] Xoá accessToken khỏi memory → Redirect /login
 ```
 
-### 10.5. Ví dụ axios config (React/Vue)
+### 11.5. Ví dụ axios config (React/Vue)
 
 ```javascript
 // axios instance
