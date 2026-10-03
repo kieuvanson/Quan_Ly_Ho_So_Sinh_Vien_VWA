@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -15,6 +16,8 @@ import {
   ClipboardList,
   Calendar,
   Inbox,
+  FileText,
+  User,
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
 import { hoSoGiayToApi } from '../api/hoSoGiayTo'
@@ -109,6 +112,17 @@ export function TrangChiTietHoSo() {
   // Modal Bổ sung giấy tờ
   const [isBoSungModalOpen, setIsBoSungModalOpen] = useState(false)
   const [isSubmittingBoSung, setIsSubmittingBoSung] = useState(false)
+  // ----- In / xuất hồ sơ -----
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
+  const [printMode, setPrintMode] = useState<'chooser' | 'preview'>('chooser')
+  const [printType, setPrintType] = useState<'hoSo' | 'phieu'>('hoSo')
+  const [phieuToPrint, setPhieuToPrint] = useState<PhieuMuon | null>(null)
+  /** Snapshot data để render bản in — lưu lại tại thời điểm bấm "In ngay" để tránh
+   * giá trị bị stale khi user đổi filter/tab giữa lúc đang in. */
+  const [printSnapshot, setPrintSnapshot] = useState<{
+    printType: 'hoSo' | 'phieu'
+    phieu: PhieuMuon | null
+  } | null>(null)
   /** Loại giấy tờ CHƯA có trong hồ sơ SV (để user chọn khi bổ sung). */
   const [availableLoaiGiayTo, setAvailableLoaiGiayTo] = useState<LoaiGiayTo[]>([])
   const [boSungForm, setBoSungForm] = useState({
@@ -463,7 +477,67 @@ export function TrangChiTietHoSo() {
   }
 
   function handleInHoSo() {
-    showToast('Chức năng đang được phát triển.')
+    setPrintType('hoSo')
+    setPhieuToPrint(null)
+    setPrintMode('chooser')
+    setIsPrintModalOpen(true)
+  }
+
+  /** Mở preview in cho 1 phiếu mượn / trả cụ thể. */
+  function handlePrintPhieu(p: PhieuMuon) {
+    setPrintType('phieu')
+    setPhieuToPrint(p)
+    setPrintMode('preview')
+    setIsPrintModalOpen(true)
+  }
+
+  /** Sau khi user chọn "In hồ sơ sinh viên" trong chooser → mở preview. */
+  function handleConfirmPrintType() {
+    setPrintMode('preview')
+  }
+
+  /** Gọi window.print() — mount bản in ra <body> qua portal để tránh bị
+   * modal `position: fixed` che hoặc `visibility: hidden` của @media print. */
+  function handleDoPrint() {
+    if (printType === 'phieu' && !phieuToPrint) {
+      showToast('Vui lòng chọn phiếu cần in.', 'info')
+      return
+    }
+    // Snapshot dữ liệu tại thời điểm in
+    setPrintSnapshot({ printType, phieu: phieuToPrint })
+    // Đóng modal trước để bản in không chịu ảnh hưởng của modal
+    setIsPrintModalOpen(false)
+    setPrintMode('chooser')
+  }
+
+  /** Khi snapshot thay đổi → render portal + gọi print. */
+  useEffect(() => {
+    if (!printSnapshot) return
+    let cleaned = false
+    const timer = setTimeout(() => {
+      if (cleaned) return
+      window.print()
+    }, 50)
+    const afterPrint = () => {
+      cleaned = true
+      setPrintSnapshot(null)
+      setPhieuToPrint(null)
+    }
+    window.addEventListener('afterprint', afterPrint, { once: true })
+    // Fallback nếu 'afterprint' không fire (một số trình duyệt cũ)
+    const fallback = setTimeout(afterPrint, 8000)
+    return () => {
+      cleaned = true
+      clearTimeout(timer)
+      clearTimeout(fallback)
+      window.removeEventListener('afterprint', afterPrint)
+    }
+  }, [printSnapshot])
+
+  function handleClosePrintModal() {
+    setIsPrintModalOpen(false)
+    setPrintMode('chooser')
+    setPhieuToPrint(null)
   }
 
   function handleBack() {
@@ -717,6 +791,15 @@ export function TrangChiTietHoSo() {
                       <span className="chi-tiet-ho-so__phieu-muon-loai">
                         {pm.loaiPhieu}
                       </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Printer size={14} />}
+                        onClick={() => handlePrintPhieu(pm)}
+                        title="In / xuất phiếu này"
+                      >
+                        In
+                      </Button>
                     </div>
                   </div>
                   <div className="chi-tiet-ho-so__phieu-muon-item-body">
@@ -1406,6 +1489,470 @@ export function TrangChiTietHoSo() {
           onClose={() => setToast(null)}
         />
       )}
+
+      {/* ===========================================================
+          Modal In / Xuất hồ sơ
+          - Mode "chooser": user chọn loại in (hồ sơ SV hoặc phiếu cụ thể)
+          - Mode "preview": hiển thị bản xem trước A4 + nút In / Hủy
+          Khi window.print() được gọi, CSS @media print chỉ in vùng .print-area.
+         =========================================================== */}
+      <Modal
+        isOpen={isPrintModalOpen}
+        onClose={handleClosePrintModal}
+        title={printMode === 'chooser' ? 'Chọn loại in / xuất' : 'Xem trước bản in'}
+        size={printMode === 'preview' ? 'xl' : 'md'}
+        footer={
+          printMode === 'chooser' ? (
+            <>
+              <Button variant="secondary" onClick={handleClosePrintModal}>
+                Hủy
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={handleClosePrintModal}>
+                Đóng
+              </Button>
+              <Button variant="primary" icon={<Printer size={16} />} onClick={handleDoPrint}>
+                In ngay
+              </Button>
+            </>
+          )
+        }
+      >
+        {printMode === 'chooser' && (
+          <div className="print-chooser">
+            <p className="print-chooser__hint">
+              Chọn loại tài liệu bạn muốn in / xuất:
+            </p>
+            <div className="print-chooser__grid">
+              <button
+                type="button"
+                className={`print-chooser__card ${
+                  printType === 'hoSo' ? 'print-chooser__card--active' : ''
+                }`}
+                onClick={() => setPrintType('hoSo')}
+              >
+                <User size={28} />
+                <span className="print-chooser__card-title">Hồ sơ sinh viên</span>
+                <span className="print-chooser__card-desc">
+                  Thông tin cá nhân, học vụ và danh sách 13 loại giấy tờ (kèm trạng thái nộp).
+                </span>
+                {printType === 'hoSo' && (
+                  <span className="print-chooser__check">✓</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`print-chooser__card ${
+                  printType === 'phieu' ? 'print-chooser__card--active' : ''
+                }`}
+                onClick={() => {
+                  if (activePhieuMuonList.length === 0) {
+                    showToast('Sinh viên chưa có phiếu mượn / trả nào đang hoạt động.', 'info')
+                    return
+                  }
+                  setPrintType('phieu')
+                }}
+                disabled={activePhieuMuonList.length === 0}
+              >
+                <FileText size={28} />
+                <span className="print-chooser__card-title">Phiếu mượn / trả</span>
+                <span className="print-chooser__card-desc">
+                  Chọn 1 trong {activePhieuMuonList.length} phiếu đang hoạt động để in.
+                </span>
+                {printType === 'phieu' && (
+                  <span className="print-chooser__check">✓</span>
+                )}
+              </button>
+            </div>
+
+            {printType === 'phieu' && (
+              <div className="print-chooser__phieu-list">
+                <label className="print-chooser__label">Chọn phiếu cần in:</label>
+                <div className="print-chooser__phieu-items">
+                  {activePhieuMuonList.map((pm) => (
+                    <button
+                      type="button"
+                      key={pm.maPhieu}
+                      className={`print-chooser__phieu-item ${
+                        phieuToPrint?.maPhieu === pm.maPhieu ? 'print-chooser__phieu-item--active' : ''
+                      }`}
+                      onClick={() => setPhieuToPrint(pm)}
+                    >
+                      <span className="print-chooser__phieu-code">{pm.maPhieu}</span>
+                      <span className="print-chooser__phieu-meta">
+                        {pm.loaiPhieu} · {pm.trangThai}
+                      </span>
+                      <span className="print-chooser__phieu-date">
+                        {formatDate(pm.ngayMuon || '')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="print-chooser__actions">
+              <Button
+                variant="primary"
+                icon={<Printer size={16} />}
+                onClick={handleConfirmPrintType}
+                disabled={printType === 'phieu' && !phieuToPrint}
+              >
+                Xem trước &amp; In
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {printMode === 'preview' && (
+          <div className="print-area print-area--in-modal">
+            {printType === 'hoSo' && (
+              <PrintHoSoSinhVien
+                sinhVien={sinhVien}
+                giayToList={giayToList}
+                loaiGiayToList={loaiGiayToList}
+              />
+            )}
+            {printType === 'phieu' && phieuToPrint && (
+              <PrintPhieuMuonTra phieu={phieuToPrint} sinhVien={sinhVien} />
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Portal bản in — render trực tiếp vào <body>, tách biệt khỏi React tree
+          chính để @media print / position:fixed của modal không ảnh hưởng. */}
+      {printSnapshot &&
+        createPortal(
+          <div className="print-area">
+            {printSnapshot.printType === 'hoSo' && (
+              <PrintHoSoSinhVien
+                sinhVien={sinhVien}
+                giayToList={giayToList}
+                loaiGiayToList={loaiGiayToList}
+              />
+            )}
+            {printSnapshot.printType === 'phieu' && printSnapshot.phieu && (
+              <PrintPhieuMuonTra
+                phieu={printSnapshot.phieu}
+                sinhVien={sinhVien}
+              />
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  )
+}
+
+// =====================================================================
+// Sub-components: Bản in (A4)
+// =====================================================================
+
+/** Format ngày dd/MM/yyyy — dùng trong bản in. */
+function fmtDate(s?: string): string {
+  if (!s) return '—'
+  try {
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return s
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  } catch {
+    return s
+  }
+}
+
+function PrintHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="print-header">
+      <div className="print-header__brand">
+        <div className="print-header__logo">VWA</div>
+        <div>
+          <div className="print-header__unit">VWA EduRecords</div>
+          <div className="print-header__sub">Hệ thống quản lý hồ sơ sinh viên</div>
+        </div>
+      </div>
+      <div className="print-header__meta">
+        <div className="print-header__title">{title}</div>
+        {subtitle && <div className="print-header__subtitle">{subtitle}</div>}
+        <div className="print-header__date">Ngày in: {fmtDate(new Date().toISOString())}</div>
+      </div>
+    </div>
+  )
+}
+
+function PrintFooter({ rightLabel = 'Người lập' }: { rightLabel?: string }) {
+  return (
+    <div className="print-footer">
+      <div className="print-footer__col">
+        <div className="print-footer__role">Người nhận</div>
+        <div className="print-footer__line" />
+        <div className="print-footer__hint">(Ký, ghi rõ họ tên)</div>
+      </div>
+      <div className="print-footer__col">
+        <div className="print-footer__role">{rightLabel}</div>
+        <div className="print-footer__line" />
+        <div className="print-footer__hint">(Ký, ghi rõ họ tên)</div>
+      </div>
+    </div>
+  )
+}
+
+/** Bản in: Hồ sơ sinh viên (thông tin + danh sách 13 loại giấy tờ). */
+function PrintHoSoSinhVien({
+  sinhVien,
+  giayToList,
+  loaiGiayToList,
+}: {
+  sinhVien: SinhVien | null
+  giayToList: HoSoGiayTo[]
+  loaiGiayToList: LoaiGiayTo[]
+}) {
+  if (!sinhVien) return <div className="print-empty">Chưa có dữ liệu sinh viên.</div>
+  const currentUser = authStore.getUser()
+  const nguoiLap = currentUser?.hoTen || currentUser?.username || '—'
+  // Map giayToList theo maLoai để tra nhanh
+  const giayToByMaLoai = new Map(giayToList.map((g) => [g.maLoai, g]))
+  // Gom toàn bộ 13 loại (nếu load được) để in đầy đủ; fallback dùng giayToList
+  const allLoai =
+    loaiGiayToList.length > 0
+      ? loaiGiayToList
+      : giayToList.map((g) => ({
+          maLoai: g.maLoai,
+          tenLoai: g.tenLoai || g.maLoai,
+          batBuoc: false,
+          dangSuDung: true,
+        } as LoaiGiayTo))
+  const soBatBuoc = allLoai.filter((l) => l.batBuoc).length
+  const soDaCo = giayToList.length
+
+  return (
+    <div className="print-page">
+      <PrintHeader
+        title="HỒ SƠ SINH VIÊN"
+        subtitle={`MSSV: ${sinhVien.mssv}`}
+      />
+
+      <section className="print-section">
+        <h2 className="print-section__title">I. Thông tin cá nhân</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>MSSV</th>
+              <td>{sinhVien.mssv}</td>
+              <th>Họ và tên</th>
+              <td>{sinhVien.hoTen || '—'}</td>
+            </tr>
+            <tr>
+              <th>Ngày sinh</th>
+              <td>{fmtDate(sinhVien.ngaySinh)}</td>
+              <th>Giới tính</th>
+              <td>{sinhVien.gioiTinh || '—'}</td>
+            </tr>
+            <tr>
+              <th>Số CCCD/CMND</th>
+              <td>{sinhVien.soCccd || '—'}</td>
+              <th>Số điện thoại</th>
+              <td>{sinhVien.soDienThoai || '—'}</td>
+            </tr>
+            <tr>
+              <th>Email</th>
+              <td colSpan={3}>{sinhVien.email || '—'}</td>
+            </tr>
+            <tr>
+              <th>Địa chỉ thường trú</th>
+              <td colSpan={3}>{sinhVien.diaChiThuongTru || '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">II. Thông tin học vụ</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>Ngành</th>
+              <td>{sinhVien.nganh || '—'}</td>
+              <th>Khóa</th>
+              <td>{sinhVien.khoa || '—'}</td>
+            </tr>
+            <tr>
+              <th>Lớp</th>
+              <td>{sinhVien.lop || '—'}</td>
+              <th>Trạng thái học vụ</th>
+              <td>
+                <strong>{sinhVien.trangThaiHocVu || '—'}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">
+          III. Danh sách giấy tờ ({soDaCo}/{allLoai.length} loại — trong đó bắt buộc{' '}
+          {soBatBuoc} loại)
+        </h2>
+        <table className="print-giayto-table">
+          <thead>
+            <tr>
+              <th style={{ width: '5%' }}>STT</th>
+              <th style={{ width: '15%' }}>Mã</th>
+              <th>Tên giấy tờ</th>
+              <th style={{ width: '8%' }}>Bắt buộc</th>
+              <th style={{ width: '12%' }}>Trạng thái nộp</th>
+              <th style={{ width: '12%' }}>Bản gốc/sao</th>
+              <th style={{ width: '18%' }}>Vị trí lưu kho</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allLoai.map((loai, idx) => {
+              const g = giayToByMaLoai.get(loai.maLoai)
+              return (
+                <tr key={loai.maLoai}>
+                  <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                  <td>{loai.maLoai}</td>
+                  <td>{loai.tenLoai}</td>
+                  <td style={{ textAlign: 'center' }}>{loai.batBuoc ? '✓' : ''}</td>
+                  <td>{g ? g.trangThaiNop : <em style={{ color: '#999' }}>Chưa có</em>}</td>
+                  <td>{g ? g.banGocBanSao : '—'}</td>
+                  <td>{g?.viTriLuuKho || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div className="print-summary">
+          Đã có: <strong>{soDaCo}</strong> / {allLoai.length} loại — Bắt buộc: <strong>{soBatBuoc}</strong> loại
+        </div>
+      </section>
+
+      <PrintFooter rightLabel={`Người lập: ${nguoiLap}`} />
+    </div>
+  )
+}
+
+/** Bản in: Phiếu mượn / trả hồ sơ. */
+function PrintPhieuMuonTra({
+  phieu,
+  sinhVien,
+}: {
+  phieu: PhieuMuon
+  sinhVien: SinhVien | null
+}) {
+  const currentUser = authStore.getUser()
+  const nguoiLap = currentUser?.hoTen || currentUser?.username || '—'
+  const isRut = phieu.loaiPhieu === 'Rút vĩnh viễn'
+  const tieuDe = isRut ? 'PHIẾU RÚT HỒ SƠ VĨNH VIỄN' : 'PHIẾU MƯỢN HỒ SƠ TẠM THỜI'
+
+  return (
+    <div className="print-page">
+      <PrintHeader title={tieuDe} subtitle={`Mã phiếu: ${phieu.maPhieu}`} />
+
+      <section className="print-section">
+        <h2 className="print-section__title">I. Thông tin sinh viên</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>MSSV</th>
+              <td>{phieu.mssv}</td>
+              <th>Họ và tên</th>
+              <td>{phieu.hoTenSinhVien || sinhVien?.hoTen || '—'}</td>
+            </tr>
+            <tr>
+              <th>Ngành / Lớp</th>
+              <td colSpan={3}>
+                {sinhVien?.nganh || '—'} {sinhVien?.lop ? `— Lớp ${sinhVien.lop}` : ''}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">II. Thông tin phiếu</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>Loại phiếu</th>
+              <td>{phieu.loaiPhieu}</td>
+              <th>Trạng thái</th>
+              <td>
+                <strong>{phieu.trangThai}</strong>
+              </td>
+            </tr>
+            <tr>
+              <th>Ngày mượn</th>
+              <td>{fmtDate(phieu.ngayMuon)}</td>
+              <th>Hạn trả</th>
+              <td>{phieu.loaiPhieu === 'Mượn tạm thời' ? fmtDate(phieu.ngayTraDuKien) : '—'}</td>
+            </tr>
+            <tr>
+              <th>Người tạo phiếu</th>
+              <td colSpan={3}>{phieu.nguoiTao || '—'}</td>
+            </tr>
+            <tr>
+              <th>Lý do</th>
+              <td colSpan={3}>{phieu.lyDo || '—'}</td>
+            </tr>
+            {phieu.ghiChu && (
+              <tr>
+                <th>Ghi chú</th>
+                <td colSpan={3}>{phieu.ghiChu}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">
+          III. Danh sách hồ sơ giấy tờ ({phieu.danhSachMaHoSo?.length || 0} mục)
+        </h2>
+        <table className="print-giayto-table">
+          <thead>
+            <tr>
+              <th style={{ width: '8%' }}>STT</th>
+              <th style={{ width: '25%' }}>Mã hồ sơ</th>
+              <th>Tên giấy tờ</th>
+              <th style={{ width: '20%' }}>Trạng thái nộp</th>
+              <th style={{ width: '15%' }}>Bản gốc/sao</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(phieu.danhSachMaHoSo || []).length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>
+                  Không có hồ sơ giấy tờ nào trong phiếu.
+                </td>
+              </tr>
+            ) : (
+              phieu.danhSachMaHoSo?.map((ma, idx) => (
+                <tr key={ma}>
+                  <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                  <td>{ma}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <div className="print-note">
+          <em>
+            Ghi chú: Tên giấy tờ / trạng thái / bản gốc - bản sao chi tiết sẽ được đối chiếu
+            khi giao / nhận hồ sơ.
+          </em>
+        </div>
+      </section>
+
+      <PrintFooter rightLabel={`Người lập phiếu: ${nguoiLap}`} />
     </div>
   )
 }
