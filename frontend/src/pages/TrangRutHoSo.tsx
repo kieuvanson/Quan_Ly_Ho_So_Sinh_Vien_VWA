@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Eye, FileX, RotateCcw, Plus, AlertCircle } from 'lucide-react'
 import { SearchInput, Button, Toast, Modal, FormInput, FormSelect } from '../components/ui'
 import './TrangRutHoSo.css'
@@ -133,6 +134,10 @@ const CAN_BO_OPTIONS = [
 ]
 
 export function TrangRutHoSo() {
+  // Get MSSV from URL if passed from Danh sach ho so
+  const [searchParams] = useSearchParams()
+  const mssvFromUrl = searchParams.get('mssv')
+
   // Tab state
   const [activeTab, setActiveTab] = useState<'coTheRut' | 'lichSu'>('coTheRut')
   
@@ -189,6 +194,19 @@ export function TrangRutHoSo() {
   
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  // Effect to handle MSSV from URL
+  useEffect(() => {
+    if (mssvFromUrl) {
+      const sv = MOCK_SINHVIEN[mssvFromUrl.toUpperCase()]
+      if (sv) {
+        setSinhVienInfo(sv)
+        setRutFormTop(prev => ({ ...prev, mssv: sv.mssv }))
+        // Open the modal automatically
+        setModalRutFromTopOpen(true)
+      }
+    }
+  }, [mssvFromUrl])
 
   // Filter data - Tab 1
   const filteredCoTheRut = useMemo(() => {

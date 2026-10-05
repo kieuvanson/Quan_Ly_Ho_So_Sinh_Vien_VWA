@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { ApiResponse, HoSoGiayTo } from './types'
+import type { ApiResponse, HoSoGiayTo, LoaiGiayTo } from './types'
 
 /**
  * HoSoGiayTo API client.
@@ -20,6 +20,16 @@ export const hoSoGiayToApi = {
   getByMssv: async (mssv: string): Promise<ApiResponse<HoSoGiayTo[]>> => {
     const response = await apiClient.get<ApiResponse<HoSoGiayTo[]>>(
       `/api/ho-so-giay-to?mssv=${encodeURIComponent(mssv)}`
+    )
+    return response.data
+  },
+
+  /**
+   * Get document by maHoSo.
+   */
+  getByMaHoSo: async (maHoSo: string): Promise<ApiResponse<HoSoGiayTo>> => {
+    const response = await apiClient.get<ApiResponse<HoSoGiayTo>>(
+      `/api/ho-so-giay-to/${encodeURIComponent(maHoSo)}`
     )
     return response.data
   },
@@ -85,6 +95,37 @@ export const hoSoGiayToApi = {
     const response = await apiClient.patch<ApiResponse<HoSoGiayTo>>(
       `/api/ho-so-giay-to/${encodeURIComponent(maHoSo)}/trang-thai?${sp.toString()}`
     )
+    return response.data
+  },
+
+  /**
+   * Delete document by maHoSo.
+   */
+  delete: async (maHoSo: string): Promise<ApiResponse<void>> => {
+    const response = await apiClient.delete<ApiResponse<void>>(
+      `/api/ho-so-giay-to/${encodeURIComponent(maHoSo)}`
+    )
+    return response.data
+  },
+}
+
+/**
+ * LoaiGiayTo API client.
+ */
+export const loaiGiayToApi = {
+  /**
+   * Get all active document types.
+   */
+  getAll: async (): Promise<ApiResponse<LoaiGiayTo[]>> => {
+    const response = await apiClient.get<ApiResponse<LoaiGiayTo[]>>('/api/loai-giay-to')
+    return response.data
+  },
+
+  /**
+   * Get mandatory document types only.
+   */
+  getBatBuoc: async (): Promise<ApiResponse<LoaiGiayTo[]>> => {
+    const response = await apiClient.get<ApiResponse<LoaiGiayTo[]>>('/api/loai-giay-to/bat-buoc')
     return response.data
   },
 }
