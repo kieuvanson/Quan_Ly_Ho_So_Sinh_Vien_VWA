@@ -1,21 +1,646 @@
-.trang-bao-cao {
+/* ========================================
+   Trang Báo cáo & Thống kê
+   ======================================== */
+
+.bao-cao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+/* ========================================
+   Header
+   ======================================== */
+
+.bao-cao__header {
+  margin-bottom: var(--space-2);
+}
+
+.bao-cao__title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.bao-cao__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* ========================================
+   Section
+   ======================================== */
+
+.bao-cao__section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.bao-cao__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.bao-cao__section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.bao-cao__section-header .bao-cao__section-title {
+  margin: 0;
+}
+
+/* Filter Select */
+.bao-cao__filter-select {
+  padding: 8px 36px 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background-color: var(--color-bg);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: all var(--transition-fast);
+}
+
+.bao-cao__filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* ========================================
+   Stats Grid - Tổng quan sinh viên
+   ======================================== */
+
+.bao-cao__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-4);
+}
+
+.bao-cao__stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-base);
+}
+
+.bao-cao__stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.bao-cao__stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-inverse);
+}
+
+.bao-cao__stat-card--primary .bao-cao__stat-icon {
+  background-color: var(--color-primary);
+}
+
+.bao-cao__stat-card--success .bao-cao__stat-icon {
+  background-color: var(--color-success);
+}
+
+.bao-cao__stat-card--warning .bao-cao__stat-icon {
+  background-color: var(--color-warning);
+}
+
+.bao-cao__stat-card--danger .bao-cao__stat-icon {
+  background-color: var(--color-danger);
+}
+
+.bao-cao__stat-card--purple .bao-cao__stat-icon {
+  background-color: #8b5cf6;
+}
+
+.bao-cao__stat-card--gray .bao-cao__stat-icon {
+  background-color: #6b7280;
+}
+
+.bao-cao__stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.bao-cao__stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.bao-cao__stat-value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.bao-cao__stat-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ========================================
+   Two Columns Layout
+   ======================================== */
+
+.bao-cao__two-columns {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: var(--space-6);
+}
+
+.bao-cao__right-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ========================================
+   Ngành List
+   ======================================== */
+
+.bao-cao__nganh-list {
+  background-color: var(--color-bg);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.bao-cao__nganh-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background-color: #f1f5f9;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bao-cao__nganh-body {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.bao-cao__nganh-row {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color var(--transition-fast);
+}
+
+.bao-cao__nganh-row:last-child {
+  border-bottom: none;
+}
+
+.bao-cao__nganh-row:hover {
+  background-color: var(--color-surface);
+}
+
+.bao-cao__nganh-col {
+  display: flex;
+  align-items: center;
+}
+
+.bao-cao__nganh-col--stt {
+  width: 50px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+
+.bao-cao__nganh-col--ten {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.bao-cao__nganh-col--so-luong {
+  width: 160px;
+  gap: var(--space-3);
+}
+
+.bao-cao__nganh-number {
+  min-width: 40px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.bao-cao__nganh-col--ty-le {
+  width: 70px;
+  justify-content: flex-end;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+}
+
+/* Progress Bar */
+.bao-cao__progress-bar {
+  flex: 1;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.bao-cao__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), #60a5fa);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+/* ========================================
+   Tổng quan hồ sơ
+   ======================================== */
+
+.bao-cao__ho-so-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.bao-cao__ho-so-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-base);
+}
+
+.bao-cao__ho-so-card:hover {
+  transform: translateX(4px);
+  box-shadow: var(--shadow-sm);
+}
+
+.bao-cao__ho-so-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.bao-cao__ho-so-card--success .bao-cao__ho-so-icon {
+  background-color: var(--color-success);
+}
+
+.bao-cao__ho-so-card--danger .bao-cao__ho-so-icon {
+  background-color: var(--color-danger);
+}
+
+.bao-cao__ho-so-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.bao-cao__ho-so-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.bao-cao__ho-so-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+/* ========================================
+   Donut Chart - Mượn/Trả
+   ======================================== */
+
+.bao-cao__donut-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) 0;
+}
+
+.bao-cao__donut-chart {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  flex-shrink: 0;
+}
+
+.bao-cao__donut-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bao-cao__donut-hole {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
-  text-align: center;
+  width: 110px;
+  height: 110px;
+  background-color: var(--color-surface);
+  border-radius: 50%;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
-.trang-bao-cao__title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 16px 0;
+.bao-cao__donut-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
-.trang-bao-cao__message {
-  font-size: 16px;
-  color: #6b7280;
+.bao-cao__donut-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+.bao-cao__donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.bao-cao__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.bao-cao__legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.bao-cao__legend-dot--primary {
+  background-color: var(--color-primary);
+}
+
+.bao-cao__legend-dot--success {
+  background-color: var(--color-success);
+}
+
+.bao-cao__legend-dot--warning {
+  background-color: var(--color-warning);
+}
+
+.bao-cao__legend-text {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.bao-cao__legend-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ========================================
+   Báo cáo Cards
+   ======================================== */
+
+.bao-cao__report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.bao-cao__report-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.bao-cao__report-card:hover {
+  background-color: var(--color-surface);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.bao-cao__report-card:hover .bao-cao__report-arrow {
+  color: var(--color-primary);
+  transform: translateX(4px);
+}
+
+.bao-cao__report-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.bao-cao__report-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bao-cao__report-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.bao-cao__report-desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
   margin: 0;
+}
+
+.bao-cao__report-arrow {
+  color: var(--color-text-muted);
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+
+/* ========================================
+   CSS Variables cho màu sắc bổ sung
+   ======================================== */
+
+:root {
+  --color-success: #16a34a;
+  --color-warning: #f59e0b;
+  --color-danger: #dc2626;
+}
+
+/* ========================================
+   Responsive - Tablet
+   ======================================== */
+
+@media (max-width: 1200px) {
+  .bao-cao__stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .bao-cao__two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .bao-cao__right-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+
+  .bao-cao__report-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .bao-cao__report-grid .bao-cao__report-card:last-child {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .bao-cao__right-column {
+    grid-template-columns: 1fr;
+  }
+
+  .bao-cao__nganh-col--so-luong {
+    width: 120px;
+  }
+
+  .bao-cao__nganh-col--ty-le {
+    width: 50px;
+  }
+}
+
+/* ========================================
+   Responsive - Mobile
+   ======================================== */
+
+@media (max-width: 768px) {
+  .bao-cao {
+    gap: var(--space-4);
+  }
+
+  .bao-cao__title {
+    font-size: var(--font-size-xl);
+  }
+
+  .bao-cao__section {
+    padding: var(--space-4);
+  }
+
+  .bao-cao__stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+  }
+
+  .bao-cao__stat-card {
+    padding: var(--space-3);
+  }
+
+  .bao-cao__stat-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .bao-cao__stat-value {
+    font-size: var(--font-size-xl);
+  }
+
+  .bao-cao__section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .bao-cao__filter-select {
+    width: 100%;
+  }
+
+  .bao-cao__nganh-col--so-luong {
+    display: none;
+  }
+
+  .bao-cao__donut-container {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .bao-cao__donut-legend {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-4);
+  }
+
+  .bao-cao__report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bao-cao__report-grid .bao-cao__report-card:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .bao-cao__stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bao-cao__stat-card {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .bao-cao__stat-content {
+    flex: 1;
+  }
 }

@@ -10,6 +10,12 @@
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  margin-left: var(--sidebar-width);
+  transition: margin-left var(--transition-slow);
+}
+
+.bo-cuc-chinh--collapsed .bo-cuc-chinh__main {
+  margin-left: var(--sidebar-collapsed-width);
 }
 
 .bo-cuc-chinh__content {
@@ -20,6 +26,10 @@
 }
 
 @media (max-width: 768px) {
+  .bo-cuc-chinh__main {
+    margin-left: 0;
+  }
+
   .bo-cuc-chinh__content {
     padding: var(--space-4);
   }

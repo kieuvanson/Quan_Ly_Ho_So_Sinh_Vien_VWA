@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -9,22 +10,37 @@ import {
   FileSearch,
   AlertCircle,
   Pencil,
+  Loader2,
+  Trash2,
+  Save,
+  ClipboardList,
+  Calendar,
+  Inbox,
+  FileText,
+  User,
 } from 'lucide-react'
-import {
-  getSinhVienByMssv,
-  getGiayToByMssv,
-  getAuditLogsByMssv,
-  updateSinhVien,
-  NGANH_OPTIONS,
-  TRANG_THAI_HO_SO,
-  type SinhVien,
-  type GiayToItem,
-  type AuditLog,
-} from '../data/duLieuMauHoSo'
+import { sinhVienApi } from '../api/sinhVien'
+import { hoSoGiayToApi, loaiGiayToApi } from '../api/hoSoGiayTo'
+import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
+import { authStore } from '../lib/authStore'
+import { apiClient } from '../api/client'
+import type { SinhVien, HoSoGiayTo, LoaiGiayTo, PhieuMuon } from '../api/types'
 import { Button, Modal, FormInput, FormSelect, Toast } from '../components/ui'
 import './TrangChiTietHoSo.css'
 
-type TabType = 'thong-tin' | 'giay-to' | 'lich-su'
+/** Hạn trả mặc định = ngày mượn + 7 ngày. */
+function defaultHanTra(ngayMuon: string): string {
+  if (!ngayMuon) return ''
+  try {
+    const d = new Date(ngayMuon)
+    d.setDate(d.getDate() + 7)
+    return d.toISOString().split('T')[0]
+  } catch {
+    return ''
+  }
+}
+
+type TabType = 'thong-tin' | 'giay-to'
 
 interface FormData {
   hoTen: string
@@ -38,12 +54,75 @@ interface FormData {
   nganh: string
 }
 
+const TRANG_THAI_MAPPING: Record<string, { label: string; className: string }> = {
+  'Đang học': { label: 'Đang học', className: 'badge--success' },
+  'Bảo lưu': { label: 'Bảo lưu', className: 'badge--warning' },
+  'Đình chỉ': { label: 'Đình chỉ', className: 'badge--danger' },
+  'Tốt nghiệp': { label: 'Tốt nghiệp', className: 'badge--primary' },
+  'Đã rút hồ sơ': { label: 'Đã rút hồ sơ', className: 'badge--secondary' },
+}
+
+// Mapping trạng thái nộp giấy tờ
+const TRANG_THAI_NOP_MAPPING: Record<string, { label: string; className: string }> = {
+  'Đã nộp': { label: 'Đã nộp', className: 'badge--success' },
+  'Chưa nộp': { label: 'Chưa nộp', className: 'badge--secondary' },
+  'Thiếu': { label: 'Thiếu', className: 'badge--warning' },
+  'Không hợp lệ': { label: 'Không hợp lệ', className: 'badge--danger' },
+}
+
+// Mapping trạng thái phiếu mượn
+const TRANG_THAI_PHIEU_MAPPING: Record<string, { label: string; className: string }> = {
+  'Chờ duyệt': { label: 'Chờ duyệt', className: 'badge--info' },
+  'Đang mượn': { label: 'Đang mượn', className: 'badge--primary' },
+  'Quá hạn': { label: 'Quá hạn', className: 'badge--danger' },
+  'Đã duyệt': { label: 'Đã duyệt', className: 'badge--primary' },
+  'Đã trả': { label: 'Đã trả', className: 'badge--success' },
+  'Hoàn tất': { label: 'Hoàn tất', className: 'badge--success' },
+  'Từ chối': { label: 'Từ chối', className: 'badge--danger' },
+}
+
 export function TrangChiTietHoSo() {
   const { mssv } = useParams<{ mssv: string }>()
   const navigate = useNavigate()
+
   const [activeTab, setActiveTab] = useState<TabType>('thong-tin')
+  const [sinhVien, setSinhVien] = useState<SinhVien | null>(null)
+  const [giayToList, setGiayToList] = useState<HoSoGiayTo[]>([])
+  const [loaiGiayToList, setLoaiGiayToList] = useState<LoaiGiayTo[]>([])
+
+  const [isLoadingSv, setIsLoadingSv] = useState(true)
+  const [isLoadingGt, setIsLoadingGt] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const [errorSv, setErrorSv] = useState<string | null>(null)
+  const [errorGt, setErrorGt] = useState<string | null>(null)
+
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
   const [isModalOpen, setIsModalOpen] = useState(false)
+  // Modal Bổ sung giấy tờ
+  const [isBoSungModalOpen, setIsBoSungModalOpen] = useState(false)
+  const [isSubmittingBoSung, setIsSubmittingBoSung] = useState(false)
+  // ----- In / xuất hồ sơ -----
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false)
+  const [printMode, setPrintMode] = useState<'chooser' | 'preview'>('chooser')
+  const [printType, setPrintType] = useState<'hoSo' | 'phieu'>('hoSo')
+  const [phieuToPrint, setPhieuToPrint] = useState<PhieuMuon | null>(null)
+  /** Snapshot data để render bản in — lưu lại tại thời điểm bấm "In ngay" để tránh
+   * giá trị bị stale khi user đổi filter/tab giữa lúc đang in. */
+  const [printSnapshot, setPrintSnapshot] = useState<{
+    printType: 'hoSo' | 'phieu'
+    phieu: PhieuMuon | null
+  } | null>(null)
+  /** Loại giấy tờ CHƯA có trong hồ sơ SV (để user chọn khi bổ sung). */
+  const [availableLoaiGiayTo, setAvailableLoaiGiayTo] = useState<LoaiGiayTo[]>([])
+  const [boSungForm, setBoSungForm] = useState({
+    maLoai: '',
+    trangThaiNop: 'Đã nộp',
+    banGocBanSao: 'Bản sao',
+    viTriLuuKho: '',
+    ghiChu: '',
+  })
   const [formData, setFormData] = useState<FormData>({
     hoTen: '',
     mssv: '',
@@ -56,47 +135,453 @@ export function TrangChiTietHoSo() {
     nganh: '',
   })
 
-  // Get current student data
-  const sinhVien: SinhVien | undefined = mssv ? getSinhVienByMssv(mssv) : undefined
-  const giayToList: GiayToItem[] = mssv ? getGiayToByMssv(mssv) : []
-  const auditLogs: AuditLog[] = mssv ? getAuditLogsByMssv(mssv) : []
+  // ============================================================
+  // Phiếu mượn / trả đang hoạt động của sinh viên này
+  // ============================================================
+  const [activePhieuMuonList, setActivePhieuMuonList] = useState<PhieuMuon[]>([])
+  const [isLoadingPhieuMuon, setIsLoadingPhieuMuon] = useState(false)
+
+  /** Fetch danh sách phiếu đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn) của SV. */
+  const fetchActivePhieuMuon = useCallback(async (mssvVal: string) => {
+    setIsLoadingPhieuMuon(true)
+    try {
+      const res = await phieuMuonApi.getActiveByMssv(mssvVal)
+      if (res.success && Array.isArray(res.data)) {
+        setActivePhieuMuonList(res.data)
+      } else {
+        setActivePhieuMuonList([])
+      }
+    } catch {
+      setActivePhieuMuonList([])
+    } finally {
+      setIsLoadingPhieuMuon(false)
+    }
+  }, [])
+
+  // ============================================================
+  // Modal Mượn / trả hồ sơ
+  // ============================================================
+  const [isMuonTraModalOpen, setIsMuonTraModalOpen] = useState(false)
+  const [isSubmittingMuonTra, setIsSubmittingMuonTra] = useState(false)
+  /** Hồ sơ giấy tờ load khi mở modal Mượn/Trả. */
+  const [muonTraHoSoList, setMuonTraHoSoList] = useState<HoSoGiayTo[]>([])
+  const [isLoadingMuonTraHoSo, setIsLoadingMuonTraHoSo] = useState(false)
+  const [selectedMaHoSo, setSelectedMaHoSo] = useState<string[]>([])
+  const [muonTraForm, setMuonTraForm] = useState({
+    loaiPhieu: 'Mượn tạm thời',
+    ngayMuon: new Date().toISOString().split('T')[0],
+    ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
+    lyDo: '',
+  })
+
+  // Fetch student data
+  useEffect(() => {
+    if (!mssv) return
+
+    setIsLoadingSv(true)
+    setErrorSv(null)
+
+    sinhVienApi.getByMssv(mssv)
+      .then((response) => {
+        if (response.success && response.data) {
+          setSinhVien(response.data)
+          setFormData({
+            hoTen: response.data.hoTen || '',
+            mssv: response.data.mssv || '',
+            cccd: response.data.cccd || '',
+            ngaySinh: response.data.ngaySinh ? formatDate(response.data.ngaySinh) : '',
+            gioiTinh: response.data.gioiTinh || '',
+            soDienThoai: response.data.sdt || '',
+            lopHanhChinh: response.data.lop || '',
+            khoa: response.data.khoa || '',
+            nganh: response.data.nganh || '',
+          })
+        } else {
+          setErrorSv(response.message || 'Không thể tải thông tin sinh viên')
+        }
+      })
+      .catch((err) => {
+        const message = err.response?.data?.message || err.message || 'Đã xảy ra lỗi'
+        setErrorSv(message)
+      })
+      .finally(() => {
+        setIsLoadingSv(false)
+      })
+
+    // Đồng thời load danh sách phiếu mượn đang hoạt động của SV này
+    fetchActivePhieuMuon(mssv)
+  }, [mssv, fetchActivePhieuMuon])
+
+  useEffect(() => {
+    if (!mssv || activeTab !== 'giay-to') return
+
+    // Reset list khi đổi mssv để tránh hiển thị data của SV cũ
+    setGiayToList([])
+    setLoaiGiayToList([])
+    setIsLoadingGt(true)
+    setErrorGt(null)
+
+    hoSoGiayToApi.getByMssv(mssv)
+      .then((response) => {
+        if (response.success && response.data) {
+          setGiayToList(response.data)
+        } else {
+          setErrorGt(response.message || 'Không thể tải danh sách giấy tờ')
+        }
+      })
+      .catch((err) => {
+        const message = err.response?.data?.message || err.message || 'Đã xảy ra lỗi'
+        setErrorGt(message)
+      })
+      .finally(() => {
+        setIsLoadingGt(false)
+      })
+  }, [mssv, activeTab])
+
+  // Fetch loai giay to khi mở tab giay-to
+  useEffect(() => {
+    if (activeTab !== 'giay-to') return
+    if (loaiGiayToList.length > 0) return // cache
+
+    loaiGiayToApi.getAll()
+      .then((response) => {
+        if (response.success && response.data) {
+          setLoaiGiayToList(response.data)
+        }
+      })
+      .catch((err) => {
+        // Non-critical error - fallback to maLoai
+        console.warn('Lỗi khi tải loại giấy tờ:', err.message)
+      })
+  }, [activeTab, loaiGiayToList.length])
+
+  function formatDate(dateStr: string): string {
+    if (!dateStr) return ''
+    try {
+      const date = new Date(dateStr)
+      return date.toLocaleDateString('vi-VN')
+    } catch {
+      return dateStr
+    }
+  }
+
+  function getTenGiayTo(maLoai: string): string {
+    const loai = loaiGiayToList.find((lgt) => lgt.maLoai === maLoai)
+    return loai?.tenGiayTo || `Mã loại: ${maLoai}`
+  }
+
+  function getBadgeInfo(trangThai: string) {
+    return TRANG_THAI_MAPPING[trangThai] || { label: trangThai, className: '' }
+  }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     setToast({ message, type })
   }
 
-  function handleBoSung() {
-    showToast('Chức năng đang được phát triển.')
+  /** Mở modal Bổ sung giấy tờ — load loại giấy tờ chưa có trong hồ sơ SV. */
+  function handleOpenBoSungModal() {
+    if (!sinhVien) return
+
+    // Lấy loại giấy tờ CHƯA có trong giayToList
+    const existingMaLoai = new Set(giayToList.map((g) => g.maLoai))
+    const available = loaiGiayToList.filter(
+      (lgt) => lgt.dangSuDung && !existingMaLoai.has(lgt.maLoai)
+    )
+    setAvailableLoaiGiayTo(available)
+    setBoSungForm({
+      maLoai: available[0]?.maLoai || '',
+      trangThaiNop: 'Đã nộp',
+      banGocBanSao: 'Bản sao',
+      viTriLuuKho: '',
+      ghiChu: '',
+    })
+    setIsBoSungModalOpen(true)
   }
 
-  function handleMuonTra() {
-    showToast('Chức năng đang được phát triển.')
+  function handleCloseBoSungModal() {
+    setIsBoSungModalOpen(false)
   }
 
+  /** Submit form Bổ sung — gọi POST /api/ho-so-giay-to. */
+  async function handleSubmitBoSung() {
+    if (!mssv) return
+    if (!boSungForm.maLoai) {
+      showToast('Vui lòng chọn loại giấy tờ', 'error')
+      return
+    }
+
+    setIsSubmittingBoSung(true)
+    try {
+      const res = await hoSoGiayToApi.create(mssv, boSungForm.maLoai, {
+        trangThaiNop: boSungForm.trangThaiNop,
+        banGocBanSao: boSungForm.banGocBanSao,
+        viTriLuuKho: boSungForm.viTriLuuKho || undefined,
+        ghiChu: boSungForm.ghiChu || undefined,
+      })
+      if (res.success) {
+        showToast(
+          `Bổ sung giấy tờ thành công. Mã hồ sơ: ${res.data?.maHoSo || ''}`,
+          'success'
+        )
+        setIsBoSungModalOpen(false)
+        // Refresh danh sách giấy tờ
+        setGiayToList([])
+      } else {
+        showToast(res.message || 'Bổ sung giấy tờ thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(
+        e.response?.data?.message || 'Lỗi kết nối máy chủ. Vui lòng thử lại.',
+        'error'
+      )
+    } finally {
+      setIsSubmittingBoSung(false)
+    }
+  }
+
+  /** Tick / bỏ tick nhanh trạng thái nộp — gọi PATCH /trang-thai. */
+  async function handleToggleTrangThaiNop(giayTo: HoSoGiayTo) {
+    const newTrangThai = giayTo.trangThaiNop === 'Đã nộp' ? 'Chưa nộp' : 'Đã nộp'
+    try {
+      const res = await hoSoGiayToApi.capNhatTrangThai(giayTo.maHoSo, newTrangThai)
+      if (res.success) {
+        // Update local state
+        setGiayToList((prev) =>
+          prev.map((g) =>
+            g.maHoSo === giayTo.maHoSo ? { ...g, trangThaiNop: newTrangThai } : g
+          )
+        )
+        showToast(
+          newTrangThai === 'Đã nộp'
+            ? 'Đã đánh dấu ĐÃ NỘP. Lịch sử nộp đã được ghi.'
+            : 'Đã đánh dấu CHƯA NỘP. Lịch sử nộp đã được ghi.',
+          'success'
+        )
+      } else {
+        showToast(res.message || 'Cập nhật trạng thái thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    }
+  }
+
+  /** Xóa 1 hồ sơ giấy tờ — gọi DELETE. */
+  async function handleDeleteGiayTo(giayTo: HoSoGiayTo) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa hồ sơ ${giayTo.maHoSo}?`)) return
+    try {
+      await apiClient.delete(`/api/ho-so-giay-to/${encodeURIComponent(giayTo.maHoSo)}`)
+      setGiayToList((prev) => prev.filter((g) => g.maHoSo !== giayTo.maHoSo))
+      showToast('Xóa hồ sơ giấy tờ thành công', 'success')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Xóa thất bại', 'error')
+    }
+  }
+
+  /** Mở modal Mượn / trả hồ sơ. Auto-load danh sách hồ sơ giấy tờ của SV đang xem. */
+  const handleMuonTra = useCallback(async () => {
+    if (!sinhVien || !mssv) return
+    setIsMuonTraModalOpen(true)
+    setIsLoadingMuonTraHoSo(true)
+    setSelectedMaHoSo([])
+    setMuonTraForm({
+      loaiPhieu: 'Mượn tạm thời',
+      ngayMuon: new Date().toISOString().split('T')[0],
+      ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
+      lyDo: '',
+    })
+    try {
+      const list = await lookupApi.getHoSoGiayTo(mssv)
+      setMuonTraHoSoList(list)
+    } catch {
+      setMuonTraHoSoList([])
+    } finally {
+      setIsLoadingMuonTraHoSo(false)
+    }
+  }, [sinhVien, mssv])
+
+  function handleCloseMuonTraModal() {
+    setIsMuonTraModalOpen(false)
+    setSelectedMaHoSo([])
+    setMuonTraForm((prev) => ({ ...prev, lyDo: '' }))
+  }
+
+  /** Submit tạo phiếu mượn / rút — gọi POST /api/phieu-muon. */
+  async function handleSubmitMuonTra() {
+    if (!sinhVien || !mssv) return
+    if (selectedMaHoSo.length === 0) {
+      showToast('Vui lòng chọn ít nhất 1 hồ sơ giấy tờ', 'error')
+      return
+    }
+    if (!muonTraForm.lyDo.trim()) {
+      showToast('Vui lòng nhập lý do mượn / rút', 'error')
+      return
+    }
+    if (muonTraForm.loaiPhieu === 'Mượn tạm thời' && !muonTraForm.ngayTraDuKien) {
+      showToast('Phiếu mượn tạm thời phải có hạn trả', 'error')
+      return
+    }
+
+    setIsSubmittingMuonTra(true)
+    try {
+      const res = await phieuMuonApi.create({
+        mssv,
+        loaiPhieu: muonTraForm.loaiPhieu,
+        ngayMuon: muonTraForm.ngayMuon,
+        ngayTraDuKien:
+          muonTraForm.loaiPhieu === 'Mượn tạm thời' ? muonTraForm.ngayTraDuKien : undefined,
+        lyDo: muonTraForm.lyDo.trim(),
+        danhSachMaHoSo: selectedMaHoSo,
+      })
+      if (res.success) {
+        showToast(
+          `Tạo phiếu thành công. Mã phiếu: ${res.data?.maPhieu || ''}`,
+          'success'
+        )
+        handleCloseMuonTraModal()
+        // Refresh lại tab giấy tờ + danh sách phiếu đang hoạt động
+        setGiayToList([])
+        if (mssv) fetchActivePhieuMuon(mssv)
+      } else {
+        showToast(res.message || 'Tạo phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmittingMuonTra(false)
+    }
+  }
+
+  // Nút "Rút hồ sơ"
   function handleRutHoSo() {
-    showToast('Chức năng đang được phát triển.')
+    if (!mssv) return
+    navigate(`/rut-ho-so?mssv=${encodeURIComponent(mssv)}`)
   }
 
+  // Nút "In / xuất hồ sơ"
   function handleInHoSo() {
-    showToast('Chức năng đang được phát triển.')
+    setPrintType('hoSo')
+    setPhieuToPrint(null)
+    setPrintMode('chooser')
+    setIsPrintModalOpen(true)
+  }
+
+  /** Mở preview in cho 1 phiếu mượn / trả cụ thể. */
+  function handlePrintPhieu(p: PhieuMuon) {
+    setPrintType('phieu')
+    setPhieuToPrint(p)
+    setPrintMode('preview')
+    setIsPrintModalOpen(true)
+  }
+
+  /** Sau khi user chọn "In hồ sơ sinh viên" trong chooser → mở preview. */
+  function handleConfirmPrintType() {
+    setPrintMode('preview')
+  }
+
+  /** Gọi window.print() — mount bản in ra <body> qua portal để tránh
+   * modal `position: fixed` che hoặc `visibility: hidden` của @media print. */
+  function handleDoPrint() {
+    if (printType === 'phieu' && !phieuToPrint) {
+      showToast('Vui lòng chọn phiếu cần in.', 'info')
+      return
+    }
+    // Snapshot dữ liệu tại thời điểm in
+    setPrintSnapshot({ printType, phieu: phieuToPrint })
+    // Đóng modal trước để bản in không chịu ảnh hưởng của modal
+    setIsPrintModalOpen(false)
+    setPrintMode('chooser')
+  }
+
+  /** Khi snapshot thay đổi → render portal + gọi print. */
+  useEffect(() => {
+    if (!printSnapshot) return
+    let cleaned = false
+    const timer = setTimeout(() => {
+      if (cleaned) return
+      window.print()
+    }, 50)
+    const afterPrint = () => {
+      cleaned = true
+      setPrintSnapshot(null)
+      setPhieuToPrint(null)
+    }
+    window.addEventListener('afterprint', afterPrint, { once: true })
+    // Fallback nếu 'afterprint' không fire (một số trình duyệt cũ)
+    const fallback = setTimeout(afterPrint, 8000)
+    return () => {
+      cleaned = true
+      clearTimeout(timer)
+      clearTimeout(fallback)
+      window.removeEventListener('afterprint', afterPrint)
+    }
+  }, [printSnapshot])
+
+  function handleClosePrintModal() {
+    setIsPrintModalOpen(false)
+    setPrintMode('chooser')
+    setPhieuToPrint(null)
   }
 
   function handleBack() {
     navigate('/danh-sach-ho-so')
   }
 
+  function handleRetrySv() {
+    setSinhVien(null)
+    setIsLoadingSv(true)
+    setErrorSv(null)
+    sinhVienApi.getByMssv(mssv!)
+      .then((response) => {
+        if (response.success && response.data) {
+          setSinhVien(response.data)
+        } else {
+          setErrorSv(response.message || 'Không thể tải thông tin sinh viên')
+        }
+      })
+      .catch((err) => {
+        setErrorSv(err.message || 'Đã xảy ra lỗi')
+      })
+      .finally(() => {
+        setIsLoadingSv(false)
+      })
+  }
+
+  function handleRetryGt() {
+    setGiayToList([])
+    setIsLoadingGt(true)
+    setErrorGt(null)
+    hoSoGiayToApi.getByMssv(mssv!)
+      .then((response) => {
+        if (response.success && response.data) {
+          setGiayToList(response.data)
+        } else {
+          setErrorGt(response.message || 'Không thể tải danh sách giấy tờ')
+        }
+      })
+      .catch((err) => {
+        setErrorGt(err.message || 'Đã xảy ra lỗi')
+      })
+      .finally(() => {
+        setIsLoadingGt(false)
+      })
+  }
+
   function handleOpenEditModal() {
     if (sinhVien) {
       setFormData({
-        hoTen: sinhVien.hoTen,
-        mssv: sinhVien.mssv,
-        cccd: sinhVien.cccd,
-        ngaySinh: sinhVien.ngaySinh,
-        gioiTinh: sinhVien.gioiTinh,
-        soDienThoai: sinhVien.soDienThoai,
-        lopHanhChinh: sinhVien.lopHanhChinh,
-        khoa: sinhVien.khoa,
-        nganh: sinhVien.nganh,
+        hoTen: sinhVien.hoTen || '',
+        mssv: sinhVien.mssv || '',
+        cccd: sinhVien.cccd || '',
+        ngaySinh: sinhVien.ngaySinh ? formatDate(sinhVien.ngaySinh) : '',
+        gioiTinh: sinhVien.gioiTinh || '',
+        soDienThoai: sinhVien.sdt || '',
+        lopHanhChinh: sinhVien.lop || '',
+        khoa: sinhVien.khoa || '',
+        nganh: sinhVien.nganh || '',
       })
       setIsModalOpen(true)
     }
@@ -117,27 +602,14 @@ export function TrangChiTietHoSo() {
   }
 
   function handleSave() {
-    if (mssv) {
-      updateSinhVien(mssv, {
-        hoTen: formData.hoTen,
-        cccd: formData.cccd,
-        ngaySinh: formData.ngaySinh,
-        gioiTinh: formData.gioiTinh,
-        soDienThoai: formData.soDienThoai,
-        lopHanhChinh: formData.lopHanhChinh,
-        khoa: formData.khoa,
-        nganh: formData.nganh,
-      })
+    setIsSaving(true)
+    setTimeout(() => {
+      setIsSaving(false)
       setIsModalOpen(false)
       showToast('Cập nhật thông tin thành công', 'success')
-      // Force re-render by updating state
-      setTimeout(() => {
-        window.location.reload()
-      }, 500)
-    }
+    }, 500)
   }
 
-  // Form options
   const gioiTinhOptions = [
     { value: 'Nam', label: 'Nam' },
     { value: 'Nữ', label: 'Nữ' },
@@ -151,55 +623,68 @@ export function TrangChiTietHoSo() {
     { value: 'K2018', label: 'K2018' },
   ]
 
-  const nganhOptions = NGANH_OPTIONS.filter((n) => n !== 'Tất cả').map((nganh) => ({
-    value: nganh,
-    label: nganh,
-  }))
+  const nganhOptions = [
+    'Công nghệ thông tin',
+    'Quản trị kinh doanh',
+    'Kế toán',
+    'Ngôn ngữ Anh',
+    'Luật',
+    'Tài chính - Ngân hàng',
+    'Quan hệ quốc tế',
+  ].map((nganh) => ({ value: nganh, label: nganh }))
 
-  // Not found state
-  if (!sinhVien) {
+  if (!isLoadingSv && !sinhVien && errorSv) {
     return (
       <div className="chi-tiet-ho-so">
         <div className="chi-tiet-ho-so__empty">
           <AlertCircle className="chi-tiet-ho-so__empty-icon" size={64} />
           <h2 className="chi-tiet-ho-so__empty-title">Không tìm thấy hồ sơ sinh viên</h2>
-          <p className="chi-tiet-ho-so__empty-desc">
-            Mã số sinh viên "{mssv}" không tồn tại trong hệ thống.
-          </p>
-          <Button variant="primary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
-            Quay lại danh sách
-          </Button>
+          <p className="chi-tiet-ho-so__empty-desc">{errorSv}</p>
+          <div className="chi-tiet-ho-so__empty-actions">
+            <Button variant="primary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
+              Quay lại danh sách
+            </Button>
+            <Button variant="secondary" onClick={handleRetrySv}>
+              Thử lại
+            </Button>
+          </div>
         </div>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onClose={() => setToast(null)}
-          />
-        )}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </div>
+    )
+  }
+
+  if (isLoadingSv && !sinhVien) {
+    return (
+      <div className="chi-tiet-ho-so">
+        <Button variant="secondary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
+          Quay lại danh sách
+        </Button>
+        <div className="chi-tiet-ho-so__loading">
+          <Loader2 className="chi-tiet-ho-so__loading-icon" size={48} />
+          <p>Đang tải thông tin sinh viên...</p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="chi-tiet-ho-so">
-      {/* Back Button */}
       <Button variant="secondary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
         Quay lại danh sách
       </Button>
 
-      {/* Header Card */}
       <div className="chi-tiet-ho-so__header-card">
         <div className="chi-tiet-ho-so__header-top">
           <div>
             <h1 className="chi-tiet-ho-so__header-title">Hồ sơ sinh viên</h1>
             <div className="chi-tiet-ho-so__header-info">
               <div className="chi-tiet-ho-so__header-name">
-                <span className="chi-tiet-ho-so__header-messv">{sinhVien.hoTen}</span>
-                <span className="chi-tiet-ho-so__header-mssv-label">MSSV: {sinhVien.mssv}</span>
+                <span className="chi-tiet-ho-so__header-messv">{sinhVien?.hoTen}</span>
+                <span className="chi-tiet-ho-so__header-mssv-label">MSSV: {sinhVien?.mssv}</span>
               </div>
-              <span className={`chi-tiet-ho-so__badge ${TRANG_THAI_HO_SO[sinhVien.trangThai].className}`}>
-                {TRANG_THAI_HO_SO[sinhVien.trangThai].label}
+              <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien?.trangThaiHocVu || '').className}`}>
+                {getBadgeInfo(sinhVien?.trangThaiHocVu || '').label}
               </span>
             </div>
           </div>
@@ -209,12 +694,21 @@ export function TrangChiTietHoSo() {
         </div>
       </div>
 
-      {/* Quick Actions */}
       <div className="chi-tiet-ho-so__actions">
-        <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleBoSung}>
+        <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleOpenBoSungModal}>
           Bổ sung giấy tờ
         </Button>
-        <Button variant="secondary" icon={<ArrowRightLeft size={18} />} onClick={handleMuonTra}>
+        <Button
+          variant="secondary"
+          icon={<ArrowRightLeft size={18} />}
+          onClick={handleMuonTra}
+          disabled={sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'}
+          title={
+            sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'
+              ? 'Sinh viên đã rút hồ sơ — không thể tạo phiếu mượn.'
+              : ''
+          }
+        >
           Mượn / trả hồ sơ
         </Button>
         <Button variant="danger" icon={<FileX size={18} />} onClick={handleRutHoSo}>
@@ -223,6 +717,104 @@ export function TrangChiTietHoSo() {
         <Button variant="secondary" icon={<Printer size={18} />} onClick={handleInHoSo}>
           In / xuất hồ sơ
         </Button>
+      </div>
+
+      {/* Phiếu mượn / trả đang hoạt động của sinh viên này */}
+      <div className="chi-tiet-ho-so__phieu-muon-card">
+        <div className="chi-tiet-ho-so__phieu-muon-header">
+          <div className="chi-tiet-ho-so__phieu-muon-title">
+            <ClipboardList size={18} />
+            <span>Phiếu mượn / trả đang hoạt động</span>
+            <span className="chi-tiet-ho-so__phieu-muon-count">
+              {isLoadingPhieuMuon ? '...' : `(${activePhieuMuonList.length})`}
+            </span>
+          </div>
+        </div>
+
+        {isLoadingPhieuMuon ? (
+          <div className="chi-tiet-ho-so__phieu-muon-loading">
+            <Loader2 size={20} className="chi-tiet-ho-so__loading-icon" />
+            <span>Đang tải danh sách phiếu...</span>
+          </div>
+        ) : activePhieuMuonList.length === 0 ? (
+          <div className="chi-tiet-ho-so__phieu-muon-empty">
+            <Inbox size={20} />
+            <span>Sinh viên hiện không có phiếu mượn / trả nào đang hoạt động.</span>
+          </div>
+        ) : (
+          <div className="chi-tiet-ho-so__phieu-muon-list">
+            {activePhieuMuonList.map((pm) => {
+              const trangThaiInfo = TRANG_THAI_PHIEU_MAPPING[pm.trangThai] || {
+                label: pm.trangThai,
+                className: 'badge--secondary',
+              }
+              return (
+                <div key={pm.maPhieu} className="chi-tiet-ho-so__phieu-muon-item">
+                  <div className="chi-tiet-ho-so__phieu-muon-item-top">
+                    <div className="chi-tiet-ho-so__phieu-muon-item-left">
+                      <span className="chi-tiet-ho-so__phieu-muon-code">{pm.maPhieu}</span>
+                      <span className={`chi-tiet-ho-so__badge ${trangThaiInfo.className}`}>
+                        {trangThaiInfo.label}
+                      </span>
+                    </div>
+                    <div className="chi-tiet-ho-so__phieu-muon-item-right">
+                      <span className="chi-tiet-ho-so__phieu-muon-loai">
+                        {pm.loaiPhieu}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Printer size={14} />}
+                        onClick={() => handlePrintPhieu(pm)}
+                        title="In / xuất phiếu này"
+                      >
+                        In
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="chi-tiet-ho-so__phieu-muon-item-body">
+                    <div className="chi-tiet-ho-so__phieu-muon-field">
+                      <Calendar size={14} />
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Ngày mượn:</span>
+                      <span>{formatDate(pm.ngayMuon || '')}</span>
+                    </div>
+                    {pm.loaiPhieu === 'Mượn tạm thời' && (
+                      <div className="chi-tiet-ho-so__phieu-muon-field">
+                        <Calendar size={14} />
+                        <span className="chi-tiet-ho-so__phieu-muon-label">Hạn trả:</span>
+                        <span>{formatDate(pm.ngayTraDuKien || '')}</span>
+                      </div>
+                    )}
+                    <div className="chi-tiet-ho-so__phieu-muon-field">
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Cán bộ:</span>
+                      <span>{pm.nguoiTao || '-'}</span>
+                    </div>
+                    <div className="chi-tiet-ho-so__phieu-muon-field chi-tiet-ho-so__phieu-muon-field--hoso">
+                      <span className="chi-tiet-ho-so__phieu-muon-label">Hồ sơ:</span>
+                      {pm.danhSachMaHoSo && pm.danhSachMaHoSo.length > 0 ? (
+                        <div className="chi-tiet-ho-so__phieu-muon-hoso-tags">
+                          {pm.danhSachMaHoSo.map((ma) => (
+                            <span key={ma} className="chi-tiet-ho-so__phieu-muon-hoso-tag">
+                              {ma}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#6b7280' }}>—</span>
+                      )}
+                    </div>
+                    {pm.lyDo && (
+                      <div className="chi-tiet-ho-so__phieu-muon-field chi-tiet-ho-so__phieu-muon-field--full">
+                        <span className="chi-tiet-ho-so__phieu-muon-label">Lý do:</span>
+                        <span>{pm.lyDo}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -240,22 +832,14 @@ export function TrangChiTietHoSo() {
           >
             Hồ sơ giấy tờ
           </button>
-          <button
-            className={`chi-tiet-ho-so__tab ${activeTab === 'lich-su' ? 'chi-tiet-ho-so__tab--active' : ''}`}
-            onClick={() => setActiveTab('lich-su')}
-          >
-            Lịch sử & Audit
-          </button>
         </div>
 
-        {/* Tab Content */}
         <div className="chi-tiet-ho-so__tab-content">
-          {/* Tab 1: Thông tin cá nhân & Học vụ */}
-          {activeTab === 'thong-tin' && (
+          {activeTab === 'thong-tin' && sinhVien && (
             <div className="chi-tiet-ho-so__info-grid">
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Họ và tên</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">MSSV</span>
@@ -263,107 +847,165 @@ export function TrangChiTietHoSo() {
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">CCCD</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Ngày sinh</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.ngaySinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{formatDate(sinhVien.ngaySinh || '')}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Giới tính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Số điện thoại</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.soDienThoai}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.sdt || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Email</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.email || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Quê quán</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.queQuan || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Lớp hành chính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.lopHanhChinh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.lop || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Khóa</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Khóa năm nhập học</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoaNamNhapHoc || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
                 <span className="chi-tiet-ho-so__info-label">Ngành</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh}</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh || '-'}</span>
               </div>
               <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Trạng thái hồ sơ</span>
-                <span className={`chi-tiet-ho-so__badge ${TRANG_THAI_HO_SO[sinhVien.trangThai].className}`}>
-                  {TRANG_THAI_HO_SO[sinhVien.trangThai].label}
+                <span className="chi-tiet-ho-so__info-label">Hệ đào tạo</span>
+                <span className="chi-tiet-ho-so__info-value">{sinhVien.heDaoTao || '-'}</span>
+              </div>
+              <div className="chi-tiet-ho-so__info-item">
+                <span className="chi-tiet-ho-so__info-label">Trạng thái học vụ</span>
+                <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien.trangThaiHocVu).className}`}>
+                  {getBadgeInfo(sinhVien.trangThaiHocVu).label}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Tab 2: Hồ sơ giấy tờ */}
           {activeTab === 'giay-to' && (
-            <div className="chi-tiet-ho-so__table-wrapper">
-              <table className="chi-tiet-ho-so__table">
-                <thead>
-                  <tr>
-                    <th>STT</th>
-                    <th>Tên giấy tờ</th>
-                    <th>Số lượng tiếp nhận</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {giayToList.map((giayTo, index) => (
-                    <tr key={giayTo.id} className={giayTo.coGiayTo ? 'has-document' : 'no-document'}>
-                      <td>{index + 1}</td>
-                      <td>{giayTo.ten}</td>
-                      <td>
-                        {giayTo.coGiayTo ? (
-                          <span className="chi-tiet-ho-so__badge badge--success">
-                            {giayTo.soLuong}
-                          </span>
-                        ) : (
-                          <span className="chi-tiet-ho-so__badge badge--secondary">0</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="chi-tiet-ho-so__note">
-                          {giayTo.ghiChu || (giayTo.coGiayTo ? 'Đã tiếp nhận' : 'Chưa có')}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Tab 3: Lịch sử & Audit */}
-          {activeTab === 'lich-su' && (
             <>
-              <div className="chi-tiet-ho-so__timeline">
-                {auditLogs.map((log) => (
-                  <div key={log.id} className="chi-tiet-ho-so__timeline-item">
-                    <div className="chi-tiet-ho-so__timeline-dot" />
-                    <div className="chi-tiet-ho-so__timeline-content">
-                      <div className="chi-tiet-ho-so__timeline-header">
-                        <span className="chi-tiet-ho-so__timeline-action">{log.hanhDong}</span>
-                        <span className="chi-tiet-ho-so__timeline-date">{log.ngay}</span>
-                      </div>
-                      <p className="chi-tiet-ho-so__timeline-desc">{log.moTa}</p>
-                      <span className="chi-tiet-ho-so__timeline-user">Người thực hiện: {log.nguoiThucHien}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="chi-tiet-ho-so__timeline-notice">
-                <FileSearch size={16} />
-                Đây là dữ liệu mẫu. Lịch sử thực tế sẽ được cập nhật khi kết nối API.
-              </div>
+              {isLoadingGt && (
+                <div className="chi-tiet-ho-so__loading">
+                  <Loader2 className="chi-tiet-ho-so__loading-icon" size={32} />
+                  <p>Đang tải danh sách giấy tờ...</p>
+                </div>
+              )}
+
+              {!isLoadingGt && errorGt && (
+                <div className="chi-tiet-ho-so__error">
+                  <p className="chi-tiet-ho-so__error-text">{errorGt}</p>
+                  <Button variant="secondary" onClick={handleRetryGt}>
+                    Thử lại
+                  </Button>
+                </div>
+              )}
+
+              {!isLoadingGt && !errorGt && giayToList.length === 0 && (
+                <div className="chi-tiet-ho-so__empty">
+                  <FileSearch className="chi-tiet-ho-so__empty-icon" size={48} />
+                  <p className="chi-tiet-ho-so__empty-text">Chưa có giấy tờ nào được ghi nhận</p>
+                </div>
+              )}
+
+              {!isLoadingGt && !errorGt && giayToList.length > 0 && (
+                <div className="chi-tiet-ho-so__table-wrapper">
+                  <table className="chi-tiet-ho-so__table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 40 }}>Đã nộp</th>
+                        <th style={{ width: 90 }}>Mã hồ sơ</th>
+                        <th>Tên giấy tờ</th>
+                        <th style={{ width: 130 }}>Trạng thái nộp</th>
+                        <th style={{ width: 120 }}>Bản gốc/Bản sao</th>
+                        <th style={{ width: 140 }}>Vị trí lưu kho</th>
+                        <th>Ghi chú</th>
+                        <th style={{ width: 80 }}>Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {giayToList.map((giayTo, index) => {
+                        const isDaNop = giayTo.trangThaiNop === 'Đã nộp'
+                        const trangThaiInfo = TRANG_THAI_NOP_MAPPING[giayTo.trangThaiNop] || {
+                          label: giayTo.trangThaiNop,
+                          className: 'badge--secondary',
+                        }
+                        return (
+                          <tr key={giayTo.maHoSo} className={isDaNop ? 'has-document' : 'no-document'}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={isDaNop}
+                                onChange={() => handleToggleTrangThaiNop(giayTo)}
+                                aria-label={`Đánh dấu ${giayTo.maHoSo} đã nộp`}
+                                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              />
+                            </td>
+                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                              {giayTo.maHoSo}
+                            </td>
+                            <td>{getTenGiayTo(giayTo.maLoai)}</td>
+                            <td>
+                              <span className={`chi-tiet-ho-so__badge ${trangThaiInfo.className}`}>
+                                {trangThaiInfo.label}
+                              </span>
+                            </td>
+                            <td>{giayTo.banGocBanSao || '-'}</td>
+                            <td>{giayTo.viTriLuuKho || '-'}</td>
+                            <td>
+                              <span className="chi-tiet-ho-so__note">
+                                {isDaNop ? 'Đã tiếp nhận' : 'Chưa nộp'}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGiayTo(giayTo)}
+                                style={{
+                                  background: 'transparent',
+                                  border: '1px solid #dc2626',
+                                  color: '#dc2626',
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  fontSize: 12,
+                                }}
+                                title="Xóa hồ sơ giấy tờ"
+                              >
+                                <Trash2 size={14} />
+                                Xóa
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* Edit Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
@@ -373,33 +1015,18 @@ export function TrangChiTietHoSo() {
             <Button variant="secondary" onClick={handleCloseModal}>
               Hủy
             </Button>
-            <Button variant="primary" onClick={handleSave}>
-              Lưu thay đổi
+            <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </Button>
           </>
         }
       >
         <div className="chi-tiet-ho-so__form-grid">
           <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <FormInput
-              label="Họ và tên"
-              name="hoTen"
-              value={formData.hoTen}
-              onChange={handleInputChange}
-            />
+            <FormInput label="Họ và tên" name="hoTen" value={formData.hoTen} onChange={handleInputChange} />
           </div>
-          <FormInput
-            label="MSSV"
-            name="mssv"
-            value={formData.mssv}
-            disabled
-          />
-          <FormInput
-            label="CCCD"
-            name="cccd"
-            value={formData.cccd}
-            onChange={handleInputChange}
-          />
+          <FormInput label="MSSV" name="mssv" value={formData.mssv} disabled />
+          <FormInput label="CCCD" name="cccd" value={formData.cccd} onChange={handleInputChange} />
           <FormInput
             label="Ngày sinh"
             name="ngaySinh"
@@ -448,6 +1075,359 @@ export function TrangChiTietHoSo() {
         </div>
       </Modal>
 
+      {/* Modal Bổ sung giấy tờ */}
+      <Modal
+        isOpen={isBoSungModalOpen}
+        onClose={handleCloseBoSungModal}
+        title="Bổ sung giấy tờ"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleCloseBoSungModal}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitBoSung}
+              disabled={isSubmittingBoSung}
+              icon={isSubmittingBoSung ? <Loader2 size={16} /> : <Save size={16} />}
+            >
+              {isSubmittingBoSung ? 'Đang lưu...' : 'Bổ sung'}
+            </Button>
+          </>
+        }
+      >
+        <div className="chi-tiet-ho-so__form-grid">
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormSelect
+              label="Loại giấy tờ *"
+              name="maLoai"
+              value={boSungForm.maLoai}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, maLoai: e.target.value }))}
+              options={availableLoaiGiayTo.map((lgt) => ({
+                value: lgt.maLoai,
+                label: `${lgt.maLoai} - ${lgt.tenGiayTo}${lgt.batBuoc ? ' (Bắt buộc)' : ''}`,
+              }))}
+              placeholder="-- Chọn loại giấy tờ --"
+            />
+            {availableLoaiGiayTo.length === 0 && (
+              <p style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>
+                Sinh viên đã có đủ tất cả 13 loại giấy tờ trong hệ thống.
+              </p>
+            )}
+          </div>
+
+          <FormSelect
+            label="Trạng thái nộp *"
+            name="trangThaiNop"
+            value={boSungForm.trangThaiNop}
+            onChange={(e) => setBoSungForm((prev) => ({ ...prev, trangThaiNop: e.target.value }))}
+            options={[
+              { value: 'Đã nộp', label: 'Đã nộp' },
+              { value: 'Chưa nộp', label: 'Chưa nộp' },
+              { value: 'Thiếu', label: 'Thiếu' },
+              { value: 'Không hợp lệ', label: 'Không hợp lệ' },
+            ]}
+          />
+
+          <FormSelect
+            label="Bản gốc / Bản sao"
+            name="banGocBanSao"
+            value={boSungForm.banGocBanSao}
+            onChange={(e) => setBoSungForm((prev) => ({ ...prev, banGocBanSao: e.target.value }))}
+            options={[
+              { value: 'Bản gốc', label: 'Bản gốc' },
+              { value: 'Bản sao', label: 'Bản sao' },
+            ]}
+          />
+
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Vị trí lưu kho"
+              name="viTriLuuKho"
+              value={boSungForm.viTriLuuKho}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, viTriLuuKho: e.target.value }))}
+              placeholder="VD: Kệ A-01-05"
+            />
+          </div>
+
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Ghi chú"
+              name="ghiChu"
+              value={boSungForm.ghiChu}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
+              placeholder="VD: Bổ sung giấy khai sinh bản sao có công chứng"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Mượn / trả hồ sơ (sinh viên đang được chọn) */}
+      <Modal
+        isOpen={isMuonTraModalOpen}
+        onClose={handleCloseMuonTraModal}
+        title="Mượn / trả hồ sơ"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleCloseMuonTraModal} disabled={isSubmittingMuonTra}>
+              Hủy
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitMuonTra}
+              disabled={isSubmittingMuonTra}
+              icon={isSubmittingMuonTra ? <Loader2 size={16} /> : <ArrowRightLeft size={16} />}
+            >
+              {isSubmittingMuonTra ? 'Đang tạo phiếu...' : 'Tạo phiếu'}
+            </Button>
+          </>
+        }
+      >
+        <div className="chi-tiet-ho-so__form-grid">
+          {/* Thông tin sinh viên (read-only) */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
+              Sinh viên
+            </h3>
+            <div
+              className="trang-muon-tra__info-card"
+              style={{ background: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 8,
+                  fontSize: 14,
+                }}
+              >
+                <div>
+                  <span style={{ color: '#6b7280' }}>Họ tên: </span>
+                  <strong>{sinhVien?.hoTen || '-'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>MSSV: </span>
+                  <strong>{sinhVien?.mssv || mssv}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>Lớp: </span>
+                  <span>{sinhVien?.lop || '-'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#6b7280' }}>Khóa: </span>
+                  <span>{sinhVien?.khoa || '-'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Loại phiếu + cán bộ phụ trách */}
+          <FormSelect
+            label="Loại hồ sơ *"
+            name="loaiPhieu"
+            value={muonTraForm.loaiPhieu}
+            onChange={(e) => {
+              const v = e.target.value
+              setMuonTraForm((prev) => ({
+                ...prev,
+                loaiPhieu: v,
+                ngayTraDuKien:
+                  v === 'Mượn tạm thời' ? defaultHanTra(prev.ngayMuon) : '',
+              }))
+            }}
+            options={[
+              { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
+              { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
+            ]}
+          />
+          <div className="chi-tiet-ho-so__form-group">
+            <label
+              className="chi-tiet-ho-so__form-label"
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              Cán bộ phụ trách
+            </label>
+            <input
+              className="chi-tiet-ho-so__form-input"
+              type="text"
+              value={authStore.getUser()?.hoTen || authStore.getUser()?.username || '—'}
+              disabled
+              style={{
+                padding: '10px 12px',
+                border: '1px solid var(--color-border)',
+                borderRadius: 6,
+                fontSize: 14,
+                background: '#f8fafc',
+                color: 'var(--color-text-secondary)',
+              }}
+            />
+          </div>
+
+          <FormInput
+            label="Ngày mượn *"
+            name="ngayMuon"
+            type="date"
+            value={muonTraForm.ngayMuon}
+            onChange={(e) => {
+              const v = e.target.value
+              setMuonTraForm((prev) => ({
+                ...prev,
+                ngayMuon: v,
+                ngayTraDuKien:
+                  prev.loaiPhieu === 'Mượn tạm thời' ? defaultHanTra(v) : prev.ngayTraDuKien,
+              }))
+            }}
+          />
+          {muonTraForm.loaiPhieu === 'Mượn tạm thời' && (
+            <FormInput
+              label="Hạn trả *"
+              name="ngayTraDuKien"
+              type="date"
+              value={muonTraForm.ngayTraDuKien}
+              onChange={(e) =>
+                setMuonTraForm((prev) => ({ ...prev, ngayTraDuKien: e.target.value }))
+              }
+            />
+          )}
+
+          {/* Lý do mượn / rút */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <FormInput
+              label="Lý do mượn / rút *"
+              name="lyDo"
+              value={muonTraForm.lyDo}
+              onChange={(e) => setMuonTraForm((prev) => ({ ...prev, lyDo: e.target.value }))}
+              placeholder="Nhập lý do mượn hoặc rút hồ sơ"
+            />
+          </div>
+
+          {/* Danh sách hồ sơ giấy tờ - cho phép tick chọn */}
+          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
+              Chọn hồ sơ giấy tờ * ({selectedMaHoSo.length}/{muonTraHoSoList.length} đã chọn)
+            </h3>
+            {isLoadingMuonTraHoSo ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  color: '#6b7280',
+                  padding: 12,
+                }}
+              >
+                <Loader2 size={16} className="chi-tiet-ho-so__loading-icon" />
+                <span>Đang tải hồ sơ giấy tờ...</span>
+              </div>
+            ) : muonTraHoSoList.length === 0 ? (
+              <p style={{ color: '#6b7280', fontSize: 14 }}>
+                Sinh viên chưa có hồ sơ giấy tờ nào trong hệ thống. Hãy bổ sung giấy tờ trước.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                  border: '1px solid var(--color-border-light)',
+                  borderRadius: 6,
+                  padding: 8,
+                  background: '#fafafa',
+                }}
+              >
+                {muonTraHoSoList.map((hs) => {
+                  const loai = loaiGiayToList.find((l) => l.maLoai === hs.maLoai)
+                  return (
+                    <label
+                      key={hs.maHoSo}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 90px 1fr 110px 110px',
+                        gap: 8,
+                        alignItems: 'center',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedMaHoSo.includes(hs.maHoSo)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
+                          } else {
+                            setSelectedMaHoSo((prev) =>
+                              prev.filter((id) => id !== hs.maHoSo)
+                            )
+                          }
+                        }}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          fontWeight: 600,
+                          color: 'var(--color-primary)',
+                        }}
+                      >
+                        {hs.maHoSo}
+                      </span>
+                      <span>{loai ? loai.tenGiayTo : hs.maLoai}</span>
+                      <span style={{ color: '#6b7280' }}>{hs.trangThaiNop}</span>
+                      <span style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                        {hs.viTriLuuKho || '-'}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              <button
+                type="button"
+                onClick={() => setSelectedMaHoSo(muonTraHoSoList.map((h) => h.maHoSo))}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 4,
+                  background: 'var(--color-surface)',
+                  cursor: 'pointer',
+                }}
+                disabled={muonTraHoSoList.length === 0}
+              >
+                Chọn tất cả
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMaHoSo([])}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 4,
+                  background: 'var(--color-surface)',
+                  cursor: 'pointer',
+                }}
+                disabled={selectedMaHoSo.length === 0}
+              >
+                Bỏ chọn
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
       {/* Toast */}
       {toast && (
         <Toast
@@ -456,6 +1436,470 @@ export function TrangChiTietHoSo() {
           onClose={() => setToast(null)}
         />
       )}
+
+      {/* ===========================================================
+          Modal In / Xuất hồ sơ
+          - Mode "chooser": user chọn loại in (hồ sơ SV hoặc phiếu cụ thể)
+          - Mode "preview": hiển thị bản xem trước A4 + nút In / Hủy
+          Khi window.print() được gọi, CSS @media print chỉ in vùng .print-area.
+         =========================================================== */}
+      <Modal
+        isOpen={isPrintModalOpen}
+        onClose={handleClosePrintModal}
+        title={printMode === 'chooser' ? 'Chọn loại in / xuất' : 'Xem trước bản in'}
+        size={printMode === 'preview' ? 'xl' : 'md'}
+        footer={
+          printMode === 'chooser' ? (
+            <>
+              <Button variant="secondary" onClick={handleClosePrintModal}>
+                Hủy
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={handleClosePrintModal}>
+                Đóng
+              </Button>
+              <Button variant="primary" icon={<Printer size={16} />} onClick={handleDoPrint}>
+                In ngay
+              </Button>
+            </>
+          )
+        }
+      >
+        {printMode === 'chooser' && (
+          <div className="print-chooser">
+            <p className="print-chooser__hint">
+              Chọn loại tài liệu bạn muốn in / xuất:
+            </p>
+            <div className="print-chooser__grid">
+              <button
+                type="button"
+                className={`print-chooser__card ${
+                  printType === 'hoSo' ? 'print-chooser__card--active' : ''
+                }`}
+                onClick={() => setPrintType('hoSo')}
+              >
+                <User size={28} />
+                <span className="print-chooser__card-title">Hồ sơ sinh viên</span>
+                <span className="print-chooser__card-desc">
+                  Thông tin cá nhân, học vụ và danh sách 13 loại giấy tờ (kèm trạng thái nộp).
+                </span>
+                {printType === 'hoSo' && (
+                  <span className="print-chooser__check">✓</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`print-chooser__card ${
+                  printType === 'phieu' ? 'print-chooser__card--active' : ''
+                }`}
+                onClick={() => {
+                  if (activePhieuMuonList.length === 0) {
+                    showToast('Sinh viên chưa có phiếu mượn / trả nào đang hoạt động.', 'info')
+                    return
+                  }
+                  setPrintType('phieu')
+                }}
+                disabled={activePhieuMuonList.length === 0}
+              >
+                <FileText size={28} />
+                <span className="print-chooser__card-title">Phiếu mượn / trả</span>
+                <span className="print-chooser__card-desc">
+                  Chọn 1 trong {activePhieuMuonList.length} phiếu đang hoạt động để in.
+                </span>
+                {printType === 'phieu' && (
+                  <span className="print-chooser__check">✓</span>
+                )}
+              </button>
+            </div>
+
+            {printType === 'phieu' && (
+              <div className="print-chooser__phieu-list">
+                <label className="print-chooser__label">Chọn phiếu cần in:</label>
+                <div className="print-chooser__phieu-items">
+                  {activePhieuMuonList.map((pm) => (
+                    <button
+                      type="button"
+                      key={pm.maPhieu}
+                      className={`print-chooser__phieu-item ${
+                        phieuToPrint?.maPhieu === pm.maPhieu ? 'print-chooser__phieu-item--active' : ''
+                      }`}
+                      onClick={() => setPhieuToPrint(pm)}
+                    >
+                      <span className="print-chooser__phieu-code">{pm.maPhieu}</span>
+                      <span className="print-chooser__phieu-meta">
+                        {pm.loaiPhieu} · {pm.trangThai}
+                      </span>
+                      <span className="print-chooser__phieu-date">
+                        {formatDate(pm.ngayMuon || '')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="print-chooser__actions">
+              <Button
+                variant="primary"
+                icon={<Printer size={16} />}
+                onClick={handleConfirmPrintType}
+                disabled={printType === 'phieu' && !phieuToPrint}
+              >
+                Xem trước &amp; In
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {printMode === 'preview' && (
+          <div className="print-area print-area--in-modal">
+            {printType === 'hoSo' && (
+              <PrintHoSoSinhVien
+                sinhVien={sinhVien}
+                giayToList={giayToList}
+                loaiGiayToList={loaiGiayToList}
+              />
+            )}
+            {printType === 'phieu' && phieuToPrint && (
+              <PrintPhieuMuonTra phieu={phieuToPrint} sinhVien={sinhVien} />
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Portal bản in — render trực tiếp vào <body>, tách biệt khỏi React tree
+          chính để @media print / position:fixed của modal không ảnh hưởng. */}
+      {printSnapshot &&
+        createPortal(
+          <div className="print-area">
+            {printSnapshot.printType === 'hoSo' && (
+              <PrintHoSoSinhVien
+                sinhVien={sinhVien}
+                giayToList={giayToList}
+                loaiGiayToList={loaiGiayToList}
+              />
+            )}
+            {printSnapshot.printType === 'phieu' && printSnapshot.phieu && (
+              <PrintPhieuMuonTra
+                phieu={printSnapshot.phieu}
+                sinhVien={sinhVien}
+              />
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  )
+}
+
+// =====================================================================
+// Sub-components: Bản in (A4)
+// =====================================================================
+
+/** Format ngày dd/MM/yyyy — dùng trong bản in. */
+function fmtDate(s?: string): string {
+  if (!s) return '—'
+  try {
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return s
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  } catch {
+    return s
+  }
+}
+
+function PrintHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="print-header">
+      <div className="print-header__brand">
+        <div className="print-header__logo">VWA</div>
+        <div>
+          <div className="print-header__unit">VWA EduRecords</div>
+          <div className="print-header__sub">Hệ thống quản lý hồ sơ sinh viên</div>
+        </div>
+      </div>
+      <div className="print-header__meta">
+        <div className="print-header__title">{title}</div>
+        {subtitle && <div className="print-header__subtitle">{subtitle}</div>}
+        <div className="print-header__date">Ngày in: {fmtDate(new Date().toISOString())}</div>
+      </div>
+    </div>
+  )
+}
+
+function PrintFooter({ rightLabel = 'Người lập' }: { rightLabel?: string }) {
+  return (
+    <div className="print-footer">
+      <div className="print-footer__col">
+        <div className="print-footer__role">Người nhận</div>
+        <div className="print-footer__line" />
+        <div className="print-footer__hint">(Ký, ghi rõ họ tên)</div>
+      </div>
+      <div className="print-footer__col">
+        <div className="print-footer__role">{rightLabel}</div>
+        <div className="print-footer__line" />
+        <div className="print-footer__hint">(Ký, ghi rõ họ tên)</div>
+      </div>
+    </div>
+  )
+}
+
+/** Bản in: Hồ sơ sinh viên (thông tin + danh sách 13 loại giấy tờ). */
+function PrintHoSoSinhVien({
+  sinhVien,
+  giayToList,
+  loaiGiayToList,
+}: {
+  sinhVien: SinhVien | null
+  giayToList: HoSoGiayTo[]
+  loaiGiayToList: LoaiGiayTo[]
+}) {
+  if (!sinhVien) return <div className="print-empty">Chưa có dữ liệu sinh viên.</div>
+  const currentUser = authStore.getUser()
+  const nguoiLap = currentUser?.hoTen || currentUser?.username || '—'
+  // Map giayToList theo maLoai để tra nhanh
+  const giayToByMaLoai = new Map(giayToList.map((g) => [g.maLoai, g]))
+  // Gom toàn bộ 13 loại (nếu load được) để in đầy đủ; fallback dùng giayToList
+  const allLoai =
+    loaiGiayToList.length > 0
+      ? loaiGiayToList
+      : giayToList.map((g) => ({
+          maLoai: g.maLoai,
+          tenLoai: g.tenLoai || g.maLoai,
+          batBuoc: false,
+          dangSuDung: true,
+        } as LoaiGiayTo))
+  const soBatBuoc = allLoai.filter((l) => l.batBuoc).length
+  const soDaCo = giayToList.length
+
+  return (
+    <div className="print-page">
+      <PrintHeader
+        title="HỒ SƠ SINH VIÊN"
+        subtitle={`MSSV: ${sinhVien.mssv}`}
+      />
+
+      <section className="print-section">
+        <h2 className="print-section__title">I. Thông tin cá nhân</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>MSSV</th>
+              <td>{sinhVien.mssv}</td>
+              <th>Họ và tên</th>
+              <td>{sinhVien.hoTen || '—'}</td>
+            </tr>
+            <tr>
+              <th>Ngày sinh</th>
+              <td>{fmtDate(sinhVien.ngaySinh)}</td>
+              <th>Giới tính</th>
+              <td>{sinhVien.gioiTinh || '—'}</td>
+            </tr>
+            <tr>
+              <th>Số CCCD/CMND</th>
+              <td>{sinhVien.cccd || '—'}</td>
+              <th>Số điện thoại</th>
+              <td>{sinhVien.sdt || '—'}</td>
+            </tr>
+            <tr>
+              <th>Email</th>
+              <td colSpan={3}>{sinhVien.email || '—'}</td>
+            </tr>
+            <tr>
+              <th>Địa chỉ thường trú</th>
+              <td colSpan={3}>{sinhVien.queQuan || '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">II. Thông tin học vụ</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>Ngành</th>
+              <td>{sinhVien.nganh || '—'}</td>
+              <th>Khóa</th>
+              <td>{sinhVien.khoa || '—'}</td>
+            </tr>
+            <tr>
+              <th>Lớp</th>
+              <td>{sinhVien.lop || '—'}</td>
+              <th>Trạng thái học vụ</th>
+              <td>
+                <strong>{sinhVien.trangThaiHocVu || '—'}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">
+          III. Danh sách giấy tờ ({soDaCo}/{allLoai.length} loại — trong đó bắt buộc{' '}
+          {soBatBuoc} loại)
+        </h2>
+        <table className="print-giayto-table">
+          <thead>
+            <tr>
+              <th style={{ width: '5%' }}>STT</th>
+              <th style={{ width: '15%' }}>Mã</th>
+              <th>Tên giấy tờ</th>
+              <th style={{ width: '8%' }}>Bắt buộc</th>
+              <th style={{ width: '12%' }}>Trạng thái nộp</th>
+              <th style={{ width: '12%' }}>Bản gốc/sao</th>
+              <th style={{ width: '18%' }}>Vị trí lưu kho</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allLoai.map((loai, idx) => {
+              const g = giayToByMaLoai.get(loai.maLoai)
+              return (
+                <tr key={loai.maLoai}>
+                  <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                  <td>{loai.maLoai}</td>
+                  <td>{loai.tenGiayTo || loai.maLoai}</td>
+                  <td style={{ textAlign: 'center' }}>{loai.batBuoc ? '✓' : ''}</td>
+                  <td>{g ? g.trangThaiNop : <em style={{ color: '#999' }}>Chưa có</em>}</td>
+                  <td>{g ? g.banGocBanSao : '—'}</td>
+                  <td>{g?.viTriLuuKho || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div className="print-summary">
+          Đã có: <strong>{soDaCo}</strong> / {allLoai.length} loại — Bắt buộc: <strong>{soBatBuoc}</strong> loại
+        </div>
+      </section>
+
+      <PrintFooter rightLabel={`Người lập: ${nguoiLap}`} />
+    </div>
+  )
+}
+
+/** Bản in: Phiếu mượn / trả hồ sơ. */
+function PrintPhieuMuonTra({
+  phieu,
+  sinhVien,
+}: {
+  phieu: PhieuMuon
+  sinhVien: SinhVien | null
+}) {
+  const currentUser = authStore.getUser()
+  const nguoiLap = currentUser?.hoTen || currentUser?.username || '—'
+  const isRut = phieu.loaiPhieu === 'Rút vĩnh viễn'
+  const tieuDe = isRut ? 'PHIẾU RÚT HỒ SƠ VĨNH VIỄN' : 'PHIẾU MƯỢN HỒ SƠ TẠM THỜI'
+
+  return (
+    <div className="print-page">
+      <PrintHeader title={tieuDe} subtitle={`Mã phiếu: ${phieu.maPhieu}`} />
+
+      <section className="print-section">
+        <h2 className="print-section__title">I. Thông tin sinh viên</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>MSSV</th>
+              <td>{phieu.mssv}</td>
+              <th>Họ và tên</th>
+              <td>{phieu.hoTenSinhVien || sinhVien?.hoTen || '—'}</td>
+            </tr>
+            <tr>
+              <th>Ngành / Lớp</th>
+              <td colSpan={3}>
+                {sinhVien?.nganh || '—'} {sinhVien?.lop ? `— Lớp ${sinhVien.lop}` : ''}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">II. Thông tin phiếu</h2>
+        <table className="print-info-table">
+          <tbody>
+            <tr>
+              <th>Loại phiếu</th>
+              <td>{phieu.loaiPhieu}</td>
+              <th>Trạng thái</th>
+              <td>
+                <strong>{phieu.trangThai}</strong>
+              </td>
+            </tr>
+            <tr>
+              <th>Ngày mượn</th>
+              <td>{fmtDate(phieu.ngayMuon)}</td>
+              <th>Hạn trả</th>
+              <td>{phieu.loaiPhieu === 'Mượn tạm thời' ? fmtDate(phieu.ngayTraDuKien) : '—'}</td>
+            </tr>
+            <tr>
+              <th>Người tạo phiếu</th>
+              <td colSpan={3}>{phieu.nguoiTao || '—'}</td>
+            </tr>
+            <tr>
+              <th>Lý do</th>
+              <td colSpan={3}>{phieu.lyDo || '—'}</td>
+            </tr>
+            {phieu.ghiChu && (
+              <tr>
+                <th>Ghi chú</th>
+                <td colSpan={3}>{phieu.ghiChu}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="print-section">
+        <h2 className="print-section__title">
+          III. Danh sách hồ sơ giấy tờ ({phieu.danhSachMaHoSo?.length || 0} mục)
+        </h2>
+        <table className="print-giayto-table">
+          <thead>
+            <tr>
+              <th style={{ width: '8%' }}>STT</th>
+              <th style={{ width: '25%' }}>Mã hồ sơ</th>
+              <th>Tên giấy tờ</th>
+              <th style={{ width: '20%' }}>Trạng thái nộp</th>
+              <th style={{ width: '15%' }}>Bản gốc/sao</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(phieu.danhSachMaHoSo || []).length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>
+                  Không có hồ sơ giấy tờ nào trong phiếu.
+                </td>
+              </tr>
+            ) : (
+              phieu.danhSachMaHoSo?.map((ma, idx) => (
+                <tr key={ma}>
+                  <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                  <td>{ma}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <div className="print-note">
+          <em>
+            Ghi chú: Tên giấy tờ / trạng thái / bản gốc - bản sao chi tiết sẽ được đối chiếu
+            khi giao / nhận hồ sơ.
+          </em>
+        </div>
+      </section>
+
+      <PrintFooter rightLabel={`Người lập phiếu: ${nguoiLap}`} />
     </div>
   )
 }

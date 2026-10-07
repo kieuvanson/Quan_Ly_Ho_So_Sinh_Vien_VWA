@@ -1,96 +1,100 @@
 package vn.vwa.edurecords.security;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Base64;
-import java.util.concurrent.TimeUnit;
 
+/**
+ * Quản lý vòng đời refresh token trong Redis.
+ *
+ * <h3>Cấu trúc dữ liệu</h3>
+ * <ul>
+ *   <li>{@code refresh_token:{sha256(token)}} → {@code username|issuedAt|jti|familyId}</li>
+ *   <li>{@code refresh_family:{familyId}} → SET các hash token thuộc cùng family</li>
+ * </ul>
+ *
+ * <p>Mỗi lần đổi token tạo một family mới. Nếu một token đã bị thu hồi bị dùng lại
+ * thì đó là dấu hiệu token bị đánh cắp: {@link #revokeFamily(String)} vô hiệu hoá
+ * toàn bộ family để kẻ xấu mất quyền truy cập.
+ */
 @Service
 public class RefreshTokenService {
 
-    private final RedisTemplate<String, String> redisTemplate;
-    private final Duration refreshTokenTtl;
-
     private static final String KEY_PREFIX = "refresh_token:";
     private static final String FAMILY_PREFIX = "refresh_family:";
+    private static final String USER_FAMILY_PREFIX = "refresh_user:";
+    private static final int SCAN_BATCH = 500;
+
+    private final StringRedisTemplate redisTemplate;
+    private final Duration refreshTokenTtl;
 
     public RefreshTokenService(
-            RedisTemplate<String, String> redisTemplate,
+            StringRedisTemplate redisTemplate,
             @Value("${app.security.jwt.refresh-token-ttl:P7D}") String refreshTokenTtl) {
         this.redisTemplate = redisTemplate;
         this.refreshTokenTtl = parseDuration(refreshTokenTtl);
     }
 
+    /**
+     * Parse ISO-8601 duration (P7D, PT1H, P30M, PT45S) thành {@link Duration}.
+     * Dùng {@link Duration#parse} của Java thay vì tách chuỗi thủ công.
+     */
     private Duration parseDuration(String duration) {
-        if (duration.startsWith("PT")) {
-            long ms = 0;
-            if (duration.contains("H")) {
-                ms += Long.parseLong(duration.split("H")[0].replace("PT", "")) * 3600000L;
-            }
-            if (duration.contains("D")) {
-                String dayPart = duration.replaceAll(".*?(\\d+)D.*", "$1");
-                ms += Long.parseLong(dayPart) * 86400000L;
-            }
-            if (duration.contains("M") && !duration.contains("D")) {
-                String minPart = duration.replaceAll(".*?(\\d+)M.*", "$1");
-                ms += Long.parseLong(minPart) * 60000L;
-            }
-            if (duration.contains("S")) {
-                String secPart = duration.replaceAll(".*?(\\d+)S", "$1");
-                ms += Long.parseLong(secPart) * 1000L;
-            }
-            return Duration.ofMillis(ms > 0 ? ms : 604800000L);
+        if (duration == null || !duration.startsWith("P")) {
+            return Duration.ofDays(7);
         }
-        return Duration.ofDays(7);
+        try {
+            return Duration.parse(duration);
+        } catch (Exception e) {
+            return Duration.ofDays(7);
+        }
     }
 
+    /** SHA-256 + Base64 để không lưu token dạng rõ trong Redis. */
     public String hashToken(String token) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hash);
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
+            throw new IllegalStateException("SHA-256 không khả dụng", e);
         }
     }
 
-    public void storeRefreshToken(String username, String refreshToken) {
-        String tokenHash = hashToken(refreshToken);
-        String jti = extractJti(refreshToken);
-        Instant issuedAt = Instant.now();
-
-        String tokenKey = KEY_PREFIX + tokenHash;
-        String tokenData = username + "|" + issuedAt.toEpochMilli() + "|" + jti;
-
-        redisTemplate.opsForValue().set(tokenKey, tokenData, refreshTokenTtl);
-    }
-
+    /**
+     * Lưu refresh token mới kèm family, và đăng ký family vào danh sách family
+     * của user để thu hồi toàn bộ phiên khi cần.
+     */
     public void storeRefreshTokenWithFamily(String username, String refreshToken, String familyId) {
         String tokenHash = hashToken(refreshToken);
         String jti = extractJti(refreshToken);
-        Instant issuedAt = Instant.now();
+        long issuedAtMs = System.currentTimeMillis();
 
-        String tokenKey = KEY_PREFIX + tokenHash;
-        String tokenData = username + "|" + issuedAt.toEpochMilli() + "|" + jti + "|" + familyId;
-
-        redisTemplate.opsForValue().set(tokenKey, tokenData, refreshTokenTtl);
+        String tokenData = username + "|" + issuedAtMs + "|" + jti + "|" + familyId;
+        redisTemplate.opsForValue().set(KEY_PREFIX + tokenHash, tokenData, refreshTokenTtl);
 
         redisTemplate.opsForSet().add(FAMILY_PREFIX + familyId, tokenHash);
         redisTemplate.expire(FAMILY_PREFIX + familyId, refreshTokenTtl);
+
+        // familyId -> {user} để revokeAllUserTokens không phải SCAN toàn bộ key.
+        redisTemplate.opsForSet().add(USER_FAMILY_PREFIX + username, familyId);
+        redisTemplate.expire(USER_FAMILY_PREFIX + username, refreshTokenTtl);
     }
 
+    /**
+     * Đọc thông tin refresh token. Trả {@code null} nếu token không tồn tại
+     * trong Redis (đã thu hồi hoặc hết hạn).
+     */
     public RefreshTokenInfo validateAndParse(String refreshToken) {
-        String tokenHash = hashToken(refreshToken);
-        String tokenKey = KEY_PREFIX + tokenHash;
-
-        String data = redisTemplate.opsForValue().get(tokenKey);
+        String data = redisTemplate.opsForValue().get(KEY_PREFIX + hashToken(refreshToken));
         if (data == null) {
             return null;
         }
@@ -100,23 +104,37 @@ public class RefreshTokenService {
             return null;
         }
 
-        String username = parts[0];
-        long issuedAtMs = Long.parseLong(parts[1]);
-        String jti = parts[2];
-        String familyId = parts.length > 3 ? parts[3] : null;
-
-        return new RefreshTokenInfo(username, jti, Instant.ofEpochMilli(issuedAtMs), familyId);
+        return new RefreshTokenInfo(
+                parts[0],
+                parts[2],
+                Long.parseLong(parts[1]),
+                parts.length > 3 ? parts[3] : null
+        );
     }
 
-    public void revokeToken(String refreshToken) {
+    /**
+     * Thu hồi một refresh token.
+     *
+     * @param familyId family chứa token; nếu biết thì gỡ hash khỏi set của family.
+     *               Truyền {@code null} nếu không xác định được (ví dụ khi logout).
+     */
+    public void revokeToken(String refreshToken, String familyId) {
         String tokenHash = hashToken(refreshToken);
-        String tokenKey = KEY_PREFIX + tokenHash;
-        redisTemplate.delete(tokenKey);
+        redisTemplate.delete(KEY_PREFIX + tokenHash);
 
-        redisTemplate.opsForSet().remove(tokenKey, tokenHash);
+        if (familyId != null && !familyId.isBlank()) {
+            redisTemplate.opsForSet().remove(FAMILY_PREFIX + familyId, tokenHash);
+        }
     }
 
+    /**
+     * Thu hồi toàn bộ token thuộc một family. Dùng khi phát hiện tái sử dụng
+     * refresh token (nghi vấn đánh cắp).
+     */
     public void revokeFamily(String familyId) {
+        if (familyId == null || familyId.isBlank()) {
+            return;
+        }
         String familyKey = FAMILY_PREFIX + familyId;
         var tokenHashes = redisTemplate.opsForSet().members(familyKey);
         if (tokenHashes != null) {
@@ -127,10 +145,36 @@ public class RefreshTokenService {
         redisTemplate.delete(familyKey);
     }
 
+    /**
+     * Thu hồi toàn bộ refresh token của một user, không dùng lệnh KEYS.
+     *
+     * Cách làm: đọc set {@code refresh_user:{username}} để biết các family thuộc
+     * user, rồi thu hồi từng family. Set này được duy trì trong
+     * {@link #storeRefreshTokenWithFamily}.
+     */
     public void revokeAllUserTokens(String username) {
-        var keys = redisTemplate.keys(KEY_PREFIX + "*");
-        if (keys != null) {
-            for (String key : keys) {
+        String userFamilyKey = USER_FAMILY_PREFIX + username;
+        var familyIds = redisTemplate.opsForSet().members(userFamilyKey);
+        if (familyIds == null || familyIds.isEmpty()) {
+            // Dữ liệu cũ hoặc token được tạo trước khi có index theo user:
+            // quét theo SCAN thay vì KEYS để không chặn Redis.
+            revokeByScan(username);
+            redisTemplate.delete(userFamilyKey);
+            return;
+        }
+
+        for (String familyId : familyIds) {
+            revokeFamily(familyId);
+        }
+        redisTemplate.delete(userFamilyKey);
+    }
+
+    /** Dự phòng: quét key bằng SCAN (không block) cho dữ liệu tạo trước index theo user. */
+    private void revokeByScan(String username) {
+        ScanOptions options = ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(SCAN_BATCH).build();
+        try (Cursor<String> cursor = redisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
                 String data = redisTemplate.opsForValue().get(key);
                 if (data != null && data.startsWith(username + "|")) {
                     redisTemplate.delete(key);
@@ -139,42 +183,52 @@ public class RefreshTokenService {
         }
     }
 
-    public void revokeReusedToken(String refreshToken, String familyId) {
-        revokeFamily(familyId);
-    }
-
     public String generateFamilyId() {
         return java.util.UUID.randomUUID().toString();
     }
 
     public boolean isTokenStored(String refreshToken) {
-        String tokenHash = hashToken(refreshToken);
-        String tokenKey = KEY_PREFIX + tokenHash;
-        return Boolean.TRUE.equals(redisTemplate.hasKey(tokenKey));
+        return Boolean.TRUE.equals(redisTemplate.hasKey(KEY_PREFIX + hashToken(refreshToken)));
     }
 
+    public Duration getRefreshTokenTtl() {
+        return refreshTokenTtl;
+    }
+
+    /** Lấy jti từ payload JWT mà không cần verify chữ ký (dùng chỉ để định danh). */
     private String extractJti(String token) {
         String[] parts = token.split("\\.");
-        if (parts.length < 3) {
+        if (parts.length < 2) {
             return java.util.UUID.randomUUID().toString();
         }
         try {
             String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
             int jtiIndex = payload.indexOf("\"jti\"");
             if (jtiIndex >= 0) {
-                int start = payload.indexOf("\"", jtiIndex + 5) + 1;
-                int end = payload.indexOf("\"", start);
-                return payload.substring(start, end);
+                int start = payload.indexOf('"', jtiIndex + 5) + 1;
+                int end = payload.indexOf('"', start);
+                if (start > 0 && end > start) {
+                    return payload.substring(start, end);
+                }
             }
-        } catch (Exception e) {
+        } catch (Exception ignored) {
+            // Token không phải JWT hợp lệ — dùng UUID tạm, token sẽ bị từ chối ở validate.
         }
         return java.util.UUID.randomUUID().toString();
     }
 
+    /**
+     * Thông tin refresh token đã lưu trong Redis.
+     *
+     * @param username chủ sở hữu token
+     * @param jti      id duy nhất của token
+     * @param issuedAt thời điểm cấp (epoch millis)
+     * @param familyId nhóm token dùng để phát hiện tái sử dụng
+     */
     public record RefreshTokenInfo(
             String username,
             String jti,
-            Instant issuedAt,
+            long issuedAt,
             String familyId
     ) {}
 }

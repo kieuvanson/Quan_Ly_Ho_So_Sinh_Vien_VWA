@@ -14,6 +14,7 @@
 8. [Docker (khuyến nghị)](#8-docker-khuyến-nghị)
 9. [Cách chạy không Docker](#9-cách-chạy-không-docker)
 10. [Tài khoản mặc định](#10-tài-khoản-mặc-định)
+11. [Các lỗi thường gặp & cách xử lý](#11-các-lỗi-thường-gặp--cách-xử-lý)
 
 ---
 
@@ -336,6 +337,73 @@ Sau khi chạy Flyway migration, có sẵn:
 | Kieuvanson | 332003 | STAFF |
 
 Đăng nhập tại: http://localhost:5173 (hoặc http://localhost:3000)
+
+---
+
+## 11. Các lỗi thường gặp & cách xử lý
+
+### Lỗi type cast khi query PostgreSQL ENUM
+
+**Mô tả:** Khi dùng Spring Data JPA query method (vd: `countByTrangThaiHocVu(String)`) hoặc JPQL/HQL trên column là ENUM type trong PostgreSQL, có thể gặp lỗi:
+```
+ERROR: operator does not exist: trangthaihocvu = character varying
+Hint: No operator matches the given name and argument types. You might need to add explicit type casts.
+```
+
+**Nguyên nhân:** Các column trong DB được định nghĩa là ENUM type (vd: `trangthaihocvu`, `trangthainop`, `loaiphieu`, ...) trong khi Java param/field là `String`.
+
+**Cách fix:** Dùng native query với `CAST()`:
+
+```java
+// ✅ Đúng - cast String -> ENUM
+@Query(value = "SELECT COUNT(*) FROM sinhvien WHERE trang_thai_hoc_vu = CAST(:trangThaiHocVu AS trangthaihocvu)", nativeQuery = true)
+long countByTrangThaiHocVu(String trangThaiHocVu);
+
+// ❌ Sai - không tự cast được
+long countByTrangThaiHocVu(String trangThaiHocVu);
+```
+
+Tương tự cho các enum khác: `trangthainop`, `loaiphieu`, `loaiban`, `trangthaiphieu`, `user_role`.
+
+### Lỗi ILIKE không được hỗ trợ trong native query
+
+**Mô tả:** ILIKE trong PostgreSQL native query không được Hibernate parser hỗ trợ, gây lỗi cú pháp.
+
+**Cách fix:** Thay `ILIKE` bằng `LOWER() LIKE LOWER()`:
+
+```java
+// ✅ Đúng
+@Query(value = "SELECT * FROM sinhvien WHERE LOWER(ho_ten) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(mssv) LIKE LOWER(CONCAT('%', :keyword, '%'))", nativeQuery = true)
+
+// ❌ Sai
+@Query("SELECT * FROM sinhvien WHERE ho_ten ILIKE CONCAT('%', :keyword, '%')")
+```
+
+### Port 8081 bị chiếm
+
+**Mô tả:** Backend không start được vì port 8081 đang được process khác sử dụng.
+
+**Cách fix:**
+```powershell
+# Tìm PID đang chiếm port
+netstat -ano | Select-String ":8081.*LISTENING"
+
+# Kill process
+Stop-Process -Id <PID> -Force
+```
+
+### Database PostgreSQL ENUM types đã định nghĩa
+
+Các ENUM types được tạo trong `V1__init_schema.sql`:
+
+```sql
+CREATE TYPE trangthaihocvu AS ENUM ('Đang học', 'Bảo lưu', 'Đình chỉ', 'Tốt nghiệp', 'Đã rút hồ sơ');
+CREATE TYPE trangthainop AS ENUM ('Chưa nộp', 'Đã nộp', 'Thiếu', 'Không hợp lệ');
+CREATE TYPE loaiban AS ENUM ('Bản gốc', 'Bản sao');
+CREATE TYPE loaiphieu AS ENUM ('Mượn tạm thời', 'Rút vĩnh viễn');
+CREATE TYPE trangthaiphieu AS ENUM ('Chờ duyệt', 'Đã duyệt', 'Từ chối', 'Đang mượn', 'Đã trả', 'Quá hạn', 'Hoàn tất');
+CREATE TYPE user_role AS ENUM ('ADMIN', 'STAFF');
+```
 
 ---
 

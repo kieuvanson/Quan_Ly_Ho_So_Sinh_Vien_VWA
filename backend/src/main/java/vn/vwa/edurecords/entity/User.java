@@ -37,7 +37,7 @@ public class User {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "role", nullable = false, columnDefinition = "user_role")
     @Builder.Default
-    private Role role = Role.STAFF;
+    private Role role = Role.ADMIN;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
