@@ -27,10 +27,10 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
     boolean existsByCccdAndMssvNot(String cccd, String mssv);
 
     // ============================================================
-    // Native query cho search/filter (thay thế SinhVienSpecification)
+    // Native query cho search/filter (sau V4: dùng *_id)
     // ============================================================
     //
-    // Lý do dùng native thay vì Specification + cb.equal(String):
+    // Lý do dùng native thay vì Specification + cb.equal:
     //   - trang_thai_hoc_vu là PostgreSQL ENUM. Khi bind String qua
     //     JPA Criteria, Hibernate sinh `column = ?` với parameter varchar;
     //     PostgreSQL báo lỗi: operator does not exist: trangthaihocvu = character varying
@@ -40,16 +40,18 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
     // Lưu ý:
     //   - Tất cả tên cột/ENUM viết thường theo PostgreSQL convention.
     //   - ILIKE không dùng (Hibernate parser không hỗ trợ) → LOWER(...) LIKE LOWER(...).
-    //   - Khi truyền null cho các filter → bỏ qua filter đó (build query linh hoạt).
+    //   - Filter *_id: nếu truyền null/rỗng → bỏ qua filter.
+    //   - Sau V4, các filter `nganh`, `lop`, `khoa`, `khoaNamNhapHoc` thực chất
+    //     là *_id từ bảng danh mục. Đổi kiểu param từ String → Integer.
 
     @Query(value = """
         SELECT s.*
         FROM sinhvien s
         WHERE (CAST(:trangThaiHocVu AS trangthaihocvu) IS NULL OR s.trang_thai_hoc_vu = CAST(:trangThaiHocVu AS trangthaihocvu))
-          AND (:nganh IS NULL OR :nganh = '' OR LOWER(s.nganh) = LOWER(:nganh))
-          AND (:lop IS NULL OR :lop = '' OR LOWER(s.lop) = LOWER(:lop))
-          AND (:khoaNamNhapHoc IS NULL OR :khoaNamNhapHoc = '' OR s.khoa_nam_nhap_hoc = :khoaNamNhapHoc)
-          AND (:khoa IS NULL OR :khoa = '' OR LOWER(s.khoa) = LOWER(:khoa))
+          AND (:nganhId     IS NULL OR s.nganh_id    = :nganhId)
+          AND (:lopId       IS NULL OR s.lop_id      = :lopId)
+          AND (:khoaHocId   IS NULL OR s.khoa_hoc_id = :khoaHocId)
+          AND (:khoaId      IS NULL OR s.khoa_id     = :khoaId)
           AND (:heDaoTao IS NULL OR :heDaoTao = '' OR LOWER(s.he_dao_tao) = LOWER(:heDaoTao))
           AND (
             :keyword IS NULL OR :keyword = '' OR
@@ -62,10 +64,10 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
     List<SinhVien> findByFilters(
             @Param("keyword") String keyword,
             @Param("trangThaiHocVu") String trangThaiHocVu,
-            @Param("nganh") String nganh,
-            @Param("lop") String lop,
-            @Param("khoaNamNhapHoc") String khoaNamNhapHoc,
-            @Param("khoa") String khoa,
+            @Param("nganhId") Integer nganhId,
+            @Param("lopId") Integer lopId,
+            @Param("khoaHocId") Integer khoaHocId,
+            @Param("khoaId") Integer khoaId,
             @Param("heDaoTao") String heDaoTao,
             @Param("size") int size,
             @Param("offset") int offset);
@@ -74,10 +76,10 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
         SELECT COUNT(*)
         FROM sinhvien s
         WHERE (CAST(:trangThaiHocVu AS trangthaihocvu) IS NULL OR s.trang_thai_hoc_vu = CAST(:trangThaiHocVu AS trangthaihocvu))
-          AND (:nganh IS NULL OR :nganh = '' OR LOWER(s.nganh) = LOWER(:nganh))
-          AND (:lop IS NULL OR :lop = '' OR LOWER(s.lop) = LOWER(:lop))
-          AND (:khoaNamNhapHoc IS NULL OR :khoaNamNhapHoc = '' OR s.khoa_nam_nhap_hoc = :khoaNamNhapHoc)
-          AND (:khoa IS NULL OR :khoa = '' OR LOWER(s.khoa) = LOWER(:khoa))
+          AND (:nganhId     IS NULL OR s.nganh_id    = :nganhId)
+          AND (:lopId       IS NULL OR s.lop_id      = :lopId)
+          AND (:khoaHocId   IS NULL OR s.khoa_hoc_id = :khoaHocId)
+          AND (:khoaId      IS NULL OR s.khoa_id     = :khoaId)
           AND (:heDaoTao IS NULL OR :heDaoTao = '' OR LOWER(s.he_dao_tao) = LOWER(:heDaoTao))
           AND (
             :keyword IS NULL OR :keyword = '' OR
@@ -88,9 +90,9 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
     long countByFilters(
             @Param("keyword") String keyword,
             @Param("trangThaiHocVu") String trangThaiHocVu,
-            @Param("nganh") String nganh,
-            @Param("lop") String lop,
-            @Param("khoaNamNhapHoc") String khoaNamNhapHoc,
-            @Param("khoa") String khoa,
+            @Param("nganhId") Integer nganhId,
+            @Param("lopId") Integer lopId,
+            @Param("khoaHocId") Integer khoaHocId,
+            @Param("khoaId") Integer khoaId,
             @Param("heDaoTao") String heDaoTao);
 }

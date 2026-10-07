@@ -57,6 +57,11 @@ public class SinhVienController {
             @RequestParam(required = false) String khoaNamNhapHoc,
             @RequestParam(required = false) String khoa,
             @RequestParam(required = false) String heDaoTao,
+            // *_id trực tiếp (ưu tiên nếu client gửi cả 2 — *_id thắng).
+            @RequestParam(required = false) Integer khoaId,
+            @RequestParam(required = false) Integer nganhId,
+            @RequestParam(required = false) Integer lopId,
+            @RequestParam(required = false) Integer khoaHocId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "0") int sortDirection) {
@@ -69,6 +74,10 @@ public class SinhVienController {
         req.setKhoaNamNhapHoc(khoaNamNhapHoc);
         req.setKhoa(khoa);
         req.setHeDaoTao(heDaoTao);
+        req.setKhoaId(khoaId);
+        req.setNganhId(nganhId);
+        req.setLopId(lopId);
+        req.setKhoaHocId(khoaHocId);
         req.setPage(page);
         req.setSize(Math.min(size, 100));
         req.setSortDirection(sortDirection);
@@ -170,6 +179,10 @@ public class SinhVienController {
             @RequestParam(required = false) String khoaNamNhapHoc,
             @RequestParam(required = false) String khoa,
             @RequestParam(required = false) String heDaoTao,
+            @RequestParam(required = false) Integer khoaId,
+            @RequestParam(required = false) Integer nganhId,
+            @RequestParam(required = false) Integer lopId,
+            @RequestParam(required = false) Integer khoaHocId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "0") int sortDirection,
@@ -184,6 +197,10 @@ public class SinhVienController {
             req.setKhoaNamNhapHoc(khoaNamNhapHoc);
             req.setKhoa(khoa);
             req.setHeDaoTao(heDaoTao);
+            req.setKhoaId(khoaId);
+            req.setNganhId(nganhId);
+            req.setLopId(lopId);
+            req.setKhoaHocId(khoaHocId);
             req.setSortDirection(sortDirection);
 
             List<SinhVien> data;

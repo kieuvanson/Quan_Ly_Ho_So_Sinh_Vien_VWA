@@ -1,7 +1,6 @@
 package vn.vwa.edurecords.service;
 
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormat;
@@ -15,6 +14,10 @@ import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import vn.vwa.edurecords.entity.Khoa;
+import vn.vwa.edurecords.entity.KhoaHoc;
+import vn.vwa.edurecords.entity.Lop;
+import vn.vwa.edurecords.entity.Nganh;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 
@@ -26,33 +29,36 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * Service hỗ trợ đọc/ghi Excel cho SinhVien.
- * - Export: trả về byte[] file .xlsx.
- * - ImportTemplate: trả về byte[] file .xlsx mẫu (chỉ header + 1 dòng ví dụ).
- * - Read: chuyển file upload thành danh sách SinhVien + danh sách lỗi từng dòng.
+ * Service đọc/ghi Excel cho SinhVien.
  *
- * Định dạng cột cố định theo thứ tự:
- *   MSSV | Họ tên | Ngày sinh | Giới tính | CCCD | SĐT | Email | Quê quán
- *   | Ngành | Lớp | Khóa | Khóa nhập học | Hệ đào tạo | Trạng thái học vụ
+ * <h3>Sau V4</h3>
+ * <ul>
+ *   <li>Excel vẫn có cột "Khoa", "Ngành", "Lớp", "Khóa nhập học" dạng TEXT
+ *       để người dùng cuối không cần biết id.</li>
+ *   <li>Service dùng {@link DanhMucService} để lookup (hoặc tự tạo cascade) các
+ *       bản ghi danh mục, rồi gắn FK entity vào {@code SinhVien}.</li>
+ *   <li>Export: lấy {@code tenKhoa/tenNganh/tenLop/tenKhoaHoc} từ entity FK
+ *       (qua {@code @ManyToOne}) để ghi lại cột text cho người dùng đọc.</li>
+ * </ul>
  */
 @Service
 public class SinhVienExcelService {
 
-    /**
-     * Tên cột header tiếng Việt (hiển thị trong file Excel).
-     * Thứ tự là chuẩn - phải khớp với COLUMN_ORDER_TO_INDEX.
-     */
     private static final String[] HEADERS = new String[] {
         "MSSV", "Họ tên", "Ngày sinh", "Giới tính", "CCCD", "SĐT",
-        "Email", "Quê quán", "Ngành", "Lớp", "Khóa", "Khóa nhập học",
+        "Email", "Quê quán", "Ngành", "Lớp", "Khoa", "Khóa nhập học",
         "Hệ đào tạo", "Trạng thái học vụ"
     };
 
-    /**
-     * Kết quả import một file Excel.
-     */
+    private final DanhMucService danhMucService;
+
+    public SinhVienExcelService(DanhMucService danhMucService) {
+        this.danhMucService = danhMucService;
+    }
+
     public record ImportResult(
         int successCount,
         int failureCount,
@@ -60,14 +66,8 @@ public class SinhVienExcelService {
         List<RowError> errors
     ) {}
 
-    /**
-     * Lỗi của một dòng trong file Excel.
-     */
     public record RowError(int rowNumber, String message) {}
 
-    /**
-     * Tạo file Excel (.xlsx) từ danh sách SinhVien. Dùng SXSSF cho streaming - không tốn heap khi xuất lớn.
-     */
     public byte[] export(List<SinhVien> data) throws IOException {
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(100);
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
@@ -75,7 +75,6 @@ public class SinhVienExcelService {
             Sheet sheet = workbook.createSheet("Danh sách sinh viên");
             sheet.setDefaultColumnWidth(18);
 
-            // Header style
             CellStyle headerStyle = workbook.createCellStyle();
             org.apache.poi.ss.usermodel.Font headerFont = workbook.createFont();
             headerFont.setBold(true);
@@ -85,12 +84,10 @@ public class SinhVienExcelService {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-            // Date style
             CellStyle dateStyle = workbook.createCellStyle();
             DataFormat format = workbook.createDataFormat();
             dateStyle.setDataFormat(format.getFormat("dd/MM/yyyy"));
 
-            // Header row
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < HEADERS.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -98,7 +95,6 @@ public class SinhVienExcelService {
                 cell.setCellStyle(headerStyle);
             }
 
-            // Data rows
             int rowIdx = 1;
             for (SinhVien sv : data) {
                 Row row = sheet.createRow(rowIdx++);
@@ -110,10 +106,16 @@ public class SinhVienExcelService {
                 writeCell(row, 5, sv.getSdt());
                 writeCell(row, 6, sv.getEmail());
                 writeCell(row, 7, sv.getQueQuan());
-                writeCell(row, 8, sv.getNganh());
-                writeCell(row, 9, sv.getLop());
-                writeCell(row, 10, sv.getKhoa());
-                writeCell(row, 11, sv.getKhoaNamNhapHoc());
+                // Sau V4: lấy tên từ FK entity (có thể null khi admin chưa
+                // load lazy — ghi "" thay vì crash).
+                Khoa khoa = sv.getKhoa();
+                Nganh nganh = sv.getNganh();
+                Lop lop = sv.getLop();
+                KhoaHoc kh = sv.getKhoaHoc();
+                writeCell(row, 8, nganh != null ? safeGetTenNganh(nganh) : null);
+                writeCell(row, 9, lop != null ? lop.getTenLop() : null);
+                writeCell(row, 10, khoa != null ? khoa.getTenKhoa() : null);
+                writeCell(row, 11, kh != null ? kh.getTenKhoaHoc() : null);
                 writeCell(row, 12, sv.getHeDaoTao());
                 writeCell(row, 13, sv.getTrangThaiHocVu() != null ? sv.getTrangThaiHocVu().getDisplayName() : null);
             }
@@ -124,9 +126,6 @@ public class SinhVienExcelService {
         }
     }
 
-    /**
-     * Tạo file mẫu Excel (.xlsx) chỉ chứa header + 1 dòng ví dụ để người dùng tham khảo.
-     */
     public byte[] exportTemplate() throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
@@ -143,12 +142,13 @@ public class SinhVienExcelService {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-            // Hướng dẫn
             Row noteRow = sheet.createRow(0);
             Cell noteCell = noteRow.createCell(0);
-            noteCell.setCellValue("Hướng dẫn: Giữ nguyên dòng header phía dưới. Các giá trị điền từ dòng 3 trở đi. MSSV không được trống và phải duy nhất.");
+            noteCell.setCellValue("Hướng dẫn: Giữ nguyên dòng header phía dưới. "
+                    + "Cột Khoa/Ngành/Lớp/Khóa nhập học điền TÊN danh mục "
+                    + "(vd 'Khoa CNTT', 'Công nghệ thông tin', 'CNTT-2023.1', '2023'). "
+                    + "MSSV không được trống và phải duy nhất.");
 
-            // Header row
             Row headerRow = sheet.createRow(1);
             for (int i = 0; i < HEADERS.length; i++) {
                 Cell cell = headerRow.createCell(i);
@@ -156,7 +156,6 @@ public class SinhVienExcelService {
                 cell.setCellStyle(headerStyle);
             }
 
-            // Ví dụ
             Row exampleRow = sheet.createRow(2);
             writeCell(exampleRow, 0, "B23DCCN001");
             writeCell(exampleRow, 1, "Nguyễn Văn A");
@@ -168,7 +167,7 @@ public class SinhVienExcelService {
             writeCell(exampleRow, 7, "Hà Nội");
             writeCell(exampleRow, 8, "Công nghệ thông tin");
             writeCell(exampleRow, 9, "CNTT-2023.1");
-            writeCell(exampleRow, 10, "K23");
+            writeCell(exampleRow, 10, "Khoa CNTT");
             writeCell(exampleRow, 11, "2023");
             writeCell(exampleRow, 12, "Chính quy");
             writeCell(exampleRow, 13, "Đang học");
@@ -178,12 +177,6 @@ public class SinhVienExcelService {
         }
     }
 
-    /**
-     * Đọc file Excel upload, validate từng dòng, trả về danh sách SinhVien hợp lệ + danh sách lỗi.
-     * - Bỏ qua dòng trống hoàn toàn.
-     * - Dòng 1 (index 0) là hướng dẫn (nếu có), dòng 2 (index 1) là header -> bắt đầu dữ liệu từ index 2.
-     * - Quy ước: nếu dòng đầu tiên có ô[0] chứa từ "Hướng dẫn" thì bỏ 2 dòng đầu, ngược lại chỉ bỏ 1 dòng header.
-     */
     public ImportResult read(MultipartFile file) throws IOException {
         List<SinhVien> valid = new ArrayList<>();
         List<RowError> errors = new ArrayList<>();
@@ -199,17 +192,17 @@ public class SinhVienExcelService {
 
             int startDataRowIdx = detectDataStartRow(sheet);
             int physicalRows = sheet.getPhysicalNumberOfRows();
-            int importedRowNumber = 0; // số thứ tự dòng dữ liệu (1-based) cho thân thiện
+            int importedRowNumber = 0;
 
             for (int r = startDataRowIdx; r < physicalRows; r++) {
                 Row row = sheet.getRow(r);
                 if (row == null || isRowEmpty(row)) continue;
 
                 importedRowNumber++;
-                // Số dòng hiển thị trong Excel (1-based): r + 1
                 int excelRow = r + 1;
                 try {
-                    SinhVien sv = parseRow(row);
+                    SinhVien sv = parseRow(row, excelRow, errors, importedRowNumber);
+                    if (sv == null) continue; // parseRow đã push lỗi
                     if (sv.getMssv() == null || sv.getMssv().isBlank()) {
                         errors.add(new RowError(excelRow, "Thiếu MSSV."));
                         continue;
@@ -233,36 +226,11 @@ public class SinhVienExcelService {
     }
 
     /**
-     * Phát hiện dòng bắt đầu dữ liệu: nếu ô A1 chứa "Hướng dẫn" -> bỏ 2 dòng, ngược lại bỏ 1.
+     * Parse 1 dòng Excel thành SinhVien, có resolve FK qua {@link DanhMucService}.
+     *
+     * @return SinhVien nếu parse OK, hoặc {@code null} nếu dòng bị loại (lỗi đã push vào errors).
      */
-    private int detectDataStartRow(Sheet sheet) {
-        Row firstRow = sheet.getRow(0);
-        if (firstRow == null) return 1;
-        Cell firstCell = firstRow.getCell(0);
-        if (firstCell != null) {
-            String txt = readCellAsString(firstCell);
-            if (txt != null && txt.toLowerCase().contains("hướng dẫn")) {
-                return 2;
-            }
-        }
-        return 1;
-    }
-
-    private boolean isRowEmpty(Row row) {
-        for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
-            Cell cell = row.getCell(c);
-            if (cell != null && cell.getCellType() != CellType.BLANK) {
-                String val = readCellAsString(cell);
-                if (val != null && !val.isBlank()) return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Parse 1 dòng Excel thành SinhVien (chưa validate).
-     */
-    private SinhVien parseRow(Row row) {
+    private SinhVien parseRow(Row row, int excelRow, List<RowError> errors, int importedRowNumber) {
         SinhVien sv = new SinhVien();
         sv.setMssv(trimToNull(readCellAsString(row.getCell(0))));
         sv.setHoTen(trimToNull(readCellAsString(row.getCell(1))));
@@ -278,7 +246,6 @@ public class SinhVienExcelService {
                 String s = trimToNull(readCellAsString(ngaySinhCell));
                 if (s != null) {
                     try {
-                        // Chấp nhận "yyyy-MM-dd" hoặc "dd/MM/yyyy"
                         if (s.contains("/")) {
                             String[] parts = s.split("/");
                             if (parts.length == 3) {
@@ -302,10 +269,33 @@ public class SinhVienExcelService {
         sv.setSdt(trimToNull(readCellAsString(row.getCell(5))));
         sv.setEmail(trimToNull(readCellAsString(row.getCell(6))));
         sv.setQueQuan(trimToNull(readCellAsString(row.getCell(7))));
-        sv.setNganh(trimToNull(readCellAsString(row.getCell(8))));
-        sv.setLop(trimToNull(readCellAsString(row.getCell(9))));
-        sv.setKhoa(trimToNull(readCellAsString(row.getCell(10))));
-        sv.setKhoaNamNhapHoc(trimToNull(readCellAsString(row.getCell(11))));
+
+        // Sau V4: cột 8..11 là TÊN danh mục. Resolve qua DanhMucService.
+        // Thứ tự: Ngành(8), Lớp(9), Khoa(10), Khóa học(11) — cần Khoa trước
+        // Ngành, Khóa học trước Lớp.
+        String tenNganh    = trimToNull(readCellAsString(row.getCell(8)));
+        String tenLop      = trimToNull(readCellAsString(row.getCell(9)));
+        String tenKhoa     = trimToNull(readCellAsString(row.getCell(10)));
+        String tenKhoaHoc  = trimToNull(readCellAsString(row.getCell(11)));
+
+        Optional<Khoa> khoa = tenKhoa == null
+                ? Optional.empty()
+                : danhMucService.findOrCreateKhoaByTen(tenKhoa);
+        Optional<KhoaHoc> khoaHoc = tenKhoaHoc == null
+                ? Optional.empty()
+                : danhMucService.findOrCreateKhoaHocByTen(tenKhoaHoc);
+        Optional<Nganh> nganh = (tenNganh != null && khoa.isPresent())
+                ? danhMucService.findOrCreateNganhByTen(tenNganh, khoa.get())
+                : Optional.empty();
+        Optional<Lop> lop = (tenLop != null && nganh.isPresent() && khoaHoc.isPresent())
+                ? danhMucService.findOrCreateLopByTen(tenLop, nganh.get(), khoaHoc.get())
+                : Optional.empty();
+
+        khoa.ifPresent(sv::setKhoa);
+        nganh.ifPresent(sv::setNganh);
+        lop.ifPresent(sv::setLop);
+        khoaHoc.ifPresent(sv::setKhoaHoc);
+
         sv.setHeDaoTao(trimToNull(readCellAsString(row.getCell(12))));
 
         String trangThai = trimToNull(readCellAsString(row.getCell(13)));
@@ -318,6 +308,30 @@ public class SinhVienExcelService {
         }
 
         return sv;
+    }
+
+    private int detectDataStartRow(Sheet sheet) {
+        Row firstRow = sheet.getRow(0);
+        if (firstRow == null) return 1;
+        Cell firstCell = firstRow.getCell(0);
+        if (firstCell != null) {
+            String txt = readCellAsString(firstCell);
+            if (txt != null && txt.toLowerCase().contains("hướng dẫn")) {
+                return 2;
+            }
+        }
+        return 1;
+    }
+
+    private boolean isRowEmpty(Row row) {
+        for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
+            Cell cell = row.getCell(c);
+            if (cell != null && cell.getCellType() != CellType.BLANK) {
+                String val = readCellAsString(cell);
+                if (val != null && !val.isBlank()) return false;
+            }
+        }
+        return true;
     }
 
     private void writeCell(Row row, int col, String value) {
@@ -351,5 +365,19 @@ public class SinhVienExcelService {
         if (s == null) return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
+    }
+
+    /**
+     * Sau V4, {@code SinhVien.nganh} là {@code Nganh} entity (lazy). Khi export
+     * từ danh sách đã load FK (qua JOIN FETCH hoặc {@code Hibernate.initialize})
+     * thì gọi được {@code nganh.getTenNganh()}; nếu lazy chưa load, trả về
+     * {@code null} thay vì crash {@code LazyInitializationException}.
+     */
+    private String safeGetTenNganh(Nganh nganh) {
+        try {
+            return nganh.getTenNganh();
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 }

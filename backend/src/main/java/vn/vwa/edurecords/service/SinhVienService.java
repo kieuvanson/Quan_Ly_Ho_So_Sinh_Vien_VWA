@@ -11,9 +11,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.PagedResponse;
+import vn.vwa.edurecords.entity.Khoa;
+import vn.vwa.edurecords.entity.KhoaHoc;
+import vn.vwa.edurecords.entity.Lop;
+import vn.vwa.edurecords.entity.Nganh;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 import vn.vwa.edurecords.exception.BadRequestException;
+import vn.vwa.edurecords.repository.KhoaHocRepository;
+import vn.vwa.edurecords.repository.KhoaRepository;
+import vn.vwa.edurecords.repository.LopRepository;
+import vn.vwa.edurecords.repository.NganhRepository;
 import vn.vwa.edurecords.repository.SinhVienRepository;
 
 import java.io.IOException;
@@ -32,29 +40,54 @@ public class SinhVienService {
 
     private final SinhVienRepository sinhVienRepository;
     private final SinhVienExcelService sinhVienExcelService;
+    private final DanhMucService danhMucService;
+    private final KhoaRepository khoaRepository;
+    private final NganhRepository nganhRepository;
+    private final KhoaHocRepository khoaHocRepository;
+    private final LopRepository lopRepository;
 
     public SinhVienService(SinhVienRepository sinhVienRepository,
-                           SinhVienExcelService sinhVienExcelService) {
+                           SinhVienExcelService sinhVienExcelService,
+                           DanhMucService danhMucService,
+                           KhoaRepository khoaRepository,
+                           NganhRepository nganhRepository,
+                           KhoaHocRepository khoaHocRepository,
+                           LopRepository lopRepository) {
         this.sinhVienRepository = sinhVienRepository;
         this.sinhVienExcelService = sinhVienExcelService;
+        this.danhMucService = danhMucService;
+        this.khoaRepository = khoaRepository;
+        this.nganhRepository = nganhRepository;
+        this.khoaHocRepository = khoaHocRepository;
+        this.lopRepository = lopRepository;
     }
 
     /**
      * Tìm kiếm + lọc + phân trang sinh viên.
      *
-     * Implementation: native SQL (cast ENUM String → ENUM literal) thay cho Specification,
-     * vì Specification + cb.equal(String) gây lỗi
-     * "operator does not exist: trangthaihocvu = character varying"
-     * (xem AGENTS.md mục 11 + SinhVienRepository.findByFilters).
+     * <p>Sau V4: filter dùng {@code *_id} (Integer). Nếu client cũ vẫn gửi String
+     * trong {@link SinhVienSearchRequest}, service tự resolve sang id qua
+     * {@link DanhMucService}.</p>
      */
     @Transactional(readOnly = true)
     public PagedResponse<List<SinhVien>> search(SinhVienSearchRequest req) {
         String keyword = trimOrNull(req.getKeyword());
         String trangThaiHocVu = trimOrNull(req.getTrangThaiHocVu());
-        String nganh = trimOrNull(req.getNganh());
-        String lop = trimOrNull(req.getLop());
-        String khoaNamNhapHoc = trimOrNull(req.getKhoaNamNhapHoc());
-        String khoa = trimOrNull(req.getKhoa());
+
+        // Ưu tiên id đã resolve sẵn từ controller. Nếu chưa có thì thử resolve
+        // từ text (mã/tên) — controller thường đã làm rồi, đây là fallback.
+        Integer nganhId = req.getNganhId() != null
+                ? req.getNganhId()
+                : danhMucService.resolveNganhId(trimOrNull(req.getNganh()), req.getKhoaId());
+        Integer lopId = req.getLopId() != null
+                ? req.getLopId()
+                : danhMucService.resolveLopId(trimOrNull(req.getLop()), nganhId, req.getKhoaHocId());
+        Integer khoaHocId = req.getKhoaHocId() != null
+                ? req.getKhoaHocId()
+                : danhMucService.resolveKhoaHocId(trimOrNull(req.getKhoaNamNhapHoc()));
+        Integer khoaId = req.getKhoaId() != null
+                ? req.getKhoaId()
+                : danhMucService.resolveKhoaId(trimOrNull(req.getKhoa()));
         String heDaoTao = trimOrNull(req.getHeDaoTao());
 
         int page = Math.max(0, req.getPage());
@@ -62,12 +95,12 @@ public class SinhVienService {
         int offset = page * size;
 
         long total = sinhVienRepository.countByFilters(
-                keyword, trangThaiHocVu, nganh, lop, khoaNamNhapHoc, khoa, heDaoTao);
+                keyword, trangThaiHocVu, nganhId, lopId, khoaHocId, khoaId, heDaoTao);
 
         List<SinhVien> content = total == 0
                 ? Collections.emptyList()
                 : sinhVienRepository.findByFilters(
-                        keyword, trangThaiHocVu, nganh, lop, khoaNamNhapHoc, khoa, heDaoTao,
+                        keyword, trangThaiHocVu, nganhId, lopId, khoaHocId, khoaId, heDaoTao,
                         size, offset);
 
         Pageable pageable = PageRequest.of(page, size);
@@ -81,46 +114,23 @@ public class SinhVienService {
         return new PagedResponse<>(pageResult.getContent(), meta);
     }
 
-    /**
-     * Lấy tất cả sinh viên (không phân trang).
-     */
     public List<SinhVien> getAll() {
         return sinhVienRepository.findAll();
     }
 
-    /**
-     * Lấy chi tiết sinh viên theo MSSV.
-     */
     public Optional<SinhVien> getByMssv(String mssv) {
         return sinhVienRepository.findById(mssv);
     }
 
-    /**
-     * Đếm tổng sinh viên.
-     */
     public long getTotalCount() {
         return sinhVienRepository.count();
     }
 
-    /**
-     * Đếm sinh viên theo trạng thái học vụ.
-     * Truyền vào displayName tiếng Việt (vd: "Đang học") khớp với giá trị ENUM trong DB.
-     * Service sẽ convert sang enum để Hibernate tự cast qua TrangThaiHocVuConverter.
-     */
     public long countByTrangThai(String trangThaiHocVu) {
         TrangThaiHocVu trangThai = TrangThaiHocVu.fromDisplayName(trangThaiHocVu);
         return sinhVienRepository.countByTrangThaiHocVu(trangThai);
     }
 
-    /**
-     * Kết quả import Excel.
-     *
-     * @param successCount  số sinh viên đã ghi thành công (thêm mới + cập nhật)
-     * @param failureCount  số dòng bị loại
-     * @param insertedCount số bản ghi mới
-     * @param updatedCount  số bản ghi đã tồn tại và được cập nhật
-     * @param errors        lỗi theo từng dòng để người dùng sửa lại file
-     */
     public record ImportResult(
             int successCount,
             int failureCount,
@@ -132,14 +142,10 @@ public class SinhVienService {
     /**
      * Import danh sách sinh viên từ file Excel, upsert theo MSSV.
      *
-     * <h3>Hành vi</h3>
-     * <ul>
-     *   <li>Ghi trong một transaction: nếu có lỗi dữ liệu không xử lý được thì
-     *       rollback lô ghi thay vì để lại dữ liệu dở dang.</li>
-     *   <li>MSSV trùng lặp trong cùng file chỉ giữ dòng đầu, dòng sau bị báo lỗi.</li>
-     *   <li>CCCD trùng với sinh viên khác thì dòng đó bị loại và báo lỗi, vì CCCD
-     *       là UNIQUE ở DB — một vi phạm sẽ làm hỏng cả lô import.</li>
-     * </ul>
+     * <p>Sau V4: Excel vẫn ghi text (Khoa/Ngành/Lớp/Khóa) để người dùng cuối
+     * không cần biết id. Service tự lookup / tạo danh mục qua
+     * {@link DanhMucService} rồi gắn FK vào SinhVien. Nếu thiếu thông tin danh
+     * mục bắt buộc → dòng bị loại và báo lỗi chi tiết.</p>
      */
     @Transactional
     public ImportResult importFromExcel(MultipartFile file) {
@@ -147,8 +153,6 @@ public class SinhVienService {
         try {
             parsed = sinhVienExcelService.read(file);
         } catch (IOException e) {
-            // File không đọc được (hỏng, không phải .xlsx hợp lệ, nén quá mức).
-            // Chi tiết lỗi kỹ thuật chỉ ghi log, client nhận thông báo chung.
             log.error("Không đọc được file Excel import", e);
             throw new BadRequestException("IMPORT_FILE_INVALID",
                     "Không đọc được file Excel. Hãy tải mẫu và điền theo đúng định dạng.");
@@ -183,6 +187,17 @@ public class SinhVienService {
                 }
             }
 
+            // Sau V4: Excel chỉ chứa TEXT (Khoa/Ngành/Lớp/Khóa), SinhVienExcelService
+            // tạm set text vào các field VARCHAR. Ở đây resolve sang FK entity.
+            // Nếu dòng đã set *_id (qua API), giữ nguyên.
+            if (sv.getKhoa() == null || sv.getNganh() == null
+                    || sv.getLop() == null || sv.getKhoaHoc() == null) {
+                errors.add(new SinhVienExcelService.RowError(nextRow,
+                        "Thiếu thông tin danh mục bắt buộc (Khoa/Ngành/Lớp/Khóa học) cho MSSV "
+                                + sv.getMssv() + "."));
+                continue;
+            }
+
             Optional<SinhVien> existing = sinhVienRepository.findById(sv.getMssv());
             if (existing.isPresent()) {
                 copyEditableFields(existing.get(), sv);
@@ -214,10 +229,10 @@ public class SinhVienService {
         target.setSdt(source.getSdt());
         target.setEmail(source.getEmail());
         target.setQueQuan(source.getQueQuan());
+        target.setKhoa(source.getKhoa());
         target.setNganh(source.getNganh());
         target.setLop(source.getLop());
-        target.setKhoa(source.getKhoa());
-        target.setKhoaNamNhapHoc(source.getKhoaNamNhapHoc());
+        target.setKhoaHoc(source.getKhoaHoc());
         target.setHeDaoTao(source.getHeDaoTao());
         if (source.getTrangThaiHocVu() != null) {
             target.setTrangThaiHocVu(source.getTrangThaiHocVu());
