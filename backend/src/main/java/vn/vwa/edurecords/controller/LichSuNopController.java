@@ -16,7 +16,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/lich-su-nop")
-@CrossOrigin(origins = "*")
 public class LichSuNopController {
 
     private final LichSuNopService lichSuNopService;

@@ -13,7 +13,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/loai-giay-to")
-@CrossOrigin(origins = "*")
 public class LoaiGiayToController {
 
     private final LoaiGiayToService loaiGiayToService;

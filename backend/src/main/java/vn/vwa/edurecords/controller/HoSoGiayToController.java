@@ -3,11 +3,11 @@ package vn.vwa.edurecords.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import vn.vwa.edurecords.dto.request.HoSoGiayToRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.entity.HoSoGiayTo;
-import vn.vwa.edurecords.security.JwtService;
 import vn.vwa.edurecords.service.HoSoGiayToService;
 
 import java.util.HashMap;
@@ -16,15 +16,12 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/ho-so-giay-to")
-@CrossOrigin(origins = "*")
 public class HoSoGiayToController {
 
     private final HoSoGiayToService hoSoGiayToService;
-    private final JwtService jwtService;
 
-    public HoSoGiayToController(HoSoGiayToService hoSoGiayToService, JwtService jwtService) {
+    public HoSoGiayToController(HoSoGiayToService hoSoGiayToService) {
         this.hoSoGiayToService = hoSoGiayToService;
-        this.jwtService = jwtService;
     }
 
     /**
@@ -91,10 +88,7 @@ public class HoSoGiayToController {
             @RequestParam String mssv,
             @RequestParam String maLoai,
             @Valid @RequestBody HoSoGiayToRequest request,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String username = jwtService.extractUsername(token);
+            @AuthenticationPrincipal String username) {
 
         HoSoGiayTo created = hoSoGiayToService.create(mssv, maLoai, request, username);
         return ResponseEntity.ok(ApiResponse.success("Tạo hồ sơ giấy tờ thành công", created));
@@ -107,11 +101,8 @@ public class HoSoGiayToController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<HoSoGiayTo>> update(
             @PathVariable String maHoSo,
-            @RequestBody HoSoGiayToRequest request,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String username = jwtService.extractUsername(token);
+            @Valid @RequestBody HoSoGiayToRequest request,
+            @AuthenticationPrincipal String username) {
 
         HoSoGiayTo updated = hoSoGiayToService.update(maHoSo, request, username);
         return ResponseEntity.ok(ApiResponse.success("Cập nhật hồ sơ giấy tờ thành công", updated));
@@ -126,10 +117,7 @@ public class HoSoGiayToController {
             @PathVariable String maHoSo,
             @RequestParam String trangThaiMoi,
             @RequestParam(required = false) String ghiChu,
-            @RequestHeader("Authorization") String authHeader) {
-
-        String token = authHeader.replace("Bearer ", "");
-        String username = jwtService.extractUsername(token);
+            @AuthenticationPrincipal String username) {
 
         HoSoGiayTo updated = hoSoGiayToService.capNhatTrangThaiNop(maHoSo, trangThaiMoi, ghiChu, username);
         return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái thành công", updated));

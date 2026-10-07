@@ -1,8 +1,11 @@
 package vn.vwa.edurecords.controller;
 
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,33 +15,32 @@ import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.entity.SinhVien;
-import vn.vwa.edurecords.repository.SinhVienRepository;
 import vn.vwa.edurecords.service.SinhVienExcelService;
 import vn.vwa.edurecords.service.SinhVienService;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/sinh-vien")
-@CrossOrigin(origins = "*")
 public class SinhVienController {
+
+    private static final Logger log = LoggerFactory.getLogger(SinhVienController.class);
+
+    /** Giới hạn kích thước file import để tránh cạn bộ nhớ khi đọc .xlsx. */
+    private static final long MAX_IMPORT_FILE_SIZE = 10L * 1024 * 1024;
 
     private final SinhVienService sinhVienService;
     private final SinhVienExcelService sinhVienExcelService;
-    private final SinhVienRepository sinhVienRepository;
 
     public SinhVienController(
         SinhVienService sinhVienService,
-        SinhVienExcelService sinhVienExcelService,
-        SinhVienRepository sinhVienRepository
+        SinhVienExcelService sinhVienExcelService
     ) {
         this.sinhVienService = sinhVienService;
         this.sinhVienExcelService = sinhVienExcelService;
-        this.sinhVienRepository = sinhVienRepository;
     }
 
     /**
@@ -95,23 +97,29 @@ public class SinhVienController {
     @GetMapping("/stats")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStats() {
-        Map<String, Object> stats = new HashMap<>();
+        Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("tongSoSinhVien", sinhVienService.getTotalCount());
         stats.put("dangHoc", sinhVienService.countByTrangThai("Đang học"));
         stats.put("totNghiep", sinhVienService.countByTrangThai("Tốt nghiệp"));
         stats.put("baoLuu", sinhVienService.countByTrangThai("Bảo lưu"));
         stats.put("dinhChi", sinhVienService.countByTrangThai("Đình chỉ"));
-        stats.put("daRutHoSo", sinhVienService.countByTrangThai("Đã rút hớ sơ"));
+        stats.put("daRutHoSo", sinhVienService.countByTrangThai("Đã rút hồ sơ"));
         return ResponseEntity.ok(ApiResponse.success(stats));
     }
 
     /**
      * POST /api/sinh-vien - Tạo sinh viên (ADMIN).
+     *
+     * Chưa implement. Trả 501 NOT_IMPLEMENTED thay vì 200 với message "đang phát
+     * triển": trả 200 khiến client tưởng đã ghi thành công rồi refresh dữ liệu và
+     * mất những gì người dùng vừa nhập.
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> create(@Valid @RequestBody SinhVien sinhVien) {
-        return ResponseEntity.ok(ApiResponse.success("Tính năng đang phát triển", (Void) null));
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResponse.error(501, "NOT_IMPLEMENTED",
+                        "Tạo sinh viên chưa được hỗ trợ. Hãy dùng chức năng import Excel."));
     }
 
     /**
@@ -122,16 +130,25 @@ public class SinhVienController {
     public ResponseEntity<ApiResponse<Void>> update(
             @PathVariable String mssv,
             @Valid @RequestBody SinhVien sinhVien) {
-        return ResponseEntity.ok(ApiResponse.success("Tính năng đang phát triển", (Void) null));
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResponse.error(501, "NOT_IMPLEMENTED",
+                        "Cập nhật sinh viên chưa được hỗ trợ. Hãy dùng chức năng import Excel."));
     }
 
     /**
      * DELETE /api/sinh-vien/{mssv} - Xóa (ADMIN).
+     *
+     * Xóa sinh viên sẽ cascade xoá hồ sơ giấy tờ và lịch sử nộp — vi phạm nguyên
+     * tắc "không ghi đè dữ liệu audit". Cần chuyển sang soft-delete hoặc chỉ cho
+     * đổi trạng thái học vụ thay vì xóa hẳn.
      */
     @DeleteMapping("/{mssv}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable String mssv) {
-        return ResponseEntity.ok(ApiResponse.success("Tính năng đang phát triển", (Void) null));
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResponse.error(501, "NOT_IMPLEMENTED",
+                        "Xóa sinh viên không được phép vì sẽ mất lịch sử hồ sơ. "
+                                + "Hãy cập nhật trạng thái học vụ thay vì xóa."));
     }
 
     // ================== IMPORT / EXPORT EXCEL ==================
@@ -194,7 +211,10 @@ public class SinhVienController {
             headers.setContentLength(bytes.length);
 
             return ResponseEntity.ok().headers(headers).body(new ByteArrayResource(bytes));
-        } catch (Exception ex) {
+        } catch (IOException ex) {
+            // Để GlobalExceptionHandler ghi log và trả response thống nhất,
+            // không nuốt lỗi thành 500 rỗng không có thông tin chẩn đoán.
+            log.error("Không xuất được file Excel danh sách sinh viên", ex);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -215,7 +235,8 @@ public class SinhVienController {
                 "attachment; filename=\"mau-import-sinh-vien.xlsx\"");
             headers.setContentLength(bytes.length);
             return ResponseEntity.ok().headers(headers).body(new ByteArrayResource(bytes));
-        } catch (Exception ex) {
+        } catch (IOException ex) {
+            log.error("Không tạo được file Excel mẫu", ex);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -227,10 +248,9 @@ public class SinhVienController {
      */
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> importExcel(
+    public ResponseEntity<ApiResponse<SinhVienService.ImportResult>> importExcel(
             @RequestParam("file") MultipartFile file) {
 
-        Map<String, Object> result = new HashMap<>();
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(
                 ApiResponse.error(400, "BAD_REQUEST", "File upload rỗng."));
@@ -242,53 +262,15 @@ public class SinhVienController {
                 ApiResponse.error(400, "BAD_REQUEST", "Chỉ chấp nhận file .xlsx hoặc .xls."));
         }
 
-        try {
-            SinhVienExcelService.ImportResult parsed = sinhVienExcelService.read(file);
-            int inserted = 0;
-            int updated = 0;
-
-            for (SinhVien sv : parsed.sinhViens()) {
-                Optional<SinhVien> existing = sinhVienRepository.findById(sv.getMssv());
-                if (existing.isPresent()) {
-                    SinhVien cur = existing.get();
-                    copyEditableFields(cur, sv);
-                    cur.setNgayCapNhat(LocalDateTime.now());
-                    sinhVienRepository.save(cur);
-                    updated++;
-                } else {
-                    sv.setNgayTao(LocalDateTime.now());
-                    sinhVienRepository.save(sv);
-                    inserted++;
-                }
-            }
-
-            result.put("successCount", parsed.successCount());
-            result.put("failureCount", parsed.failureCount());
-            result.put("insertedCount", inserted);
-            result.put("updatedCount", updated);
-            result.put("errors", parsed.errors());
-            return ResponseEntity.ok(ApiResponse.success(result));
-        } catch (Exception ex) {
-            return ResponseEntity.internalServerError().body(
-                ApiResponse.error(500, "IMPORT_FAILED", "Lỗi import: " + ex.getMessage()));
+        if (file.getSize() > MAX_IMPORT_FILE_SIZE) {
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "FILE_TOO_LARGE",
+                    "File vượt quá giới hạn " + (MAX_IMPORT_FILE_SIZE / (1024 * 1024)) + " MB."));
         }
-    }
 
-    private void copyEditableFields(SinhVien target, SinhVien source) {
-        target.setHoTen(source.getHoTen());
-        target.setNgaySinh(source.getNgaySinh());
-        target.setGioiTinh(source.getGioiTinh());
-        target.setCccd(source.getCccd());
-        target.setSdt(source.getSdt());
-        target.setEmail(source.getEmail());
-        target.setQueQuan(source.getQueQuan());
-        target.setNganh(source.getNganh());
-        target.setLop(source.getLop());
-        target.setKhoa(source.getKhoa());
-        target.setKhoaNamNhapHoc(source.getKhoaNamNhapHoc());
-        target.setHeDaoTao(source.getHeDaoTao());
-        if (source.getTrangThaiHocVu() != null) {
-            target.setTrangThaiHocVu(source.getTrangThaiHocVu());
-        }
+        // Logic import nằm trong service (transaction + validate), controller chỉ
+        // kiểm tra định dạng file theo giao thức HTTP.
+        SinhVienService.ImportResult result = sinhVienService.importFromExcel(file);
+        return ResponseEntity.ok(ApiResponse.success("Import sinh viên hoàn tất", result));
     }
 }

@@ -1,15 +1,22 @@
-# Docker Compose - Redis only
-# Backend chạy local bằng mvnw spring-boot:run
-# Frontend chạy local bằng npm run dev
-
+# =====================================================================
+# Hạ tầng phụ trợ cho VWA EduRecords.
+#
+# Mặc định chỉ chạy Redis; PostgreSQL chạy local theo hướng dẫn trong
+# backend/AGENTS.md. Nếu muốn dựng PostgreSQL trong Docker (giống môi trường
+# test), dùng profile "db":
+#
+#   docker compose --profile db up -d
+#
+# Testcontainers (./mvnw.cmd test) tự dựng container riêng nên không dùng
+# các service ở đây.
+# =====================================================================
 services:
-  # Redis for JWT token management
   redis:
     image: redis:7-alpine
     container_name: vwa_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -20,8 +27,31 @@ services:
     networks:
       - vwa_network
 
+  postgres:
+    profiles: ["db"]
+    image: postgres:18-alpine
+    container_name: vwa_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vwa_edurecords}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Thiếu POSTGRES_PASSWORD trong file .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-vwa_edurecords}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vwa_network
+
 volumes:
   redis_data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:

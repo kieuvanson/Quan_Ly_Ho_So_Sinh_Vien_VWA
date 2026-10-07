@@ -17,6 +17,15 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
 
     long countByTrangThaiHocVu(TrangThaiHocVu trangThaiHocVu);
 
+    /**
+     * Kiểm tra CCCD đã thuộc sinh viên khác chưa.
+     *
+     * Cột {@code cccd} có ràng buộc UNIQUE trong DB. Khi import hàng loạt, một
+     * dòng trùng CCCD sẽ làm hỏng cả lô ghi, nên phải kiểm tra trước và báo lỗi
+     * theo từng dòng thay vì để ngoại lệ SQL lan ra.
+     */
+    boolean existsByCccdAndMssvNot(String cccd, String mssv);
+
     // ============================================================
     // Native query cho search/filter (thay thế SinhVienSpecification)
     // ============================================================
