@@ -14,6 +14,11 @@ public class RedisConfig {
      *
      * Việc dùng serializer mặc định của {@code RedisTemplate} (JDK serialization) sẽ
      * làm key không đọc được bằng redis-cli và không tương thích giữa các service.
+     *
+     * <p>Bean {@link RedisConnectionFactory} được Spring Boot auto-config cung cấp
+     * từ {@code spring-boot-starter-data-redis} (Lettuce theo mặc định). Truyền
+     * trực tiếp vào {@link StringRedisTemplate} để tránh lệ thuộc vào tên bean ẩn
+     * và giữ constructor injection rõ ràng.</p>
      */
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory connectionFactory) {

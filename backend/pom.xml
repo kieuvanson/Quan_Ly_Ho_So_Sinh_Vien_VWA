@@ -57,6 +57,19 @@
 			<artifactId>spring-boot-starter-data-redis</artifactId>
 		</dependency>
 
+		<!--
+			Spring Boot 4.x tách FlywayAutoConfiguration ra module riêng
+			(spring-boot-flyway). Chỉ khai báo flyway-core/flyway-database-postgresql
+			thì class Flyway có trong classpath nhưng auto-config KHÔNG kích hoạt,
+			nên Flyway không chạy khi start. Bắt buộc thêm starter này.
+			Starter này transitively include spring-boot-flyway, spring-boot-jdbc
+			và flyway-core (đã có ở trên).
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-devtools</artifactId>
