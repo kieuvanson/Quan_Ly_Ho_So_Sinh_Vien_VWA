@@ -770,6 +770,374 @@
   box-shadow: var(--shadow-md);
 }
 
+/* Modal Bổ sung giấy tờ */
+.chi-tiet-ho-so__bo-sung {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.chi-tiet-ho-so__bo-sung-info {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.chi-tiet-ho-so__bo-sung-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.chi-tiet-ho-so__bo-sung-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.chi-tiet-ho-so__bo-sung-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chi-tiet-ho-so__bo-sung-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.chi-tiet-ho-so__bo-sung-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.chi-tiet-ho-so__bo-sung-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.chi-tiet-ho-so__bo-sung-table thead {
+  background: #f8fafc;
+}
+
+.chi-tiet-ho-so__bo-sung-table th {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chi-tiet-ho-so__bo-sung-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text);
+}
+
+.chi-tiet-ho-so__bo-sung-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.chi-tiet-ho-so__bo-sung-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom .checked-icon {
+  color: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom .unchecked-circle {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox input:checked + .chi-tiet-ho-so__bo-sung-checkbox-custom .unchecked-circle {
+  border-color: var(--color-success, #16a34a);
+  background: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-status {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.chi-tiet-ho-so__bo-sung-status.status--da-nop {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-status.status--chua-nop {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--color-text-muted);
+}
+
+.chi-tiet-ho-so__bo-sung-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  gap: var(--space-2);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.chi-tiet-ho-so__bo-sung-empty p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+/* Responsive for bo-sung modal */
+@media (max-width: 768px) {
+  .chi-tiet-ho-so__bo-sung-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Modal Bổ sung giấy tờ */
+.chi-tiet-ho-so__bo-sung {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.chi-tiet-ho-so__bo-sung-info {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.chi-tiet-ho-so__bo-sung-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.chi-tiet-ho-so__bo-sung-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.chi-tiet-ho-so__bo-sung-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chi-tiet-ho-so__bo-sung-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.chi-tiet-ho-so__bo-sung-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  gap: var(--space-3);
+}
+
+.chi-tiet-ho-so__bo-sung-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.chi-tiet-ho-so__bo-sung-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.chi-tiet-ho-so__bo-sung-table thead {
+  background: #f8fafc;
+}
+
+.chi-tiet-ho-so__bo-sung-table th {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chi-tiet-ho-so__bo-sung-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text);
+}
+
+.chi-tiet-ho-so__bo-sung-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.chi-tiet-ho-so__bo-sung-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom .checked-icon {
+  color: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox-custom .unchecked-circle {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.chi-tiet-ho-so__bo-sung-checkbox input:checked + .chi-tiet-ho-so__bo-sung-checkbox-custom .unchecked-circle {
+  border-color: var(--color-success, #16a34a);
+  background: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-status {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.chi-tiet-ho-so__bo-sung-status.status--da-nop {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-success, #16a34a);
+}
+
+.chi-tiet-ho-so__bo-sung-status.status--chua-nop {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--color-text-muted);
+}
+
+.chi-tiet-ho-so__bo-sung-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  gap: var(--space-2);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.chi-tiet-ho-so__bo-sung-empty p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+/* Responsive for bo-sung modal */
+@media (max-width: 768px) {
+  .chi-tiet-ho-so__bo-sung-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .chi-tiet-ho-so {

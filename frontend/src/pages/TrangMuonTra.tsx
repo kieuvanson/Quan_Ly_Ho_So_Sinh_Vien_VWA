@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle } from 'lucide-react'
 import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput, FormSelect } from '../components/ui'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
@@ -56,10 +57,6 @@ interface LichSuItem {
   hanTra: string
   ngayTraThucTe: string
 }
-
-// =========================================================================
-// Mock data — TODO: replace khi backend bổ sung endpoint tương ứng.
-// =========================================================================
 
 // =========================================================================
 // Mapping constants
@@ -130,6 +127,10 @@ function defaultHanTra(ngayMuon: string): string {
 }
 
 export function TrangMuonTra() {
+  // Get MSSV from URL if passed from Danh sach ho so
+  const [searchParams] = useSearchParams()
+  const mssvFromUrl = searchParams.get('mssv')
+
   // ----- Tab state -----
   const [activeTab, setActiveTab] = useState<'dangmuon' | 'lichsu'>('dangmuon')
 
@@ -297,7 +298,6 @@ export function TrangMuonTra() {
 
   useEffect(() => {
     if (activeTab === 'dangmuon') {
-      // setState bên trong fetchDangMuon là async (sau await) nên đây là pattern hợp lệ.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchDangMuon()
     } else if (activeTab === 'lichsu') {
@@ -305,6 +305,47 @@ export function TrangMuonTra() {
       fetchLichSu()
     }
   }, [activeTab, fetchDangMuon, fetchLichSu])
+
+  // =========================================================================
+  // Handle MSSV from URL - tự động mở modal khi có mssv trên URL
+  // =========================================================================
+  useEffect(() => {
+    if (!mssvFromUrl) return
+
+    const lookupMssv = async () => {
+      setMuonForm((prev) => ({ ...prev, mssv: mssvFromUrl }))
+      setIsLookingUpSv(true)
+      setMssvError('')
+      try {
+        const sv = await lookupApi.getSinhVien(mssvFromUrl.trim())
+        if (sv) {
+          setSinhVienInfo({
+            mssv: sv.mssv,
+            hoTen: sv.hoTen,
+            cccd: sv.cccd || '',
+            sdt: sv.sdt || '',
+            khoa: sv.khoa || '',
+            lop: sv.lop || '',
+          })
+          // Load danh sách hồ sơ giấy tờ
+          setIsLoadingHoSo(true)
+          const hoSos = await lookupApi.getHoSoGiayTo(mssvFromUrl.trim())
+          setHoSoList(hoSos)
+          setIsLoadingHoSo(false)
+          // Mở modal
+          setModalMuonOpen(true)
+        } else {
+          setMssvError('Không tìm thấy sinh viên với MSSV này.')
+        }
+      } catch {
+        setMssvError('Lỗi tra cứu sinh viên. Vui lòng thử lại.')
+      } finally {
+        setIsLookingUpSv(false)
+      }
+    }
+
+    lookupMssv()
+  }, [mssvFromUrl])
 
   // =========================================================================
   // Map PhieuMuon (backend DTO) → LichSuItem (UI row)
@@ -1327,7 +1368,7 @@ export function TrangMuonTra() {
         )}
       </Modal>
 
-      {/* Modal Trả hồ sơ — TODO: chưa nối backend */}
+      {/* Modal Trả hồ sơ */}
       <Modal
         isOpen={modalTraOpen}
         onClose={() => setModalTraOpen(false)}

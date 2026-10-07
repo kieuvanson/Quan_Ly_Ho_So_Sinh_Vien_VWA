@@ -20,8 +20,7 @@ import {
   User,
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
-import { hoSoGiayToApi } from '../api/hoSoGiayTo'
-import { loaiGiayToApi } from '../api/loaiGiayTo'
+import { hoSoGiayToApi, loaiGiayToApi } from '../api/hoSoGiayTo'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
 import { authStore } from '../lib/authStore'
 import { apiClient } from '../api/client'
@@ -55,7 +54,6 @@ interface FormData {
   nganh: string
 }
 
-// Mapping trạng thái học vụ từ backend
 const TRANG_THAI_MAPPING: Record<string, { label: string; className: string }> = {
   'Đang học': { label: 'Đang học', className: 'badge--success' },
   'Bảo lưu': { label: 'Bảo lưu', className: 'badge--warning' },
@@ -87,27 +85,20 @@ export function TrangChiTietHoSo() {
   const { mssv } = useParams<{ mssv: string }>()
   const navigate = useNavigate()
 
-  // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('thong-tin')
-
-  // Data state
   const [sinhVien, setSinhVien] = useState<SinhVien | null>(null)
   const [giayToList, setGiayToList] = useState<HoSoGiayTo[]>([])
   const [loaiGiayToList, setLoaiGiayToList] = useState<LoaiGiayTo[]>([])
 
-  // Loading state
   const [isLoadingSv, setIsLoadingSv] = useState(true)
   const [isLoadingGt, setIsLoadingGt] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Error state
   const [errorSv, setErrorSv] = useState<string | null>(null)
   const [errorGt, setErrorGt] = useState<string | null>(null)
 
-  // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   // Modal Bổ sung giấy tờ
   const [isBoSungModalOpen, setIsBoSungModalOpen] = useState(false)
@@ -194,7 +185,6 @@ export function TrangChiTietHoSo() {
       .then((response) => {
         if (response.success && response.data) {
           setSinhVien(response.data)
-          // Pre-fill form data
           setFormData({
             hoTen: response.data.hoTen || '',
             mssv: response.data.mssv || '',
@@ -222,7 +212,6 @@ export function TrangChiTietHoSo() {
     fetchActivePhieuMuon(mssv)
   }, [mssv, fetchActivePhieuMuon])
 
-  // Fetch documents when tab 'giay-to' is active
   useEffect(() => {
     if (!mssv || activeTab !== 'giay-to') return
 
@@ -258,9 +247,6 @@ export function TrangChiTietHoSo() {
       .then((response) => {
         if (response.success && response.data) {
           setLoaiGiayToList(response.data)
-        } else {
-          // Non-critical error - we can fallback to maLoai
-          console.warn('Không thể tải danh sách loại giấy tờ:', response.message)
         }
       })
       .catch((err) => {
@@ -269,7 +255,6 @@ export function TrangChiTietHoSo() {
       })
   }, [activeTab, loaiGiayToList.length])
 
-  // Format date from ISO string to DD/MM/YYYY
   function formatDate(dateStr: string): string {
     if (!dateStr) return ''
     try {
@@ -280,13 +265,11 @@ export function TrangChiTietHoSo() {
     }
   }
 
-  // Get document name from maLoai
   function getTenGiayTo(maLoai: string): string {
     const loai = loaiGiayToList.find((lgt) => lgt.maLoai === maLoai)
     return loai?.tenGiayTo || `Mã loại: ${maLoai}`
   }
 
-  // Get badge info for status
   function getBadgeInfo(trangThai: string) {
     return TRANG_THAI_MAPPING[trangThai] || { label: trangThai, className: '' }
   }
@@ -472,10 +455,13 @@ export function TrangChiTietHoSo() {
     }
   }
 
+  // Nút "Rút hồ sơ"
   function handleRutHoSo() {
-    showToast('Chức năng đang được phát triển.')
+    if (!mssv) return
+    navigate(`/rut-ho-so?mssv=${encodeURIComponent(mssv)}`)
   }
 
+  // Nút "In / xuất hồ sơ"
   function handleInHoSo() {
     setPrintType('hoSo')
     setPhieuToPrint(null)
@@ -496,7 +482,7 @@ export function TrangChiTietHoSo() {
     setPrintMode('preview')
   }
 
-  /** Gọi window.print() — mount bản in ra <body> qua portal để tránh bị
+  /** Gọi window.print() — mount bản in ra <body> qua portal để tránh
    * modal `position: fixed` che hoặc `visibility: hidden` của @media print. */
   function handleDoPrint() {
     if (printType === 'phieu' && !phieuToPrint) {
@@ -545,7 +531,6 @@ export function TrangChiTietHoSo() {
   }
 
   function handleRetrySv() {
-    // Trigger refetch by updating mssv dependency
     setSinhVien(null)
     setIsLoadingSv(true)
     setErrorSv(null)
@@ -618,7 +603,6 @@ export function TrangChiTietHoSo() {
 
   function handleSave() {
     setIsSaving(true)
-    // TODO: Call update API when available
     setTimeout(() => {
       setIsSaving(false)
       setIsModalOpen(false)
@@ -626,7 +610,6 @@ export function TrangChiTietHoSo() {
     }, 500)
   }
 
-  // Form options
   const gioiTinhOptions = [
     { value: 'Nam', label: 'Nam' },
     { value: 'Nữ', label: 'Nữ' },
@@ -650,16 +633,13 @@ export function TrangChiTietHoSo() {
     'Quan hệ quốc tế',
   ].map((nganh) => ({ value: nganh, label: nganh }))
 
-  // Not found state (after loading)
   if (!isLoadingSv && !sinhVien && errorSv) {
     return (
       <div className="chi-tiet-ho-so">
         <div className="chi-tiet-ho-so__empty">
           <AlertCircle className="chi-tiet-ho-so__empty-icon" size={64} />
           <h2 className="chi-tiet-ho-so__empty-title">Không tìm thấy hồ sơ sinh viên</h2>
-          <p className="chi-tiet-ho-so__empty-desc">
-            {errorSv}
-          </p>
+          <p className="chi-tiet-ho-so__empty-desc">{errorSv}</p>
           <div className="chi-tiet-ho-so__empty-actions">
             <Button variant="primary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
               Quay lại danh sách
@@ -669,18 +649,11 @@ export function TrangChiTietHoSo() {
             </Button>
           </div>
         </div>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onClose={() => setToast(null)}
-          />
-        )}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       </div>
     )
   }
 
-  // Loading state
   if (isLoadingSv && !sinhVien) {
     return (
       <div className="chi-tiet-ho-so">
@@ -697,12 +670,10 @@ export function TrangChiTietHoSo() {
 
   return (
     <div className="chi-tiet-ho-so">
-      {/* Back Button */}
       <Button variant="secondary" icon={<ArrowLeft size={18} />} onClick={handleBack}>
         Quay lại danh sách
       </Button>
 
-      {/* Header Card */}
       <div className="chi-tiet-ho-so__header-card">
         <div className="chi-tiet-ho-so__header-top">
           <div>
@@ -723,7 +694,6 @@ export function TrangChiTietHoSo() {
         </div>
       </div>
 
-      {/* Quick Actions */}
       <div className="chi-tiet-ho-so__actions">
         <Button variant="secondary" icon={<PlusCircle size={18} />} onClick={handleOpenBoSungModal}>
           Bổ sung giấy tờ
@@ -864,9 +834,7 @@ export function TrangChiTietHoSo() {
           </button>
         </div>
 
-        {/* Tab Content */}
         <div className="chi-tiet-ho-so__tab-content">
-          {/* Tab 1: Thông tin cá nhân & Học vụ */}
           {activeTab === 'thong-tin' && sinhVien && (
             <div className="chi-tiet-ho-so__info-grid">
               <div className="chi-tiet-ho-so__info-item">
@@ -930,10 +898,8 @@ export function TrangChiTietHoSo() {
             </div>
           )}
 
-          {/* Tab 2: Hồ sơ giấy tờ */}
           {activeTab === 'giay-to' && (
             <>
-              {/* Loading state */}
               {isLoadingGt && (
                 <div className="chi-tiet-ho-so__loading">
                   <Loader2 className="chi-tiet-ho-so__loading-icon" size={32} />
@@ -941,7 +907,6 @@ export function TrangChiTietHoSo() {
                 </div>
               )}
 
-              {/* Error state */}
               {!isLoadingGt && errorGt && (
                 <div className="chi-tiet-ho-so__error">
                   <p className="chi-tiet-ho-so__error-text">{errorGt}</p>
@@ -951,7 +916,6 @@ export function TrangChiTietHoSo() {
                 </div>
               )}
 
-              {/* Empty state */}
               {!isLoadingGt && !errorGt && giayToList.length === 0 && (
                 <div className="chi-tiet-ho-so__empty">
                   <FileSearch className="chi-tiet-ho-so__empty-icon" size={48} />
@@ -959,7 +923,6 @@ export function TrangChiTietHoSo() {
                 </div>
               )}
 
-              {/* Table */}
               {!isLoadingGt && !errorGt && giayToList.length > 0 && (
                 <div className="chi-tiet-ho-so__table-wrapper">
                   <table className="chi-tiet-ho-so__table">
@@ -1043,7 +1006,6 @@ export function TrangChiTietHoSo() {
         </div>
       </div>
 
-      {/* Edit Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
@@ -1061,25 +1023,10 @@ export function TrangChiTietHoSo() {
       >
         <div className="chi-tiet-ho-so__form-grid">
           <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <FormInput
-              label="Họ và tên"
-              name="hoTen"
-              value={formData.hoTen}
-              onChange={handleInputChange}
-            />
+            <FormInput label="Họ và tên" name="hoTen" value={formData.hoTen} onChange={handleInputChange} />
           </div>
-          <FormInput
-            label="MSSV"
-            name="mssv"
-            value={formData.mssv}
-            disabled
-          />
-          <FormInput
-            label="CCCD"
-            name="cccd"
-            value={formData.cccd}
-            onChange={handleInputChange}
-          />
+          <FormInput label="MSSV" name="mssv" value={formData.mssv} disabled />
+          <FormInput label="CCCD" name="cccd" value={formData.cccd} onChange={handleInputChange} />
           <FormInput
             label="Ngày sinh"
             name="ngaySinh"
@@ -1755,9 +1702,9 @@ function PrintHoSoSinhVien({
             </tr>
             <tr>
               <th>Số CCCD/CMND</th>
-              <td>{sinhVien.soCccd || '—'}</td>
+              <td>{sinhVien.cccd || '—'}</td>
               <th>Số điện thoại</th>
-              <td>{sinhVien.soDienThoai || '—'}</td>
+              <td>{sinhVien.sdt || '—'}</td>
             </tr>
             <tr>
               <th>Email</th>
@@ -1765,7 +1712,7 @@ function PrintHoSoSinhVien({
             </tr>
             <tr>
               <th>Địa chỉ thường trú</th>
-              <td colSpan={3}>{sinhVien.diaChiThuongTru || '—'}</td>
+              <td colSpan={3}>{sinhVien.queQuan || '—'}</td>
             </tr>
           </tbody>
         </table>
@@ -1817,7 +1764,7 @@ function PrintHoSoSinhVien({
                 <tr key={loai.maLoai}>
                   <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                   <td>{loai.maLoai}</td>
-                  <td>{loai.tenLoai}</td>
+                  <td>{loai.tenGiayTo || loai.maLoai}</td>
                   <td style={{ textAlign: 'center' }}>{loai.batBuoc ? '✓' : ''}</td>
                   <td>{g ? g.trangThaiNop : <em style={{ color: '#999' }}>Chưa có</em>}</td>
                   <td>{g ? g.banGocBanSao : '—'}</td>
