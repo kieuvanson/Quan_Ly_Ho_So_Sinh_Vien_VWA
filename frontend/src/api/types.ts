@@ -52,7 +52,15 @@ export interface ApiError {
 }
 
 /**
- * SinhVien data from backend API.
+ * SinhVien data from backend API (GET /api/sinh-vien/{mssv}).
+ * 
+ * Backend trả về các trường đã được map đúng nghĩa:
+ * - nganh: tên ngành từ danh mục (VD: "Công nghệ thông tin")
+ * - lop: tên lớp từ danh mục (VD: "K14CTXHB")
+ * - khoa: số khóa (VD: "Khóa 14")
+ * - khoaNamHoc: năm học (VD: "2026–2029")
+ * - heDaoTao: hệ đào tạo (VD: "Chính quy")
+ * - trangThaiHocVu: trạng thái học vụ (enum name, VD: "ĐANG_HỌC")
  */
 export interface SinhVien {
   mssv: string
@@ -63,11 +71,17 @@ export interface SinhVien {
   sdt: string | null
   email: string | null
   queQuan: string | null
+  /** Tên ngành từ danh mục. VD: "Công nghệ thông tin" */
   nganh: string | null
+  /** Tên lớp từ danh mục. VD: "K14CTXHB" */
   lop: string | null
+  /** Số khóa. VD: "Khóa 14" */
   khoa: string | null
-  khoaNamNhapHoc: string | null
+  /** Năm học. VD: "2026–2029" */
+  khoaNamHoc: string | null
+  /** Hệ đào tạo. VD: "Chính quy" */
   heDaoTao: string | null
+  /** Trạng thái học vụ (enum name). VD: "ĐANG_HỌC", "BẢO_LƯU" */
   trangThaiHocVu: string
   ngayTao: string
   ngayCapNhat: string | null

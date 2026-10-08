@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX, Loader2, RotateCcw, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX, Loader2, RotateCcw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { sinhVienApi, triggerDownload } from '../api/sinhVien'
 import type { SinhVienSearchParams } from '../api/types'
 import { CustomSelect, SearchInput, Button, Toast, Modal } from '../components/ui'
@@ -39,30 +39,87 @@ const NGANH_OPTIONS = [
   'Ngôn ngữ Anh',
   'Luật',
   'Tài chính - Ngân hàng',
-  'Quan hệ quốc tế',
 ]
 
+// Khóa: Chỉ số khóa (12, 13, 14, 15)
 const KHOA_OPTIONS = [
   'Tất cả',
-  'K2022',
-  'K2021',
-  'K2020',
-  'K2019',
-  'K2018',
+  'Khóa 12',
+  'Khóa 13',
+  'Khóa 14',
+  'Khóa 15',
 ]
 
+// Lớp hành chính
 const LOP_OPTIONS = [
   'Tất cả',
-  'CNTT-2022.1',
-  'CNTT-2022.2',
-  'CNTT-2022.3',
-  'QTKD-2022.1',
-  'QTKD-2022.2',
-  'KTTN-2022.1',
-  'NNA-2022.1',
-  'L-2022.1',
-  'TCNH-2022.1',
-  'QHQT-2022.1',
+  'K14CTXHB',
+  'K13CTXHB',
+  'K14L',
+  'K15TCNH',
+  'K14QTKD',
+  'K15KTTT',
+  'K13ANH',
+]
+
+// Mock data cho giao diện (sẽ thay bằng API thực tế)
+// Cấu trúc phải match với interface SinhVien trong types.ts
+const MOCK_SINH_VIEN = [
+  {
+    mssv: '2673240001',
+    hoTen: 'Nguyễn Hoàng Anh',
+    cccd: '001308034189',
+    ngaySinh: '2008-07-22',
+    nganh: 'Công nghệ thông tin',
+    lop: 'K14CTXHB',
+    khoa: 'Khóa 14',
+    khoaNamHoc: '2026–2029',
+    trangThaiHocVu: 'Đang_học',
+  },
+  {
+    mssv: '2673240002',
+    hoTen: 'Trần Minh Tuấn',
+    cccd: '002308034190',
+    ngaySinh: '2007-03-15',
+    nganh: 'Quản trị kinh doanh',
+    lop: 'K13CTXHB',
+    khoa: 'Khóa 13',
+    khoaNamHoc: '2025–2028',
+    trangThaiHocVu: 'Đang_học',
+  },
+  {
+    mssv: '2673240003',
+    hoTen: 'Lê Thị Mai Lan',
+    cccd: '003308034191',
+    ngaySinh: '2008-11-08',
+    nganh: 'Kế toán',
+    lop: 'K14L',
+    khoa: 'Khóa 14',
+    khoaNamHoc: '2026–2029',
+    trangThaiHocVu: 'Đang_học',
+  },
+  {
+    mssv: '2673240004',
+    hoTen: 'Phạm Đức Minh',
+    cccd: '004308034192',
+    ngaySinh: '2006-05-20',
+    nganh: 'Tài chính - Ngân hàng',
+    lop: 'K15TCNH',
+    khoa: 'Khóa 12',
+    khoaNamHoc: '2024–2027',
+    trangThaiHocVu: 'Bảo_lưu',
+  },
+  {
+    mssv: '2673240005',
+    hoTen: 'Hoàng Văn Hùng',
+    cccd: '005308034193',
+    ngaySinh: '2008-09-12',
+    nganh: 'Công nghệ thông tin',
+    lop: 'K14QTKD',
+    khoa: 'Khóa 14',
+    khoaNamHoc: '2026–2029',
+    trangThaiHocVu: 'Đang_học',
+  },
 ]
 
 export function TrangDanhSachHoSo() {
@@ -104,31 +161,57 @@ export function TrangDanhSachHoSo() {
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Fetch data from API
+  // Fetch data from API (currently using mock data for UI development)
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     
     try {
-      const response = await sinhVienApi.getAll({
-        keyword: searchQuery || undefined,
-        nganh: nganhFilter || undefined,
-        khoa: khoaFilter || undefined,
-        lop: lopFilter || undefined,
-        // Convert UI label -> Backend enum constant
-        trangThaiHocVu: trangThaiFilter ? TRANG_THAI_TO_ENUM[trangThaiFilter as TrangThaiHocVuType] : undefined,
-        page: currentPage - 1, // Convert 1-based to 0-based
-        size: pageSize,
-      })
+      // TODO: Replace with actual API call when backend is ready
+      // Filter mock data based on current filters
+      let filteredData = [...MOCK_SINH_VIEN]
       
-      if (response.success && response.data) {
-        setSinhVienList(response.data.data || [])
-        setTotalElements(response.data.page?.totalElements || 0)
-        setTotalPages(response.data.page?.totalPages || 0)
-      } else {
-        setError(response.message || 'Không thể tải dữ liệu')
-        setSinhVienList([])
+      // Filter by search query (MSSV, Họ tên, CCCD)
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        filteredData = filteredData.filter(sv => 
+          sv.mssv.toLowerCase().includes(query) ||
+          sv.hoTen.toLowerCase().includes(query) ||
+          sv.cccd.toLowerCase().includes(query)
+        )
       }
+      
+      // Filter by ngành
+      if (nganhFilter) {
+        filteredData = filteredData.filter(sv => sv.nganh === nganhFilter)
+      }
+      
+      // Filter by khóa (e.g., "Khóa 14")
+      if (khoaFilter) {
+        filteredData = filteredData.filter(sv => sv.khoa === khoaFilter)
+      }
+      
+      // Filter by lớp
+      if (lopFilter) {
+        filteredData = filteredData.filter(sv => sv.lop === lopFilter)
+      }
+      
+      // Filter by trạng thái học vụ (convert label to enum)
+      if (trangThaiFilter) {
+        const enumValue = TRANG_THAI_TO_ENUM[trangThaiFilter as TrangThaiHocVuType]
+        filteredData = filteredData.filter(sv => sv.trangThaiHocVu === enumValue)
+      }
+      
+      // Pagination
+      const total = filteredData.length
+      const totalPagesCalc = Math.ceil(total / pageSize)
+      const startIndex = (currentPage - 1) * pageSize
+      const paginatedData = filteredData.slice(startIndex, startIndex + pageSize)
+      
+      setSinhVienList(paginatedData)
+      setTotalElements(total)
+      setTotalPages(totalPagesCalc)
+      
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || err.message || 'Đã xảy ra lỗi khi tải dữ liệu'
       setError(errorMessage)
@@ -423,6 +506,8 @@ export function TrangDanhSachHoSo() {
                   <th className="col-ngay-sinh">Ngày sinh</th>
                   <th className="col-nganh">Ngành</th>
                   <th className="col-khoa">Khóa</th>
+                  <th className="col-khoa-nam-hoc">Khóa năm học</th>
+                  <th className="col-lop">Lớp</th>
                   <th className="col-trang-thai">Trạng thái</th>
                   <th className="col-thao-tac">Thao tác</th>
                 </tr>
@@ -434,19 +519,21 @@ export function TrangDanhSachHoSo() {
                     const badgeInfo = TRANG_THAI_MAPPING[sv.trangThaiHocVu] || { label: sv.trangThaiHocVu, className: '' }
                     return (
                       <tr key={sv.mssv}>
-                        <td className="col-stt">{pageStartIndex + index + 1}</td>
-                        <td className="col-mssv">{sv.mssv}</td>
+                        <td className="col-stt col-nowrap">{pageStartIndex + index + 1}</td>
+                        <td className="col-mssv col-nowrap">{sv.mssv}</td>
                         <td>{sv.hoTen}</td>
-                        <td className="col-cccd">{sv.cccd || '-'}</td>
-                        <td className="col-ngay-sinh">{sv.ngaySinh ? new Date(sv.ngaySinh).toLocaleDateString('vi-VN') : '-'}</td>
+                        <td className="col-cccd col-nowrap">{sv.cccd || '-'}</td>
+                        <td className="col-ngay-sinh col-nowrap">{sv.ngaySinh ? new Date(sv.ngaySinh).toLocaleDateString('vi-VN') : '-'}</td>
                         <td className="col-nganh">{sv.nganh || '-'}</td>
-                        <td className="col-khoa">{sv.khoa || '-'}</td>
-                        <td className="col-trang-thai">
+                        <td className="col-khoa col-nowrap">{sv.khoa || '-'}</td>
+                        <td className="col-khoa-nam-hoc col-nowrap">{sv.khoaNamHoc || '-'}</td>
+                        <td className="col-lop col-nowrap">{sv.lop || '-'}</td>
+                        <td className="col-trang-thai col-nowrap">
                           <span className={`trang-danh-sach__badge ${badgeInfo.className}`}>
                             {badgeInfo.label}
                           </span>
                         </td>
-                        <td className="col-thao-tac">
+                        <td className="col-thao-tac col-center">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -462,7 +549,7 @@ export function TrangDanhSachHoSo() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={11}>
                       <div className="trang-danh-sach__empty">
                         <FileX className="trang-danh-sach__empty-icon" size={48} />
                         <p className="trang-danh-sach__empty-text">Không tìm thấy sinh viên nào</p>

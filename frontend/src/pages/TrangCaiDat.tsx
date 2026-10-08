@@ -11,8 +11,13 @@ interface Nganh {
 
 interface Khoa {
   id: number
-  maKhoa: string
-  tenKhoa: string
+  soKhoa: number
+  trangThai: string
+}
+
+interface KhoaNamHoc {
+  id: number
+  khoaId: number
   namBatDau: number
   namKetThuc: number
   trangThai: string
@@ -22,8 +27,8 @@ interface Lop {
   id: number
   maLop: string
   tenLop: string
-  nganh: string
-  khoa: string
+  nganhId: number
+  khoaId: number
   trangThai: string
 }
 
@@ -58,6 +63,7 @@ interface TrangThaiHoSo {
   id: number
   tenTrangThai: string
   moTa: string
+  mauHienThi: string
   trangThai: string
 }
 
@@ -96,32 +102,40 @@ const MOCK_NGANH: Nganh[] = [
 ]
 
 const MOCK_KHOA: Khoa[] = [
-  { id: 1, maKhoa: 'K14', tenKhoa: 'Khóa 14', namBatDau: 2025, namKetThuc: 2029, trangThai: 'Đang sử dụng' },
-  { id: 2, maKhoa: 'K15', tenKhoa: 'Khóa 15', namBatDau: 2026, namKetThuc: 2030, trangThai: 'Đang sử dụng' },
-  { id: 3, maKhoa: 'K16', tenKhoa: 'Khóa 16', namBatDau: 2027, namKetThuc: 2031, trangThai: 'Đang sử dụng' },
-  { id: 4, maKhoa: 'K13', tenKhoa: 'Khóa 13', namBatDau: 2024, namKetThuc: 2028, trangThai: 'Ngừng sử dụng' },
+  { id: 1, soKhoa: 12, trangThai: 'Đang sử dụng' },
+  { id: 2, soKhoa: 13, trangThai: 'Đang sử dụng' },
+  { id: 3, soKhoa: 14, trangThai: 'Đang sử dụng' },
+  { id: 4, soKhoa: 15, trangThai: 'Đang sử dụng' },
+  { id: 5, soKhoa: 16, trangThai: 'Ngừng sử dụng' },
+]
+
+const MOCK_KHOA_NAM_HOC: KhoaNamHoc[] = [
+  { id: 1, khoaId: 1, namBatDau: 2024, namKetThuc: 2027, trangThai: 'Đang sử dụng' },
+  { id: 2, khoaId: 2, namBatDau: 2025, namKetThuc: 2028, trangThai: 'Đang sử dụng' },
+  { id: 3, khoaId: 3, namBatDau: 2026, namKetThuc: 2029, trangThai: 'Đang sử dụng' },
+  { id: 4, khoaId: 4, namBatDau: 2027, namKetThuc: 2030, trangThai: 'Đang sử dụng' },
+  { id: 5, khoaId: 5, namBatDau: 2028, namKetThuc: 2031, trangThai: 'Ngừng sử dụng' },
 ]
 
 const MOCK_LOP: Lop[] = [
-  { id: 1, maLop: 'CNTT14A', tenLop: 'CNTT14A', nganh: 'Công nghệ thông tin', khoa: 'K14', trangThai: 'Đang sử dụng' },
-  { id: 2, maLop: 'L14A', tenLop: 'Luật14A', nganh: 'Luật', khoa: 'K14', trangThai: 'Đang sử dụng' },
-  { id: 3, maLop: 'QT14A', tenLop: 'Quản trị Kinh doanh 14A', nganh: 'Quản trị kinh doanh', khoa: 'K14', trangThai: 'Đang sử dụng' },
-  { id: 4, maLop: 'TCNH15A', tenLop: 'Tài chính Ngân hàng 15A', nganh: 'Tài chính - Ngân hàng', khoa: 'K15', trangThai: 'Đang sử dụng' },
-  { id: 5, maLop: 'K15A', tenLop: 'Kế toán 15A', nganh: 'Kế toán', khoa: 'K15', trangThai: 'Đang sử dụng' },
-  { id: 6, maLop: 'ANH14A', tenLop: 'Ngôn ngữ Anh 14A', nganh: 'Ngôn ngữ Anh', khoa: 'K14', trangThai: 'Ngừng sử dụng' },
+  { id: 1, maLop: 'K14CTXHB', tenLop: 'CNTT 14A', nganhId: 1, khoaId: 3, trangThai: 'Đang sử dụng' },
+  { id: 2, maLop: 'K13CTXHB', tenLop: 'CNTT 13A', nganhId: 1, khoaId: 2, trangThai: 'Đang sử dụng' },
+  { id: 3, maLop: 'K14L', tenLop: 'Luật 14A', nganhId: 2, khoaId: 3, trangThai: 'Đang sử dụng' },
+  { id: 4, maLop: 'K15TCNH', tenLop: 'Tài chính Ngân hàng 15A', nganhId: 3, khoaId: 4, trangThai: 'Đang sử dụng' },
+  { id: 5, maLop: 'K15K', tenLop: 'Kế toán 15A', nganhId: 4, khoaId: 4, trangThai: 'Đang sử dụng' },
+  { id: 6, maLop: 'K12QTKD', tenLop: 'Quản trị KD 12A', nganhId: 5, khoaId: 1, trangThai: 'Ngừng sử dụng' },
 ]
 
 const MOCK_LOAI_GIAY_TO: LoaiGiayTo[] = [
-  { id: 1, maLoai: 'CCCD', tenGiayTo: 'Căn cước công dân', moTa: 'CMND/CCCD', batBuoc: true, thuTu: 1, trangThai: 'Đang sử dụng' },
-  { id: 2, maLoai: 'BANG_THPT', tenGiayTo: 'Bằng tốt nghiệp THPT', moTa: 'Bằng tốt nghiệp trung học phổ thông', batBuoc: true, thuTu: 2, trangThai: 'Đang sử dụng' },
+  { id: 1, maLoai: 'KET_QUA_THI', tenGiayTo: 'Kết quả thi', moTa: 'Kết quả thi tốt nghiệp THPT', batBuoc: true, thuTu: 1, trangThai: 'Đang sử dụng' },
+  { id: 2, maLoai: 'BANG_THPT', tenGiayTo: 'Bằng THPT', moTa: 'Bằng tốt nghiệp trung học phổ thông', batBuoc: true, thuTu: 2, trangThai: 'Đang sử dụng' },
   { id: 3, maLoai: 'HOC_BA', tenGiayTo: 'Học bạ', moTa: 'Học bạ trung học phổ thông', batBuoc: true, thuTu: 3, trangThai: 'Đang sử dụng' },
-  { id: 4, maLoai: 'HO_KHAU', tenGiayTo: 'Sổ hộ khẩu', moTa: 'Sổ hộ khẩu gia đình', batBuoc: true, thuTu: 4, trangThai: 'Đang sử dụng' },
-  { id: 5, maLoai: 'KHAM_SUC_KHOE', tenGiayTo: 'Giấy khám sức khỏe', moTa: 'Giấy xác nhận sức khỏe', batBuoc: true, thuTu: 5, trangThai: 'Đang sử dụng' },
-  { id: 6, maLoai: 'ANH_THE', tenGiayTo: 'Ảnh thẻ', moTa: 'Ảnh thẻ 3x4', batBuoc: true, thuTu: 6, trangThai: 'Đang sử dụng' },
-  { id: 7, maLoai: 'PHIEU_SV', tenGiayTo: 'Phiếu điểm sinh viên', moTa: 'Phiếu điểm từ trường cũ', batBuoc: true, thuTu: 7, trangThai: 'Đang sử dụng' },
-  { id: 8, maLoai: 'XAC_NHAN_SV', tenGiayTo: 'Giấy xác nhận sinh viên', moTa: 'Giấy xác nhận đang là sinh viên', batBuoc: true, thuTu: 8, trangThai: 'Đang sử dụng' },
-  { id: 9, maLoai: 'CHUNG_CHI', tenGiayTo: 'Chứng chỉ khác', moTa: 'Các chứng chỉ khác (nếu có)', batBuoc: false, thuTu: 9, trangThai: 'Đang sử dụng' },
-  { id: 10, maLoai: 'GIANY_KY', tenGiayTo: 'Giấy ủy quyền', moTa: 'Giấy ủy quyền (nếu có)', batBuoc: false, thuTu: 10, trangThai: 'Ngừng sử dụng' },
+  { id: 4, maLoai: 'CCCD', tenGiayTo: 'CCCD', moTa: 'Căn cước công dân', batBuoc: true, thuTu: 4, trangThai: 'Đang sử dụng' },
+  { id: 5, maLoai: 'KHAI_SINH', tenGiayTo: 'Giấy khai sinh', moTa: 'Giấy khai sinh (bản sao)', batBuoc: true, thuTu: 5, trangThai: 'Đang sử dụng' },
+  { id: 6, maLoai: 'CHUNG_CHI_NN', tenGiayTo: 'Chứng chỉ ngoại ngữ', moTa: 'Chứng chỉ ngoại ngữ (IELTS, TOEIC...)', batBuoc: false, thuTu: 6, trangThai: 'Đang sử dụng' },
+  { id: 7, maLoai: 'HSG', tenGiayTo: 'Giấy chứng nhận HSG', moTa: 'Giấy chứng nhận học sinh giỏi các cấp', batBuoc: false, thuTu: 7, trangThai: 'Đang sử dụng' },
+  { id: 8, maLoai: 'SPT', tenGiayTo: 'SPT', moTa: 'Sổ phục vụ tuyển sinh', batBuoc: false, thuTu: 8, trangThai: 'Đang sử dụng' },
+  { id: 9, maLoai: 'HAS', tenGiayTo: 'HAS', moTa: 'Hồ sơ ứng tuyển', batBuoc: false, thuTu: 9, trangThai: 'Đang sử dụng' },
 ]
 
 const MOCK_NGUOI_DUNG: NguoiDung[] = [
@@ -137,19 +151,20 @@ const MOCK_TRANG_THAI_HOC_VU: TrangThaiHocVu[] = [
   { id: 2, tenTrangThai: 'Bảo lưu', moTa: 'Sinh viên tạm ngừng học tập có thời hạn', mauHienThi: 'warning', trangThai: 'Đang sử dụng' },
   { id: 3, tenTrangThai: 'Đình chỉ', moTa: 'Sinh viên bị tạm dừng học tập do vi phạm', mauHienThi: 'danger', trangThai: 'Đang sử dụng' },
   { id: 4, tenTrangThai: 'Tốt nghiệp', moTa: 'Sinh viên đã hoàn thành chương trình học', mauHienThi: 'success', trangThai: 'Đang sử dụng' },
-  { id: 5, tenTrangThai: 'Đã rút hồ sơ', moTa: 'Sinh viên đã rút hồ sơ khỏi trường', mauHienThi: 'secondary', trangThai: 'Đang sử dụng' },
+  { id: 5, tenTrangThai: 'Thôi học', moTa: 'Sinh viên đã thôi học', mauHienThi: 'secondary', trangThai: 'Đang sử dụng' },
 ]
 
 const MOCK_TRANG_THAI_HO_SO: TrangThaiHoSo[] = [
-  { id: 1, tenTrangThai: 'Đầy đủ', moTa: 'Hồ sơ có đầy đủ các giấy tờ theo quy định', trangThai: 'Đang sử dụng' },
-  { id: 2, tenTrangThai: 'Đang thiếu', moTa: 'Hồ sơ đang thiếu một số giấy tờ', trangThai: 'Đang sử dụng' },
+  { id: 1, tenTrangThai: 'Đang quản lý', moTa: 'Hồ sơ đang được quản lý tại trường', mauHienThi: 'primary', trangThai: 'Đang sử dụng' },
+  { id: 2, tenTrangThai: 'Đang mượn', moTa: 'Hồ sơ đang được mượn tạm thời', mauHienThi: 'warning', trangThai: 'Đang sử dụng' },
+  { id: 3, tenTrangThai: 'Đã rút', moTa: 'Hồ sơ đã được rút vĩnh viễn', mauHienThi: 'secondary', trangThai: 'Đang sử dụng' },
 ]
 
 const MOCK_TRANG_THAI_GIAY_TO: TrangThaiGiayTo[] = [
-  { id: 1, tenTrangThai: 'Chưa nộp', moTa: 'Giấy tờ chưa được nộp', mauHienThi: 'default', trangThai: 'Đang sử dụng' },
-  { id: 2, tenTrangThai: 'Đã nộp', moTa: 'Giấy tờ đã được nộp và xác nhận', mauHienThi: 'success', trangThai: 'Đang sử dụng' },
-  { id: 3, tenTrangThai: 'Thiếu', moTa: 'Giấy tờ chưa đầy đủ hoặc chưa hợp lệ', mauHienThi: 'warning', trangThai: 'Đang sử dụng' },
-  { id: 4, tenTrangThai: 'Không hợp lệ', moTa: 'Giấy tờ không đủ điều kiện hoặc hết hạn', mauHienThi: 'danger', trangThai: 'Đang sử dụng' },
+  { id: 1, tenTrangThai: 'Đã nộp', moTa: 'Giấy tờ đã được nộp và xác nhận', mauHienThi: 'success', trangThai: 'Đang sử dụng' },
+  { id: 2, tenTrangThai: 'Thiếu', moTa: 'Giấy tờ chưa đầy đủ hoặc chưa hợp lệ', mauHienThi: 'warning', trangThai: 'Đang sử dụng' },
+  { id: 3, tenTrangThai: 'Bản gốc', moTa: 'Bản gốc giấy tờ', mauHienThi: 'primary', trangThai: 'Đang sử dụng' },
+  { id: 4, tenTrangThai: 'Bản sao', moTa: 'Bản sao giấy tờ có công chứng', mauHienThi: 'secondary', trangThai: 'Đang sử dụng' },
 ]
 
 const MOCK_LY_DO_RUT_HO_SO: LyDoRutHoSo[] = [
@@ -310,7 +325,8 @@ const MENU_ITEMS: MenuItem[] = [
   { id: 'danh-muc-dao-tao', label: 'Danh mục đào tạo', icon: Icons.book },
   { id: 'nganh', label: 'Ngành', icon: Icons.book, parentId: 'danh-muc-dao-tao' },
   { id: 'khoa', label: 'Khóa', icon: Icons.book, parentId: 'danh-muc-dao-tao' },
-  { id: 'lop', label: 'Lớp', icon: Icons.book, parentId: 'danh-muc-dao-tao' },
+  { id: 'khoa-nam-hoc', label: 'Khóa năm học', icon: Icons.book, parentId: 'danh-muc-dao-tao' },
+  { id: 'lop', label: 'Lớp hành chính', icon: Icons.book, parentId: 'danh-muc-dao-tao' },
   { id: 'danh-muc-ho-so', label: 'Danh mục hồ sơ', icon: Icons.file },
   { id: 'loai-giay-to', label: 'Loại giấy tờ', icon: Icons.file, parentId: 'danh-muc-ho-so' },
   { id: 'trang-thai', label: 'Trạng thái', icon: Icons.tag },
@@ -440,16 +456,63 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   )
 }
 
-// Toolbar Component
+// Toolbar Component with Import/Export
 function Toolbar({ 
   searchPlaceholder,
   filters,
-  actionButton
+  actionButton,
+  onImport,
+  onExport,
+  showImportExport = true,
 }: { 
   searchPlaceholder?: string
   filters?: React.ReactNode
   actionButton?: React.ReactNode
+  onImport?: () => void
+  onExport?: () => void
+  showImportExport?: boolean
 }) {
+  const fileInputRef = { current: null as HTMLInputElement | null }
+
+  const handleImportClick = () => {
+    if (onImport) {
+      onImport()
+    } else {
+      // TODO: Connect import API when backend is ready
+      // Trigger file input click
+      const fileInput = document.createElement('input')
+      fileInput.type = 'file'
+      fileInput.accept = '.xlsx,.xls,.csv'
+      fileInput.onchange = (e: Event) => {
+        const target = e.target as HTMLInputElement
+        const file = target.files?.[0]
+        if (!file) {
+          alert('Vui lòng chọn một file để import')
+          return
+        }
+        const validExtensions = ['.xlsx', '.xls', '.csv']
+        const fileName = file.name.toLowerCase()
+        const isValid = validExtensions.some(ext => fileName.endsWith(ext))
+        if (!isValid) {
+          alert('Chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV (.csv)')
+          return
+        }
+        // TODO: Connect import API when backend is ready
+        console.log('File selected for import:', file.name)
+      }
+      fileInput.click()
+    }
+  }
+
+  const handleExportClick = () => {
+    if (onExport) {
+      onExport()
+    } else {
+      // TODO: Connect export API when backend is ready
+      console.log('Export clicked - API not connected yet')
+    }
+  }
+
   return (
     <div className="cai-dat-toolbar">
       <div className="cai-dat-toolbar__left">
@@ -461,11 +524,38 @@ function Toolbar({
         )}
         {filters}
       </div>
-      {actionButton && (
-        <div className="cai-dat-toolbar__right">
-          {actionButton}
-        </div>
-      )}
+      <div className="cai-dat-toolbar__right">
+        {showImportExport && (
+          <>
+            <button
+              className="cai-dat-btn cai-dat-btn--outline"
+              onClick={handleImportClick}
+              title="Import từ file Excel hoặc CSV"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17,8 12,3 7,8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              Import
+            </button>
+
+            <button
+              className="cai-dat-btn cai-dat-btn--outline"
+              onClick={handleExportClick}
+              title="Export dữ liệu ra file"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7,10 12,15 17,10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Export
+            </button>
+          </>
+        )}
+        {actionButton}
+      </div>
     </div>
   )
 }
@@ -505,7 +595,6 @@ export function TrangCaiDat() {
   const [expandedMenu, setExpandedMenu] = useState<string[]>(['danh-muc-dao-tao', 'danh-muc-ho-so', 'trang-thai'])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add')
-  const [activeTrangThaiTab, setActiveTrangThaiTab] = useState<string>('trang-thai-hoc-vu')
 
   // Config states
   const [muonTraConfig, setMuonTraConfig] = useState({
@@ -582,14 +671,18 @@ export function TrangCaiDat() {
         return renderNganhContent()
       case 'khoa':
         return renderKhoaContent()
+      case 'khoa-nam-hoc':
+        return renderKhoaNamHocContent()
       case 'lop':
         return renderLopContent()
       case 'loai-giay-to':
         return renderLoaiGiayToContent()
       case 'trang-thai-hoc-vu':
+        return renderTrangThaiHocVuContent()
       case 'trang-thai-ho-so':
+        return renderTrangThaiHoSoContent()
       case 'trang-thai-giay-to':
-        return renderTrangThaiContent()
+        return renderTrangThaiGiayToContent()
       case 'nguoi-dung':
         return renderNguoiDungContent()
       case 'cau-hinh-muon-tra':
@@ -608,10 +701,10 @@ export function TrangCaiDat() {
   // Ngành content
   const renderNganhContent = () => {
     const columns: TableColumn[] = [
-      { key: 'stt', label: 'STT', width: '60px' },
-      { key: 'maNganh', label: 'Mã ngành', width: '120px' },
-      { key: 'tenNganh', label: 'Tên ngành' },
-      { key: 'trangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'maNganh', label: 'Mã ngành', width: '110px' },
+      { key: 'tenNganh', label: 'Tên ngành', width: '' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
       { key: 'thaoTac', label: 'Thao tác', width: '100px' },
     ]
 
@@ -643,11 +736,11 @@ export function TrangCaiDat() {
           data={MOCK_NGANH}
           renderRow={(item, index) => (
             <tr key={item.id}>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-              <td className="cai-dat-table__cell">{item.maNganh}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.maNganh}</td>
               <td className="cai-dat-table__cell">{item.tenNganh}</td>
-              <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
                 <button className="cai-dat-btn-action" onClick={openEditModal}>
                   {Icons.edit} Sửa
                 </button>
@@ -662,12 +755,9 @@ export function TrangCaiDat() {
   // Khóa content
   const renderKhoaContent = () => {
     const columns: TableColumn[] = [
-      { key: 'stt', label: 'STT', width: '60px' },
-      { key: 'maKhoa', label: 'Mã khóa', width: '100px' },
-      { key: 'tenKhoa', label: 'Tên khóa', width: '150px' },
-      { key: 'namBatDau', label: 'Năm bắt đầu', width: '130px' },
-      { key: 'namKetThuc', label: 'Năm kết thúc', width: '130px' },
-      { key: 'trangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'soKhoa', label: 'Khóa', width: '' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
       { key: 'thaoTac', label: 'Thao tác', width: '100px' },
     ]
 
@@ -699,13 +789,10 @@ export function TrangCaiDat() {
           data={MOCK_KHOA}
           renderRow={(item, index) => (
             <tr key={item.id}>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-              <td className="cai-dat-table__cell">{item.maKhoa}</td>
-              <td className="cai-dat-table__cell">{item.tenKhoa}</td>
-              <td className="cai-dat-table__cell">{item.namBatDau}</td>
-              <td className="cai-dat-table__cell">{item.namKetThuc}</td>
-              <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">Khóa {item.soKhoa}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
                 <button className="cai-dat-btn-action" onClick={openEditModal}>
                   {Icons.edit} Sửa
                 </button>
@@ -717,22 +804,108 @@ export function TrangCaiDat() {
     )
   }
 
-  // Lớp content
-  const renderLopContent = () => {
+// Khóa năm học content
+  const renderKhoaNamHocContent = () => {
     const columns: TableColumn[] = [
-      { key: 'stt', label: 'STT', width: '60px' },
-      { key: 'maLop', label: 'Mã lớp', width: '120px' },
-      { key: 'tenLop', label: 'Tên lớp' },
-      { key: 'nganh', label: 'Ngành', width: '180px' },
-      { key: 'khoa', label: 'Khóa', width: '100px' },
-      { key: 'trangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'khoa', label: 'Khóa', width: '80px' },
+      { key: 'namBatDau', label: 'Năm bắt đầu', width: '120px' },
+      { key: 'namKetThuc', label: 'Năm kết thúc', width: '120px' },
+      { key: 'khoaNamHoc', label: 'Khóa năm học', width: '' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
       { key: 'thaoTac', label: 'Thao tác', width: '100px' },
     ]
 
     return (
       <div className="cai-dat-content">
         <SectionHeader 
-          title="QUẢN LÝ LỚP" 
+          title="QUẢN LÝ KHÓA NĂM HỌC" 
+          subtitle="Quản lý khoảng thời gian đào tạo theo từng khóa"
+        />
+        
+        <Toolbar
+          searchPlaceholder="Tìm khóa năm học..."
+          filters={
+            <select className="cai-dat-toolbar__select">
+              <option value="">Tất cả trạng thái</option>
+              <option value="dang-su-dung">Đang sử dụng</option>
+              <option value="ngung-su-dung">Ngừng sử dụng</option>
+            </select>
+          }
+          actionButton={
+            <button className="cai-dat-btn cai-dat-btn--primary" onClick={openAddModal}>
+              {Icons.plus} Thêm khóa năm học
+            </button>
+          }
+        />
+
+        <Table
+          columns={columns}
+          data={MOCK_KHOA_NAM_HOC}
+          renderRow={(item, index) => {
+            const khoa = MOCK_KHOA.find(k => k.id === item.khoaId)
+            return (
+              <tr key={item.id}>
+                <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">Khóa {khoa?.soKhoa || '-'}</td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.namBatDau}</td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.namKetThuc}</td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.namBatDau} - {item.namKetThuc}</td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+                <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
+                  <button className="cai-dat-btn-action" onClick={openEditModal}>
+                    {Icons.edit} Sửa
+                  </button>
+                </td>
+              </tr>
+            )
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Helper functions to lookup names from IDs
+const getNganhName = (nganhId: number): string => {
+  const nganh = MOCK_NGANH.find(n => n.id === nganhId)
+  return nganh?.tenNganh || '-'
+}
+
+const getKhoaName = (khoaId: number): string => {
+  const khoa = MOCK_KHOA.find(k => k.id === khoaId)
+  return khoa ? `Khóa ${khoa.soKhoa}` : '-'
+}
+
+const getKhoaSo = (khoaId: number): number | null => {
+  const khoa = MOCK_KHOA.find(k => k.id === khoaId)
+  return khoa?.soKhoa || null
+}
+
+const getKhoaNamHoc = (khoaId: number): { namBatDau: number; namKetThuc: number } | null => {
+  const khoaNamHoc = MOCK_KHOA_NAM_HOC.find(knh => knh.khoaId === khoaId)
+  if (!khoaNamHoc) return null
+  return {
+    namBatDau: khoaNamHoc.namBatDau,
+    namKetThuc: khoaNamHoc.namKetThuc,
+  }
+}
+
+// Lớp hành chính content
+  const renderLopContent = () => {
+    const columns: TableColumn[] = [
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'maLop', label: 'Mã lớp', width: '110px' },
+      { key: 'tenLop', label: 'Tên lớp', width: '' },
+      { key: 'nganh', label: 'Ngành', width: '' },
+      { key: 'khoa', label: 'Khóa', width: '90px' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
+      { key: 'thaoTac', label: 'Thao tác', width: '100px' },
+    ]
+
+    return (
+      <div className="cai-dat-content">
+        <SectionHeader 
+          title="QUẢN LÝ LỚP HÀNH CHÍNH" 
           subtitle="Quản lý các lớp hành chính của sinh viên"
         />
         
@@ -743,13 +916,13 @@ export function TrangCaiDat() {
               <select className="cai-dat-toolbar__select">
                 <option value="">Tất cả ngành</option>
                 {MOCK_NGANH.filter(n => n.trangThai === 'Đang sử dụng').map(n => (
-                  <option key={n.id} value={n.maNganh}>{n.tenNganh}</option>
+                  <option key={n.id} value={n.id}>{n.tenNganh}</option>
                 ))}
               </select>
               <select className="cai-dat-toolbar__select">
                 <option value="">Tất cả khóa</option>
                 {MOCK_KHOA.filter(k => k.trangThai === 'Đang sử dụng').map(k => (
-                  <option key={k.id} value={k.maKhoa}>{k.tenKhoa}</option>
+                  <option key={k.id} value={k.id}>Khóa {k.soKhoa}</option>
                 ))}
               </select>
               <select className="cai-dat-toolbar__select">
@@ -771,13 +944,13 @@ export function TrangCaiDat() {
           data={MOCK_LOP}
           renderRow={(item, index) => (
             <tr key={item.id}>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-              <td className="cai-dat-table__cell">{item.maLop}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.maLop}</td>
               <td className="cai-dat-table__cell">{item.tenLop}</td>
-              <td className="cai-dat-table__cell">{item.nganh}</td>
-              <td className="cai-dat-table__cell">{item.khoa}</td>
-              <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">
+              <td className="cai-dat-table__cell">{getNganhName(item.nganhId)}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{getKhoaName(item.khoaId)}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
                 <button className="cai-dat-btn-action" onClick={openEditModal}>
                   {Icons.edit} Sửa
                 </button>
@@ -792,12 +965,12 @@ export function TrangCaiDat() {
   // Loại giấy tờ content
   const renderLoaiGiayToContent = () => {
     const columns: TableColumn[] = [
-      { key: 'stt', label: 'STT', width: '60px' },
-      { key: 'maLoai', label: 'Mã loại', width: '120px' },
-      { key: 'tenGiayTo', label: 'Tên giấy tờ' },
-      { key: 'batBuoc', label: 'Bắt buộc', width: '110px' },
-      { key: 'thuTu', label: 'Thứ tự', width: '90px' },
-      { key: 'trangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'maLoai', label: 'Mã giấy tờ', width: '130px' },
+      { key: 'tenGiayTo', label: 'Tên giấy tờ', width: '' },
+      { key: 'batBuoc', label: 'Bắt buộc', width: '100px' },
+      { key: 'thuTu', label: 'Thứ tự', width: '70px' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
       { key: 'thaoTac', label: 'Thao tác', width: '100px' },
     ]
 
@@ -829,8 +1002,8 @@ export function TrangCaiDat() {
           data={MOCK_LOAI_GIAY_TO}
           renderRow={(item, index) => (
             <tr key={item.id}>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-              <td className="cai-dat-table__cell">{item.maLoai}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.maLoai}</td>
               <td className="cai-dat-table__cell">{item.tenGiayTo}</td>
               <td className="cai-dat-table__cell cai-dat-table__cell--center">
                 {item.batBuoc ? (
@@ -839,9 +1012,9 @@ export function TrangCaiDat() {
                   <span className="cai-dat-badge cai-dat-badge--khong-bat-buoc">Không</span>
                 )}
               </td>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">{item.thuTu}</td>
-              <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-              <td className="cai-dat-table__cell cai-dat-table__cell--center">
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{item.thuTu}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
                 <button className="cai-dat-btn-action" onClick={openEditModal}>
                   {Icons.edit} Sửa
                 </button>
@@ -853,125 +1026,170 @@ export function TrangCaiDat() {
     )
   }
 
-  // Trạng thái content
-  const renderTrangThaiContent = () => {
-    const tabs = [
-      { id: 'trang-thai-hoc-vu', label: 'Trạng thái học vụ' },
-      { id: 'trang-thai-ho-so', label: 'Trạng thái hồ sơ' },
-      { id: 'trang-thai-giay-to', label: 'Trạng thái giấy tờ' },
+  // Trạng thái học vụ content
+  const renderTrangThaiHocVuContent = () => {
+    const columns: TableColumn[] = [
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'tenTrangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'moTa', label: 'Mô tả', width: '' },
+      { key: 'trangThai', label: 'Trạng thái', width: '' },
+      { key: 'thaoTac', label: 'Thao tác', width: '100px' },
     ]
-
-    const renderTable = () => {
-      switch (activeTrangThaiTab) {
-        case 'trang-thai-hoc-vu': {
-          const columns: TableColumn[] = [
-            { key: 'stt', label: 'STT', width: '60px' },
-            { key: 'tenTrangThai', label: 'Trạng thái' },
-            { key: 'moTa', label: 'Mô tả' },
-            { key: 'trangThai', label: 'Trạng thái', width: '150px' },
-            { key: 'thaoTac', label: 'Thao tác', width: '100px' },
-          ]
-          return (
-            <Table
-              columns={columns}
-              data={MOCK_TRANG_THAI_HOC_VU}
-              renderRow={(item, index) => (
-                <tr key={item.id}>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-                  <td className="cai-dat-table__cell">
-                    <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
-                  </td>
-                  <td className="cai-dat-table__cell">{item.moTa}</td>
-                  <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">
-                    <button className="cai-dat-btn-action" onClick={openEditModal}>
-                      {Icons.edit} Sửa
-                    </button>
-                  </td>
-                </tr>
-              )}
-            />
-          )
-        }
-        case 'trang-thai-ho-so': {
-          const columns: TableColumn[] = [
-            { key: 'stt', label: 'STT', width: '60px' },
-            { key: 'tenTrangThai', label: 'Trạng thái' },
-            { key: 'moTa', label: 'Mô tả' },
-            { key: 'trangThai', label: 'Trạng thái', width: '150px' },
-            { key: 'thaoTac', label: 'Thao tác', width: '100px' },
-          ]
-          return (
-            <Table
-              columns={columns}
-              data={MOCK_TRANG_THAI_HO_SO}
-              renderRow={(item, index) => (
-                <tr key={item.id}>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-                  <td className="cai-dat-table__cell">{item.tenTrangThai}</td>
-                  <td className="cai-dat-table__cell">{item.moTa}</td>
-                  <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">
-                    <button className="cai-dat-btn-action" onClick={openEditModal}>
-                      {Icons.edit} Sửa
-                    </button>
-                  </td>
-                </tr>
-              )}
-            />
-          )
-        }
-        case 'trang-thai-giay-to': {
-          const columns: TableColumn[] = [
-            { key: 'stt', label: 'STT', width: '60px' },
-            { key: 'tenTrangThai', label: 'Trạng thái' },
-            { key: 'moTa', label: 'Mô tả' },
-            { key: 'mauHienThi', label: 'Màu hiển thị', width: '150px' },
-            { key: 'trangThai', label: 'Trạng thái', width: '150px' },
-            { key: 'thaoTac', label: 'Thao tác', width: '100px' },
-          ]
-          return (
-            <Table
-              columns={columns}
-              data={MOCK_TRANG_THAI_GIAY_TO}
-              renderRow={(item, index) => (
-                <tr key={item.id}>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">{String(index + 1).padStart(2, '0')}</td>
-                  <td className="cai-dat-table__cell">
-                    <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
-                  </td>
-                  <td className="cai-dat-table__cell">{item.moTa}</td>
-                  <td className="cai-dat-table__cell">
-                    <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
-                  </td>
-                  <td className="cai-dat-table__cell"><StatusBadge status={item.trangThai} /></td>
-                  <td className="cai-dat-table__cell cai-dat-table__cell--center">
-                    <button className="cai-dat-btn-action" onClick={openEditModal}>
-                      {Icons.edit} Sửa
-                    </button>
-                  </td>
-                </tr>
-              )}
-            />
-          )
-        }
-        default:
-          return null
-      }
-    }
 
     return (
       <div className="cai-dat-content">
         <SectionHeader 
-          title="QUẢN LÝ TRẠNG THÁI" 
-          subtitle="Quản lý các trạng thái được sử dụng trong hệ thống"
+          title="QUẢN LÝ TRẠNG THÁI HỌC VỤ" 
+          subtitle="Quản lý các trạng thái học vụ được sử dụng trong hệ thống"
         />
         
-        <Tab tabs={tabs} activeTab={activeTrangThaiTab} onChange={setActiveTrangThaiTab} />
+        <Toolbar
+          searchPlaceholder="Tìm trạng thái..."
+          filters={
+            <select className="cai-dat-toolbar__select">
+              <option value="">Tất cả trạng thái</option>
+              <option value="dang-su-dung">Đang sử dụng</option>
+              <option value="ngung-su-dung">Ngừng sử dụng</option>
+            </select>
+          }
+          actionButton={
+            <button className="cai-dat-btn cai-dat-btn--primary" onClick={openAddModal}>
+              {Icons.plus} Thêm trạng thái
+            </button>
+          }
+        />
+
+        <Table
+          columns={columns}
+          data={MOCK_TRANG_THAI_HOC_VU}
+          renderRow={(item, index) => (
+            <tr key={item.id}>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">
+                <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
+              </td>
+              <td className="cai-dat-table__cell">{item.moTa}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
+                <button className="cai-dat-btn-action" onClick={openEditModal}>
+                  {Icons.edit} Sửa
+                </button>
+              </td>
+            </tr>
+          )}
+        />
+      </div>
+    )
+  }
+
+  // Trạng thái hồ sơ content
+  const renderTrangThaiHoSoContent = () => {
+    const columns: TableColumn[] = [
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'tenTrangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'moTa', label: 'Mô tả', width: '' },
+      { key: 'trangThai', label: 'Trạng thái sử dụng', width: '' },
+      { key: 'thaoTac', label: 'Thao tác', width: '100px' },
+    ]
+
+    return (
+      <div className="cai-dat-content">
+        <SectionHeader 
+          title="QUẢN LÝ TRẠNG THÁI HỒ SƠ" 
+          subtitle="Quản lý các trạng thái hồ sơ được sử dụng trong hệ thống"
+        />
         
-        <div className="cai-dat-content__section">
-          {renderTable()}
-        </div>
+        <Toolbar
+          searchPlaceholder="Tìm trạng thái..."
+          filters={
+            <select className="cai-dat-toolbar__select">
+              <option value="">Tất cả trạng thái</option>
+              <option value="dang-su-dung">Đang sử dụng</option>
+              <option value="ngung-su-dung">Ngừng sử dụng</option>
+            </select>
+          }
+          actionButton={
+            <button className="cai-dat-btn cai-dat-btn--primary" onClick={openAddModal}>
+              {Icons.plus} Thêm trạng thái
+            </button>
+          }
+        />
+
+        <Table
+          columns={columns}
+          data={MOCK_TRANG_THAI_HO_SO}
+          renderRow={(item, index) => (
+            <tr key={item.id}>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">
+                <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
+              </td>
+              <td className="cai-dat-table__cell">{item.moTa}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
+                <button className="cai-dat-btn-action" onClick={openEditModal}>
+                  {Icons.edit} Sửa
+                </button>
+              </td>
+            </tr>
+          )}
+        />
+      </div>
+    )
+  }
+
+  // Trạng thái giấy tờ content
+  const renderTrangThaiGiayToContent = () => {
+    const columns: TableColumn[] = [
+      { key: 'stt', label: 'STT', width: '55px' },
+      { key: 'tenTrangThai', label: 'Trạng thái', width: '150px' },
+      { key: 'moTa', label: 'Mô tả', width: '' },
+      { key: 'trangThai', label: 'Trạng thái sử dụng', width: '' },
+      { key: 'thaoTac', label: 'Thao tác', width: '100px' },
+    ]
+
+    return (
+      <div className="cai-dat-content">
+        <SectionHeader 
+          title="QUẢN LÝ TRẠNG THÁI GIẤY TỜ" 
+          subtitle="Quản lý các trạng thái giấy tờ được sử dụng trong hệ thống"
+        />
+        
+        <Toolbar
+          searchPlaceholder="Tìm trạng thái..."
+          filters={
+            <select className="cai-dat-toolbar__select">
+              <option value="">Tất cả trạng thái</option>
+              <option value="dang-su-dung">Đang sử dụng</option>
+              <option value="ngung-su-dung">Ngừng sử dụng</option>
+            </select>
+          }
+          actionButton={
+            <button className="cai-dat-btn cai-dat-btn--primary" onClick={openAddModal}>
+              {Icons.plus} Thêm trạng thái
+            </button>
+          }
+        />
+
+        <Table
+          columns={columns}
+          data={MOCK_TRANG_THAI_GIAY_TO}
+          renderRow={(item, index) => (
+            <tr key={item.id}>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">
+                <ColorBadge label={item.tenTrangThai} color={item.mauHienThi} />
+              </td>
+              <td className="cai-dat-table__cell">{item.moTa}</td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--nowrap"><StatusBadge status={item.trangThai} /></td>
+              <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">
+                <button className="cai-dat-btn-action" onClick={openEditModal}>
+                  {Icons.edit} Sửa
+                </button>
+              </td>
+            </tr>
+          )}
+        />
       </div>
     )
   }
@@ -1415,20 +1633,38 @@ export function TrangCaiDat() {
         title = modalMode === 'add' ? 'THÊM KHÓA' : 'SỬA KHÓA'
         content = (
           <div className="cai-dat-form">
-            <div className="cai-dat-form__row">
-              <div className="cai-dat-form__group">
-                <label className="cai-dat-form__label">Mã khóa</label>
-                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: K14" />
-              </div>
-              <div className="cai-dat-form__group">
-                <label className="cai-dat-form__label">Tên khóa</label>
-                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: Khóa 14" />
-              </div>
+            <div className="cai-dat-form__group">
+              <label className="cai-dat-form__label">Số khóa</label>
+              <input type="number" className="cai-dat-form__input" placeholder="Ví dụ: 14" />
+            </div>
+            <div className="cai-dat-form__group">
+              <label className="cai-dat-form__label">Trạng thái</label>
+              <select className="cai-dat-form__select">
+                <option value="dang-su-dung">Đang sử dụng</option>
+                <option value="ngung-su-dung">Ngừng sử dụng</option>
+              </select>
+            </div>
+          </div>
+        )
+        break
+
+      case 'khoa-nam-hoc':
+        title = modalMode === 'add' ? 'THÊM KHÓA NĂM HỌC' : 'SỬA KHÓA NĂM HỌC'
+        content = (
+          <div className="cai-dat-form">
+            <div className="cai-dat-form__group">
+              <label className="cai-dat-form__label">Khóa</label>
+              <select className="cai-dat-form__select">
+                <option value="">Chọn khóa</option>
+                {MOCK_KHOA.filter(k => k.trangThai === 'Đang sử dụng').map(k => (
+                  <option key={k.id} value={k.id}>Khóa {k.soKhoa}</option>
+                ))}
+              </select>
             </div>
             <div className="cai-dat-form__row">
               <div className="cai-dat-form__group">
                 <label className="cai-dat-form__label">Năm bắt đầu</label>
-                <input type="number" className="cai-dat-form__input" placeholder="Ví dụ: 2025" />
+                <input type="number" className="cai-dat-form__input" placeholder="Ví dụ: 2026" />
               </div>
               <div className="cai-dat-form__group">
                 <label className="cai-dat-form__label">Năm kết thúc</label>
@@ -1453,11 +1689,11 @@ export function TrangCaiDat() {
             <div className="cai-dat-form__row">
               <div className="cai-dat-form__group">
                 <label className="cai-dat-form__label">Mã lớp</label>
-                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: CNTT14A" />
+                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: K14CTXHB" />
               </div>
               <div className="cai-dat-form__group">
                 <label className="cai-dat-form__label">Tên lớp</label>
-                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: CNTT14A" />
+                <input type="text" className="cai-dat-form__input" placeholder="Ví dụ: CNTT 14A" />
               </div>
             </div>
             <div className="cai-dat-form__row">
@@ -1466,7 +1702,7 @@ export function TrangCaiDat() {
                 <select className="cai-dat-form__select">
                   <option value="">Chọn ngành</option>
                   {MOCK_NGANH.filter(n => n.trangThai === 'Đang sử dụng').map(n => (
-                    <option key={n.id} value={n.maNganh}>{n.tenNganh}</option>
+                    <option key={n.id} value={n.id}>{n.tenNganh}</option>
                   ))}
                 </select>
               </div>
@@ -1475,7 +1711,7 @@ export function TrangCaiDat() {
                 <select className="cai-dat-form__select">
                   <option value="">Chọn khóa</option>
                   {MOCK_KHOA.filter(k => k.trangThai === 'Đang sử dụng').map(k => (
-                    <option key={k.id} value={k.maKhoa}>{k.tenKhoa}</option>
+                    <option key={k.id} value={k.id}>Khóa {k.soKhoa}</option>
                   ))}
                 </select>
               </div>

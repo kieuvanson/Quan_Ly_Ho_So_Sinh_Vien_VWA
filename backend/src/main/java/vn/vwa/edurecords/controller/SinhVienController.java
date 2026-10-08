@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
+import vn.vwa.edurecords.dto.response.SinhVienResponse;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.service.SinhVienExcelService;
 import vn.vwa.edurecords.service.SinhVienService;
@@ -89,12 +90,16 @@ public class SinhVienController {
     /**
      * GET /api/sinh-vien/{mssv}
      * Chi tiết sinh viên (ADMIN).
+     * Trả về SinhVienResponse với đúng nghĩa nghiệp vụ:
+     * - khoa = số khóa (VD: "Khóa 23")
+     * - khoaNamHoc = năm học (VD: "2023–2024")
+     * - nganh, lop = tên từ danh mục
      */
     @GetMapping("/{mssv}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<SinhVien>> getByMssv(@PathVariable String mssv) {
+    public ResponseEntity<ApiResponse<SinhVienResponse>> getByMssv(@PathVariable String mssv) {
         return sinhVienService.getByMssv(mssv)
-                .map(sv -> ResponseEntity.ok(ApiResponse.success(sv)))
+                .map(sv -> ResponseEntity.ok(ApiResponse.success(SinhVienResponse.fromEntity(sv))))
                 .orElseGet(() -> ResponseEntity.status(404).body(
                         ApiResponse.error(404, "NOT_FOUND", "Không tìm thấy sinh viên với MSSV: " + mssv)));
     }

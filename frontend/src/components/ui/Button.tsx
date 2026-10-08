@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, type CSSProperties } from 'react'
 import './Button.css'
 
 interface ButtonProps {
@@ -13,6 +13,7 @@ interface ButtonProps {
   className?: string
   fullWidth?: boolean
   title?: string
+  style?: CSSProperties
 }
 
 export function Button({
@@ -27,6 +28,7 @@ export function Button({
   className = '',
   fullWidth = false,
   title,
+  style,
 }: ButtonProps) {
   const classes = [
     'btn',
@@ -43,6 +45,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      style={style}
     >
       {icon && iconPosition === 'left' && <span className="btn__icon btn__icon--left">{icon}</span>}
       <span className="btn__text">{children}</span>

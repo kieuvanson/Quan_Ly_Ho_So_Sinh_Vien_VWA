@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle } from 'lucide-react'
-import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput, FormSelect } from '../components/ui'
+import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput } from '../components/ui'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
 import { authStore } from '../lib/authStore'
-import type { PhieuMuon, SinhVien as ApiSinhVien, HoSoGiayTo } from '../api/types'
+import type { PhieuMuon, HoSoGiayTo } from '../api/types'
 import './TrangMuonTra.css'
 
 const PAGE_SIZE = 10
@@ -91,12 +91,6 @@ const TRANG_THAI_OPTIONS = [
 const LOAI_HO_SO_OPTIONS = [
   { value: '', label: 'Tất cả loại hồ sơ' },
   { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
-  { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
-]
-
-const LOAI_HO_SO_CHON_OPTIONS = [
-  { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
-  { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
 ]
 
 const HANH_DONG_OPTIONS = [
@@ -186,7 +180,6 @@ export function TrangMuonTra() {
   // ----- Form state: Mượn -----
   const [muonForm, setMuonForm] = useState({
     mssv: '',
-    loaiHoSo: 'Mượn tạm thời',
     ngayMuon: new Date().toISOString().split('T')[0],
     hanTra: defaultHanTra(new Date().toISOString().split('T')[0]),
     ghiChu: '',
@@ -404,7 +397,6 @@ export function TrangMuonTra() {
     const today = new Date().toISOString().split('T')[0]
     setMuonForm({
       mssv: '',
-      loaiHoSo: 'Mượn tạm thời',
       ngayMuon: today,
       hanTra: defaultHanTra(today),
       ghiChu: '',
@@ -464,18 +456,14 @@ export function TrangMuonTra() {
     }
   }, [])
 
-  /** Submit tạo phiếu mượn / rút hồ sơ — gọi POST /api/phieu-muon. */
+  /** Submit tạo phiếu mượn hồ sơ — gọi POST /api/phieu-muon. */
   async function handleSubmitMuon() {
     if (!muonForm.mssv || !sinhVienInfo) {
       showToast('Vui lòng nhập MSSV hợp lệ', 'error')
       return
     }
-    if (!muonForm.loaiHoSo) {
-      showToast('Vui lòng chọn loại hồ sơ', 'error')
-      return
-    }
-    if (muonForm.loaiHoSo === 'Mượn tạm thời' && !muonForm.hanTra) {
-      showToast('Phiếu mượn tạm thời phải có hạn trả', 'error')
+    if (!muonForm.hanTra) {
+      showToast('Phiếu mượn phải có hạn trả', 'error')
       return
     }
     if (selectedMaHoSo.length === 0) {
@@ -483,16 +471,16 @@ export function TrangMuonTra() {
       return
     }
     if (!muonForm.ghiChu.trim()) {
-      showToast('Vui lòng nhập lý do mượn / rút', 'error')
+      showToast('Vui lòng nhập lý do mượn', 'error')
       return
     }
 
     try {
       const res = await phieuMuonApi.create({
         mssv: muonForm.mssv,
-        loaiPhieu: muonForm.loaiHoSo,
+        loaiPhieu: 'Mượn tạm thời',
         ngayMuon: muonForm.ngayMuon,
-        ngayTraDuKien: muonForm.loaiHoSo === 'Mượn tạm thời' ? muonForm.hanTra : undefined,
+        ngayTraDuKien: muonForm.hanTra,
         lyDo: muonForm.ghiChu,
         ghiChu: undefined,
         danhSachMaHoSo: selectedMaHoSo,
@@ -1090,7 +1078,7 @@ export function TrangMuonTra() {
       <Modal
         isOpen={modalMuonOpen}
         onClose={() => setModalMuonOpen(false)}
-        title="Mượn / rút hồ sơ"
+        title="Mượn hồ sơ"
         size="lg"
         footer={
           <>
@@ -1098,7 +1086,7 @@ export function TrangMuonTra() {
               Hủy
             </Button>
             <Button variant="primary" onClick={handleSubmitMuon}>
-              Xác nhận
+              Xác nhận mượn
             </Button>
           </>
         }
@@ -1196,22 +1184,8 @@ export function TrangMuonTra() {
           )}
 
           <div className="trang-muon-tra__form-section">
-            <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu</h3>
+            <h3 className="trang-muon-tra__form-section-title">Thông tin phiếu mượn</h3>
             <div className="trang-muon-tra__form-grid">
-              <FormSelect
-                label="Loại hồ sơ *"
-                value={muonForm.loaiHoSo}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setMuonForm((prev) => ({
-                    ...prev,
-                    loaiHoSo: v,
-                    hanTra: v === 'Mượn tạm thời' ? defaultHanTra(prev.ngayMuon) : '',
-                  }))
-                }}
-                options={LOAI_HO_SO_CHON_OPTIONS}
-                placeholder="Chọn loại hồ sơ"
-              />
               <div className="trang-muon-tra__form-item">
                 <label className="trang-muon-tra__form-label">Cán bộ phụ trách</label>
                 <input
@@ -1230,24 +1204,22 @@ export function TrangMuonTra() {
                   setMuonForm((prev) => ({
                     ...prev,
                     ngayMuon: v,
-                    hanTra: prev.loaiHoSo === 'Mượn tạm thời' ? defaultHanTra(v) : prev.hanTra,
+                    hanTra: defaultHanTra(v),
                   }))
                 }}
               />
-              {muonForm.loaiHoSo === 'Mượn tạm thời' && (
-                <FormInput
-                  label="Hạn trả *"
-                  type="date"
-                  value={muonForm.hanTra}
-                  onChange={(e) => setMuonForm((prev) => ({ ...prev, hanTra: e.target.value }))}
-                />
-              )}
+              <FormInput
+                label="Hạn trả *"
+                type="date"
+                value={muonForm.hanTra}
+                onChange={(e) => setMuonForm((prev) => ({ ...prev, hanTra: e.target.value }))}
+              />
               <div className="trang-muon-tra__form-full">
                 <FormInput
-                  label="Lý do mượn / rút *"
+                  label="Lý do mượn *"
                   value={muonForm.ghiChu}
                   onChange={(e) => setMuonForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
-                  placeholder="Nhập lý do mượn hoặc rút hồ sơ"
+                  placeholder="Nhập lý do mượn hồ sơ"
                 />
               </div>
             </div>

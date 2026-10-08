@@ -223,6 +223,9 @@
 }
 
 .cai-dat-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -359,11 +362,24 @@
   background-color: var(--color-surface-hover);
 }
 
+.cai-dat-btn--outline {
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.cai-dat-btn--outline:hover {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .cai-dat-btn-action {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
@@ -372,6 +388,8 @@
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-base);
+  white-space: nowrap;
+  min-width: 80px;
 }
 
 .cai-dat-btn-action:hover {
@@ -389,28 +407,33 @@
 }
 
 .cai-dat-table {
-  width: 100%;
+  width: auto;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
 }
 
 .cai-dat-table__header {
-  padding: var(--space-3) var(--space-4);
+  padding: 12px 14px;
   text-align: left;
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 2px solid var(--color-border);
   background-color: #f8fafc;
   white-space: nowrap;
 }
 
 .cai-dat-table__cell {
-  padding: var(--space-3) var(--space-4);
+  padding: 12px 14px;
   border-bottom: 1px solid var(--color-border-light);
   vertical-align: middle;
+}
+
+.cai-dat-table__cell--nowrap {
+  white-space: nowrap;
 }
 
 .cai-dat-table__cell--center {
@@ -436,10 +459,13 @@
 .cai-dat-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   padding: 4px 10px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  gap: 4px;
 }
 
 .cai-dat-badge--đang-sử-dụng,
@@ -462,7 +488,6 @@
 .cai-dat-badge--bat-buoc {
   background-color: var(--color-info-bg);
   color: var(--color-info-text);
-  gap: 4px;
 }
 
 .cai-dat-badge--khong-bat-buoc {
@@ -474,10 +499,13 @@
 .cai-dat-color-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  justify-content: center;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  min-width: 80px;
 }
 
 .cai-dat-color-badge--primary {
