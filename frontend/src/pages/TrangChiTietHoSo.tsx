@@ -939,7 +939,7 @@ export function TrangChiTietHoSo() {
                       </tr>
                     </thead>
                     <tbody>
-                      {giayToList.map((giayTo, index) => {
+                      {giayToList.map((giayTo) => {
                         const isDaNop = giayTo.trangThaiNop === 'Đã nộp'
                         const trangThaiInfo = TRANG_THAI_NOP_MAPPING[giayTo.trangThaiNop] || {
                           label: giayTo.trangThaiNop,
@@ -1447,7 +1447,7 @@ export function TrangChiTietHoSo() {
         isOpen={isPrintModalOpen}
         onClose={handleClosePrintModal}
         title={printMode === 'chooser' ? 'Chọn loại in / xuất' : 'Xem trước bản in'}
-        size={printMode === 'preview' ? 'xl' : 'md'}
+        size={printMode === 'preview' ? 'lg' : 'md'}
         footer={
           printMode === 'chooser' ? (
             <>
@@ -1599,7 +1599,7 @@ export function TrangChiTietHoSo() {
 // =====================================================================
 
 /** Format ngày dd/MM/yyyy — dùng trong bản in. */
-function fmtDate(s?: string): string {
+function fmtDate(s?: string | null): string {
   if (!s) return '—'
   try {
     const d = new Date(s)
@@ -1665,15 +1665,18 @@ function PrintHoSoSinhVien({
   // Map giayToList theo maLoai để tra nhanh
   const giayToByMaLoai = new Map(giayToList.map((g) => [g.maLoai, g]))
   // Gom toàn bộ 13 loại (nếu load được) để in đầy đủ; fallback dùng giayToList
-  const allLoai =
+  const allLoai: LoaiGiayTo[] =
     loaiGiayToList.length > 0
       ? loaiGiayToList
       : giayToList.map((g) => ({
           maLoai: g.maLoai,
-          tenLoai: g.tenLoai || g.maLoai,
+          tenGiayTo: g.maLoai,
+          moTa: null,
           batBuoc: false,
           dangSuDung: true,
-        } as LoaiGiayTo))
+          thuTuHienThi: null,
+          ngayTao: '',
+        }))
   const soBatBuoc = allLoai.filter((l) => l.batBuoc).length
   const soDaCo = giayToList.length
 

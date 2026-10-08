@@ -198,9 +198,9 @@ export function TrangBaoCao() {
             <h2 className="bao-cao__section-title">Thống kê sinh viên theo ngành</h2>
             <select className="bao-cao__filter-select">
               <option value="all">Tất cả khóa</option>
-              <option value="2024">Khóa 2024</option>
-              <option value="2023">Khóa 2023</option>
-              <option value="2022">Khóa 2022</option>
+              <option value="2024">Khóa 13</option>
+              <option value="2023">Khóa 14</option>
+              <option value="2022">Khóa 12</option>
             </select>
           </div>
 
