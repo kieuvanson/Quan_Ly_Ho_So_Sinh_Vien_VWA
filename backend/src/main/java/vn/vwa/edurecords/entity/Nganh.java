@@ -4,11 +4,8 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 /**
- * Danh mục Ngành đào tạo. Mỗi ngành thuộc đúng một {@code Khoa} (FK {@code khoa_id}).
- *
- * Vì một khoa có thể có nhiều ngành trùng tên (vd: hai khoa đều có "Công nghệ
- * thông tin"), {@code ma_nganh} là UNIQUE nhưng {@code (ten_nganh, khoa_id)} mới
- * là định danh logic. Khi tìm ngành theo tên từ Excel, cần biết thêm khoa.
+ * Danh mục Ngành đào tạo. Ngành là danh mục độc lập, không bắt buộc
+ * thuộc về Khoa (sau V6).
  *
  * Quy ước mã: {@code NGANHxxx} (vd {@code NGANH001}), sinh tự động bằng V4.
  */
@@ -28,12 +25,12 @@ public class Nganh {
     private String tenNganh;
 
     /**
-     * FK {@code nganh.khoa_id} → {@code khoa.id}. EAGER vì API danh mục trả
-     * {@code Nganh} cho frontend (cần tên khoa để render cascade dropdown) và
-     * serialize ngoài transaction — lazy sẽ ném LazyInitializationException.
+     * FK {@code nganh.khoa_id} → {@code khoa.id}.
+     * Sau V6, trường này là NULL được (tùy chọn), không bắt buộc.
+     * Vẫn giữ để tương thích ngược và cho phép link ngành với khoa nếu cần.
      */
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "khoa_id", nullable = false)
+    @JoinColumn(name = "khoa_id", nullable = true)
     private Khoa khoa;
 
     @Column(name = "mo_ta", length = 500)

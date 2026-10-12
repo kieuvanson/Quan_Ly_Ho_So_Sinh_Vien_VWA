@@ -167,6 +167,118 @@ export interface LoaiGiayTo {
   ngayTao: string
 }
 
+export interface LoaiGiayToRequest {
+  tenGiayTo: string
+  moTa?: string | null
+  batBuoc?: boolean
+  dangSuDung?: boolean
+  thuTuHienThi?: number | null
+}
+
+export interface Khoa {
+  id: number
+  maKhoa: string
+  tenKhoa: string
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface Nganh {
+  id: number
+  maNganh: string
+  tenNganh: string
+  khoa: { id: number; tenKhoa: string } | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface KhoaHoc {
+  id: number
+  maKhoaHoc: string
+  tenKhoaHoc: string
+  namBatDau: number | null
+  namKetThuc: number | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface Lop {
+  id: number
+  maLop: string
+  tenLop: string
+  nganh: { id: number; tenNganh: string; khoa?: { id: number; tenKhoa: string } | null } | null
+  khoaHoc: {
+    id: number
+    tenKhoaHoc: string
+    namBatDau: number | null
+    namKetThuc: number | null
+  } | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+// ============ Request DTOs (backend CRUD) ============
+
+export interface KhoaRequest {
+  tenKhoa: string
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface NganhRequest {
+  // KhoaId là bắt buộc - Ngành phải thuộc một Khoa chuyên môn
+  khoaId: number
+  tenNganh: string
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface KhoaHocRequest {
+  tenKhoaHoc: string
+  namBatDau?: number | null
+  namKetThuc?: number | null
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface LopRequest {
+  tenLop: string
+  nganhId: number
+  khoaHocId: number
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+/**
+ * Trạng thái học vụ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiHocVuItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
+/**
+ * Trạng thái nộp giấy tờ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiNopItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
+/**
+ * Trạng thái phiếu xuất hồ sơ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiPhieuItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
 /**
  * Search/filter params for sinh-vien API.
  */

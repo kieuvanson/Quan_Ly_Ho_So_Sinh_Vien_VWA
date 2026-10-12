@@ -280,15 +280,16 @@ public class SinhVienExcelService {
 
         Optional<Khoa> khoa = tenKhoa == null
                 ? Optional.empty()
-                : danhMucService.findOrCreateKhoaByTen(tenKhoa);
+                : danhMucService.findKhoaByTen(tenKhoa);
         Optional<KhoaHoc> khoaHoc = tenKhoaHoc == null
                 ? Optional.empty()
-                : danhMucService.findOrCreateKhoaHocByTen(tenKhoaHoc);
-        Optional<Nganh> nganh = (tenNganh != null && khoa.isPresent())
-                ? danhMucService.findOrCreateNganhByTen(tenNganh, khoa.get())
-                : Optional.empty();
+                : danhMucService.findKhoaHocByTen(tenKhoaHoc);
+        // Sau V6: nganh là danh mục độc lập, không cần khoa để lookup
+        Optional<Nganh> nganh = tenNganh == null
+                ? Optional.empty()
+                : danhMucService.findNganhByTen(tenNganh);
         Optional<Lop> lop = (tenLop != null && nganh.isPresent() && khoaHoc.isPresent())
-                ? danhMucService.findOrCreateLopByTen(tenLop, nganh.get(), khoaHoc.get())
+                ? danhMucService.findLopByTen(tenLop, nganh.get(), khoaHoc.get())
                 : Optional.empty();
 
         khoa.ifPresent(sv::setKhoa);

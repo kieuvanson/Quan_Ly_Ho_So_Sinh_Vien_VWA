@@ -11,12 +11,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import vn.vwa.edurecords.dto.request.ImportConfirmRequest;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
+import vn.vwa.edurecords.dto.response.ImportPreviewResult;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.dto.response.SinhVienResponse;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.service.SinhVienExcelService;
+import vn.vwa.edurecords.service.SinhVienImportService;
 import vn.vwa.edurecords.service.SinhVienService;
 
 import java.io.IOException;
@@ -32,15 +35,19 @@ public class SinhVienController {
 
     /** Giới hạn kích thước file import để tránh cạn bộ nhớ khi đọc .xlsx. */
     private static final long MAX_IMPORT_FILE_SIZE = 10L * 1024 * 1024;
+    private static final long MAX_PREVIEW_FILE_SIZE = 5L * 1024 * 1024;
 
     private final SinhVienService sinhVienService;
+    private final SinhVienImportService sinhVienImportService;
     private final SinhVienExcelService sinhVienExcelService;
 
     public SinhVienController(
-        SinhVienService sinhVienService,
-        SinhVienExcelService sinhVienExcelService
+            SinhVienService sinhVienService,
+            SinhVienImportService sinhVienImportService,
+            SinhVienExcelService sinhVienExcelService
     ) {
         this.sinhVienService = sinhVienService;
+        this.sinhVienImportService = sinhVienImportService;
         this.sinhVienExcelService = sinhVienExcelService;
     }
 
@@ -50,7 +57,7 @@ public class SinhVienController {
      */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<PagedResponse<List<SinhVien>>>> search(
+    public ResponseEntity<ApiResponse<PagedResponse<List<SinhVienResponse>>>> search(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String trangThaiHocVu,
             @RequestParam(required = false) String nganh,
@@ -83,7 +90,7 @@ public class SinhVienController {
         req.setSize(Math.min(size, 100));
         req.setSortDirection(sortDirection);
 
-        PagedResponse<List<SinhVien>> result = sinhVienService.search(req);
+        PagedResponse<List<SinhVienResponse>> result = sinhVienService.searchResponse(req);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
@@ -293,6 +300,69 @@ public class SinhVienController {
         // Logic import nằm trong service (transaction + validate), controller chỉ
         // kiểm tra định dạng file theo giao thức HTTP.
         SinhVienService.ImportResult result = sinhVienService.importFromExcel(file);
+        return ResponseEntity.ok(ApiResponse.success("Import sinh viên hoàn tất", result));
+    }
+
+    /**
+     * POST /api/sinh-vien/import/preview
+     * Bước 1: Upload file Excel → kiểm tra &amp; trả về kết quả preview.
+     * KHÔNG ghi vào database.
+     *
+     * @param file File Excel (.xlsx / .xls)
+     * @return ImportPreviewResult gồm trạng thái + lỗi từng dòng.
+     */
+    @PostMapping(value = "/import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ImportPreviewResult>> previewImport(
+            @RequestParam("file") MultipartFile file) {
+
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "BAD_REQUEST", "File upload rỗng."));
+        }
+
+        String name = file.getOriginalFilename();
+        if (name == null || !(name.toLowerCase().endsWith(".xlsx") || name.toLowerCase().endsWith(".xls"))) {
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "BAD_REQUEST", "Chỉ chấp nhận file .xlsx hoặc .xls."));
+        }
+
+        if (file.getSize() > MAX_PREVIEW_FILE_SIZE) {
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "FILE_TOO_LARGE",
+                    "File preview vượt quá giới hạn " + (MAX_PREVIEW_FILE_SIZE / (1024 * 1024)) + " MB."));
+        }
+
+        try {
+            ImportPreviewResult result = sinhVienImportService.preview(file);
+            return ResponseEntity.ok(ApiResponse.success("Kiểm tra file hoàn tất", result));
+        } catch (RuntimeException e) {
+            log.error("Lỗi khi preview file Excel import", e);
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "IMPORT_PREVIEW_FAILED", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/sinh-vien/import/confirm
+     * Bước 2: Xác nhận import các MSSV đã được preview.
+     * GHI dữ liệu vào database.
+     *
+     * @param request Body chứa danh sách MSSV đã xác nhận.
+     * @return ImportResult (successCount, failureCount, errors...).
+     */
+    @PostMapping("/import/confirm")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<SinhVienService.ImportResult>> confirmImport(
+            @Valid @RequestBody ImportConfirmRequest request) {
+
+        if (request.getMssvList() == null || request.getMssvList().isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                ApiResponse.error(400, "BAD_REQUEST",
+                    "Danh sách MSSV để import không được rỗng."));
+        }
+
+        SinhVienService.ImportResult result = sinhVienImportService.confirmImport(request.getMssvList());
         return ResponseEntity.ok(ApiResponse.success("Import sinh viên hoàn tất", result));
     }
 }

@@ -2,10 +2,20 @@ package vn.vwa.edurecords.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.vwa.edurecords.dto.request.KhoaHocRequest;
+import vn.vwa.edurecords.dto.request.KhoaRequest;
+import vn.vwa.edurecords.dto.request.LopRequest;
+import vn.vwa.edurecords.dto.request.NganhRequest;
+import vn.vwa.edurecords.dto.response.KhoaHocResponse;
+import vn.vwa.edurecords.dto.response.KhoaResponse;
+import vn.vwa.edurecords.dto.response.LopResponse;
+import vn.vwa.edurecords.dto.response.NganhResponse;
 import vn.vwa.edurecords.entity.Khoa;
 import vn.vwa.edurecords.entity.KhoaHoc;
 import vn.vwa.edurecords.entity.Lop;
 import vn.vwa.edurecords.entity.Nganh;
+import vn.vwa.edurecords.exception.BadRequestException;
+import vn.vwa.edurecords.exception.ResourceNotFoundException;
 import vn.vwa.edurecords.repository.KhoaHocRepository;
 import vn.vwa.edurecords.repository.KhoaRepository;
 import vn.vwa.edurecords.repository.LopRepository;
@@ -17,12 +27,8 @@ import java.util.Optional;
 /**
  * Service dùng chung cho các danh mục: Khoa, Ngành, Khóa học, Lớp.
  *
- * <h3>Hai chế độ dùng</h3>
- * <ul>
- *   <li><b>Lookup theo id</b> — controller truyền id thẳng (ưu tiên, nhanh).</li>
- *   <li><b>Lookup theo tên/mã</b> — import Excel vẫn ghi text, service này map
- *       text sang entity. Nếu chưa tồn tại thì tự tạo (cascade import).</li>
- * </ul>
+ * Sau chuẩn hóa: Ngành BẮT BUỘC thuộc một Khoa chuyên môn.
+ * Tìm ngành theo (tên ngành, khoa_id) vì tên ngành có thể trùng giữa các khoa.
  *
  * <h3>Quy tắc</h3>
  * <ul>
@@ -30,8 +36,8 @@ import java.util.Optional;
  *       / {@code LOPxxx} để tránh trùng mã do seed tay.</li>
  *   <li>Lookup theo tên dùng {@code IgnoreCase} + {@code TRIM} để chịu được
  *       dữ liệu Excel có khoảng trắng thừa hoặc khác hoa thường.</li>
- *   <li>Lookup {@code Nganh} cần biết {@code khoa} (định danh logic). Lookup
- *       {@code Lop} cần biết {@code nganh} + {@code khoaHoc}.</li>
+ *   <li>Lookup {@code Nganh} theo (tên ngành, khoa_id) vì ngành bắt buộc thuộc khoa.</li>
+ *   <li>Lookup {@code Lop} cần biết {@code nganh} + {@code khoaHoc}.</li>
  * </ul>
  */
 @Service
@@ -86,63 +92,69 @@ public class DanhMucService {
         return lopRepository.findByNganh_IdAndDangSuDungTrueOrderByTenLopAsc(nganhId);
     }
 
-    // ====================== LOOKUP THEO TÊN/MÃ ======================
+    // ====================== LOOKUP THEO TÊN/MÃ (KHÔNG TẠO MỚI) ======================
 
-    @Transactional
-    public Optional<Khoa> findOrCreateKhoaByTen(String tenKhoa) {
+    /**
+     * Tìm Khoa theo tên. KHÔNG tạo mới nếu không tìm thấy.
+     *
+     * @param tenKhoa Tên khoa cần tra (ignore case, trim).
+     * @return Khoa nếu tìm thấy, empty nếu không.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Khoa> findKhoaByTen(String tenKhoa) {
         if (tenKhoa == null) return Optional.empty();
         String ten = tenKhoa.trim();
         if (ten.isEmpty()) return Optional.empty();
-        Optional<Khoa> existed = khoaRepository.findByTenKhoaIgnoreCase(ten);
-        if (existed.isPresent()) return existed;
-        Khoa k = new Khoa();
-        k.setMaKhoa(generateMaKhoa());
-        k.setTenKhoa(ten);
-        return Optional.of(khoaRepository.save(k));
+        return khoaRepository.findByTenKhoaIgnoreCase(ten);
     }
 
-    @Transactional
-    public Optional<Nganh> findOrCreateNganhByTen(String tenNganh, Khoa khoa) {
-        if (tenNganh == null || khoa == null) return Optional.empty();
+    /**
+     * Tìm Ngành theo tên (không cần Khoa, sau V6).
+     *
+     * @param tenNganh Tên ngành (ignore case, trim).
+     * @return Nganh nếu tìm thấy, empty nếu không.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Nganh> findNganhByTen(String tenNganh) {
+        if (tenNganh == null) return Optional.empty();
         String ten = tenNganh.trim();
         if (ten.isEmpty()) return Optional.empty();
-        Optional<Nganh> existed = nganhRepository
-                .findFirstByTenNganhIgnoreCaseAndKhoa_Id(ten, khoa.getId());
-        if (existed.isPresent()) return existed;
-        Nganh n = new Nganh();
-        n.setMaNganh(generateMaNganh());
-        n.setTenNganh(ten);
-        n.setKhoa(khoa);
-        return Optional.of(nganhRepository.save(n));
+        // Tìm theo tên ngành (không cần khoa vì ngành độc lập sau V6)
+        return nganhRepository.findAll().stream()
+                .filter(n -> n.getTenNganh() != null
+                        && n.getTenNganh().equalsIgnoreCase(ten))
+                .findFirst();
     }
 
-    @Transactional
-    public Optional<KhoaHoc> findOrCreateKhoaHocByTen(String tenKhoaHoc) {
+    /**
+     * Tìm Khóa học theo tên. KHÔNG tạo mới.
+     *
+     * @param tenKhoaHoc Tên khóa học (ignore case, trim).
+     * @return KhoaHoc nếu tìm thấy, empty nếu không.
+     */
+    @Transactional(readOnly = true)
+    public Optional<KhoaHoc> findKhoaHocByTen(String tenKhoaHoc) {
         if (tenKhoaHoc == null) return Optional.empty();
         String ten = tenKhoaHoc.trim();
         if (ten.isEmpty()) return Optional.empty();
-        Optional<KhoaHoc> existed = khoaHocRepository.findByTenKhoaHocIgnoreCase(ten);
-        if (existed.isPresent()) return existed;
-        KhoaHoc kh = new KhoaHoc();
-        kh.setMaKhoaHoc(generateMaKhoaHoc());
-        kh.setTenKhoaHoc(ten);
-        return Optional.of(khoaHocRepository.save(kh));
+        return khoaHocRepository.findByTenKhoaHocIgnoreCase(ten);
     }
 
-    @Transactional
-    public Optional<Lop> findOrCreateLopByTen(String tenLop, Nganh nganh, KhoaHoc khoaHoc) {
+    /**
+     * Tìm Lớp theo (tên, ngành, khóa học). KHÔNG tạo mới.
+     *
+     * @param tenLop   Tên lớp (ignore case, trim).
+     * @param nganh    Ngành cha.
+     * @param khoaHoc  Khóa học cha.
+     * @return Lop nếu tìm thấy, empty nếu không.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Lop> findLopByTen(String tenLop, Nganh nganh, KhoaHoc khoaHoc) {
         if (tenLop == null || nganh == null || khoaHoc == null) return Optional.empty();
         String ten = tenLop.trim();
         if (ten.isEmpty()) return Optional.empty();
-        Optional<Lop> existed = lopRepository
-                .findFirstByTenLopIgnoreCaseAndNganh_IdAndKhoaHoc_Id(ten, nganh.getId(), khoaHoc.getId());
-        if (existed.isPresent()) return existed;
-        Lop l = new Lop();
-        l.setMaLop(generateMaLop());
-        l.setTenLop(ten);
-        l.setNganh(nganh);
-        l.setKhoaHoc(khoaHoc);
-        return Optional.of(lopRepository.save(l));
+        return lopRepository.findFirstByTenLopIgnoreCaseAndNganh_IdAndKhoaHoc_Id(
+                ten, nganh.getId(), khoaHoc.getId());
     }
 
     // ====================== RESOLVE TEXT → ID (cho filter) ======================
@@ -183,25 +195,21 @@ public class DanhMucService {
     }
 
     /**
-     * Resolve {@code nganh}: nếu biết {@code khoaId} thì lookup theo
-     * {@code (ten, khoaId)} — chính xác khi 2 khoa cùng tên ngành.
+     * Resolve {@code nganh}: tìm theo mã hoặc tên (sau V6 không cần khoaId).
      */
     @Transactional(readOnly = true)
-    public Integer resolveNganhId(String input, Integer khoaId) {
+    public Integer resolveNganhId(String input) {
         if (input == null || input.isBlank()) return null;
         String s = input.trim();
+        // 1) Thử id
         try {
             Integer id = Integer.parseInt(s);
             if (nganhRepository.existsById(id)) return id;
         } catch (NumberFormatException ignore) { /* */ }
+        // 2) Thử mã ngành
         Optional<Nganh> byMa = nganhRepository.findByMaNganh(s);
         if (byMa.isPresent()) return byMa.get().getId();
-        if (khoaId != null) {
-            Optional<Nganh> byTenKhoa = nganhRepository
-                    .findFirstByTenNganhIgnoreCaseAndKhoa_Id(s, khoaId);
-            if (byTenKhoa.isPresent()) return byTenKhoa.get().getId();
-        }
-        // Fallback: tìm theo tên (lấy record đầu tiên)
+        // 3) Thử tên ngành (sau V6: không cần khoaId)
         return nganhRepository.findAll().stream()
                 .filter(n -> n.getTenNganh() != null
                         && n.getTenNganh().equalsIgnoreCase(s))
@@ -298,5 +306,224 @@ public class DanhMucService {
         }
         throw last != null ? last
                 : new IllegalStateException("Không thể sinh mã tự động sau " + maxRetries + " lần");
+    }
+
+    // ====================== CRUD KHOA ======================
+
+    @Transactional
+    public KhoaResponse createKhoa(KhoaRequest req) {
+        Khoa khoa = new Khoa();
+        khoa.setMaKhoa(generateMaKhoa());
+        khoa.setTenKhoa(req.getTenKhoa().trim());
+        khoa.setMoTa(req.getMoTa());
+        khoa.setDangSuDung(req.getDangSuDung() != null ? req.getDangSuDung() : true);
+        Khoa saved = khoaRepository.save(khoa);
+        return KhoaResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public KhoaResponse updateKhoa(Integer id, KhoaRequest req) {
+        Khoa khoa = khoaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("KHOA_NOT_FOUND",
+                        "Không tìm thấy khoa với ID: " + id));
+        khoa.setTenKhoa(req.getTenKhoa().trim());
+        khoa.setMoTa(req.getMoTa());
+        if (req.getDangSuDung() != null) {
+            khoa.setDangSuDung(req.getDangSuDung());
+        }
+        Khoa saved = khoaRepository.save(khoa);
+        return KhoaResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public void deleteKhoa(Integer id) {
+        if (!khoaRepository.existsById(id)) {
+            throw new ResourceNotFoundException("KHOA_NOT_FOUND",
+                    "Không tìm thấy khoa với ID: " + id);
+        }
+        try {
+            khoaRepository.deleteById(id);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new BadRequestException("KHOA_IN_USE",
+                    "Khoa đang được sử dụng bởi ngành. Không thể xóa.");
+        }
+    }
+
+    // ====================== CRUD NGANH ======================
+
+    @Transactional
+    public NganhResponse createNganh(NganhRequest req) {
+        // Validate khoaId bắt buộc
+        if (req.getKhoaId() == null || req.getKhoaId() <= 0) {
+            throw new BadRequestException("KHOA_ID_REQUIRED", "Khoa không được để trống.");
+        }
+        Khoa khoa = khoaRepository.findById(req.getKhoaId())
+                .orElseThrow(() -> new BadRequestException("KHOA_NOT_FOUND",
+                        "Không tìm thấy khoa với ID: " + req.getKhoaId()));
+        
+        // Kiểm tra trùng theo (tên ngành, khoa_id)
+        Optional<Nganh> existing = nganhRepository.findFirstByTenNganhIgnoreCaseAndKhoa_Id(
+                req.getTenNganh().trim(), khoa.getId());
+        if (existing.isPresent()) {
+            throw new BadRequestException("NGANH_EXISTS",
+                    "Ngành '" + req.getTenNganh() + "' đã tồn tại trong khoa '" + khoa.getTenKhoa() + "'.");
+        }
+        
+        Nganh nganh = new Nganh();
+        nganh.setMaNganh(generateMaNganh());
+        nganh.setTenNganh(req.getTenNganh().trim());
+        nganh.setKhoa(khoa);
+        nganh.setMoTa(req.getMoTa());
+        nganh.setDangSuDung(req.getDangSuDung() != null ? req.getDangSuDung() : true);
+        Nganh saved = nganhRepository.save(nganh);
+        return NganhResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public NganhResponse updateNganh(Integer id, NganhRequest req) {
+        Nganh nganh = nganhRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("NGANH_NOT_FOUND",
+                        "Không tìm thấy ngành với ID: " + id));
+        
+        // Validate khoaId bắt buộc
+        if (req.getKhoaId() == null || req.getKhoaId() <= 0) {
+            throw new BadRequestException("KHOA_ID_REQUIRED", "Khoa không được để trống.");
+        }
+        Khoa khoa = khoaRepository.findById(req.getKhoaId())
+                .orElseThrow(() -> new BadRequestException("KHOA_NOT_FOUND",
+                        "Không tìm thấy khoa với ID: " + req.getKhoaId()));
+        
+        // Kiểm tra trùng theo (tên ngành, khoa_id) - loại trừ chính nó
+        Optional<Nganh> existing = nganhRepository.findFirstByTenNganhIgnoreCaseAndKhoa_Id(
+                req.getTenNganh().trim(), khoa.getId());
+        if (existing.isPresent() && !existing.get().getId().equals(id)) {
+            throw new BadRequestException("NGANH_EXISTS",
+                    "Ngành '" + req.getTenNganh() + "' đã tồn tại trong khoa '" + khoa.getTenKhoa() + "'.");
+        }
+        
+        nganh.setTenNganh(req.getTenNganh().trim());
+        nganh.setKhoa(khoa);
+        nganh.setMoTa(req.getMoTa());
+        if (req.getDangSuDung() != null) {
+            nganh.setDangSuDung(req.getDangSuDung());
+        }
+        Nganh saved = nganhRepository.save(nganh);
+        return NganhResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public void deleteNganh(Integer id) {
+        if (!nganhRepository.existsById(id)) {
+            throw new ResourceNotFoundException("NGANH_NOT_FOUND",
+                    "Không tìm thấy ngành với ID: " + id);
+        }
+        try {
+            nganhRepository.deleteById(id);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new BadRequestException("NGANH_IN_USE",
+                    "Ngành đang được sử dụng bởi lớp. Không thể xóa.");
+        }
+    }
+
+    // ====================== CRUD KHOA HOC ======================
+
+    @Transactional
+    public KhoaHocResponse createKhoaHoc(KhoaHocRequest req) {
+        KhoaHoc kh = new KhoaHoc();
+        kh.setMaKhoaHoc(generateMaKhoaHoc());
+        kh.setTenKhoaHoc(req.getTenKhoaHoc().trim());
+        kh.setNamBatDau(req.getNamBatDau());
+        kh.setNamKetThuc(req.getNamKetThuc());
+        kh.setMoTa(req.getMoTa());
+        kh.setDangSuDung(req.getDangSuDung() != null ? req.getDangSuDung() : true);
+        KhoaHoc saved = khoaHocRepository.save(kh);
+        return KhoaHocResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public KhoaHocResponse updateKhoaHoc(Integer id, KhoaHocRequest req) {
+        KhoaHoc kh = khoaHocRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("KHOAHOC_NOT_FOUND",
+                        "Không tìm thấy khóa học với ID: " + id));
+        kh.setTenKhoaHoc(req.getTenKhoaHoc().trim());
+        kh.setNamBatDau(req.getNamBatDau());
+        kh.setNamKetThuc(req.getNamKetThuc());
+        kh.setMoTa(req.getMoTa());
+        if (req.getDangSuDung() != null) {
+            kh.setDangSuDung(req.getDangSuDung());
+        }
+        KhoaHoc saved = khoaHocRepository.save(kh);
+        return KhoaHocResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public void deleteKhoaHoc(Integer id) {
+        if (!khoaHocRepository.existsById(id)) {
+            throw new ResourceNotFoundException("KHOAHOC_NOT_FOUND",
+                    "Không tìm thấy khóa học với ID: " + id);
+        }
+        try {
+            khoaHocRepository.deleteById(id);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new BadRequestException("KHOAHOC_IN_USE",
+                    "Khóa học đang được sử dụng bởi lớp. Không thể xóa.");
+        }
+    }
+
+    // ====================== CRUD LOP ======================
+
+    @Transactional
+    public LopResponse createLop(LopRequest req) {
+        Nganh nganh = nganhRepository.findById(req.getNganhId())
+                .orElseThrow(() -> new BadRequestException("NGANH_NOT_FOUND",
+                        "Không tìm thấy ngành với ID: " + req.getNganhId()));
+        KhoaHoc khoaHoc = khoaHocRepository.findById(req.getKhoaHocId())
+                .orElseThrow(() -> new BadRequestException("KHOAHOC_NOT_FOUND",
+                        "Không tìm thấy khóa học với ID: " + req.getKhoaHocId()));
+        Lop lop = new Lop();
+        lop.setMaLop(generateMaLop());
+        lop.setTenLop(req.getTenLop().trim());
+        lop.setNganh(nganh);
+        lop.setKhoaHoc(khoaHoc);
+        lop.setMoTa(req.getMoTa());
+        lop.setDangSuDung(req.getDangSuDung() != null ? req.getDangSuDung() : true);
+        Lop saved = lopRepository.save(lop);
+        return LopResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public LopResponse updateLop(Integer id, LopRequest req) {
+        Lop lop = lopRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("LOP_NOT_FOUND",
+                        "Không tìm thấy lớp với ID: " + id));
+        Nganh nganh = nganhRepository.findById(req.getNganhId())
+                .orElseThrow(() -> new BadRequestException("NGANH_NOT_FOUND",
+                        "Không tìm thấy ngành với ID: " + req.getNganhId()));
+        KhoaHoc khoaHoc = khoaHocRepository.findById(req.getKhoaHocId())
+                .orElseThrow(() -> new BadRequestException("KHOAHOC_NOT_FOUND",
+                        "Không tìm thấy khóa học với ID: " + req.getKhoaHocId()));
+        lop.setTenLop(req.getTenLop().trim());
+        lop.setNganh(nganh);
+        lop.setKhoaHoc(khoaHoc);
+        lop.setMoTa(req.getMoTa());
+        if (req.getDangSuDung() != null) {
+            lop.setDangSuDung(req.getDangSuDung());
+        }
+        Lop saved = lopRepository.save(lop);
+        return LopResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public void deleteLop(Integer id) {
+        if (!lopRepository.existsById(id)) {
+            throw new ResourceNotFoundException("LOP_NOT_FOUND",
+                    "Không tìm thấy lớp với ID: " + id);
+        }
+        try {
+            lopRepository.deleteById(id);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            throw new BadRequestException("LOP_IN_USE",
+                    "Lớp đang được sử dụng bởi sinh viên. Không thể xóa.");
+        }
     }
 }

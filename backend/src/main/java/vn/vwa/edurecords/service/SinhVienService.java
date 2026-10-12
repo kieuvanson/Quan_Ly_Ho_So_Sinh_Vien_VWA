@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.PagedResponse;
+import vn.vwa.edurecords.dto.response.SinhVienResponse;
 import vn.vwa.edurecords.entity.Khoa;
 import vn.vwa.edurecords.entity.KhoaHoc;
 import vn.vwa.edurecords.entity.Lop;
@@ -78,7 +79,7 @@ public class SinhVienService {
         // từ text (mã/tên) — controller thường đã làm rồi, đây là fallback.
         Integer nganhId = req.getNganhId() != null
                 ? req.getNganhId()
-                : danhMucService.resolveNganhId(trimOrNull(req.getNganh()), req.getKhoaId());
+                : danhMucService.resolveNganhId(trimOrNull(req.getNganh()));
         Integer lopId = req.getLopId() != null
                 ? req.getLopId()
                 : danhMucService.resolveLopId(trimOrNull(req.getLop()), nganhId, req.getKhoaHocId());
@@ -114,6 +115,52 @@ public class SinhVienService {
         return new PagedResponse<>(pageResult.getContent(), meta);
     }
 
+    /**
+     * Tìm kiếm + lọc + phân trang, trả về DTO (SinhVienResponse).
+     * Dùng cho API endpoint /api/sinh-vien để tránh expose JPA entity.
+     */
+    @Transactional(readOnly = true)
+    public PagedResponse<List<SinhVienResponse>> searchResponse(SinhVienSearchRequest req) {
+        // Tái sử dụng logic search nhưng convert sang DTO
+        String keyword = trimOrNull(req.getKeyword());
+        String trangThaiHocVu = trimOrNull(req.getTrangThaiHocVu());
+
+        Integer nganhId = req.getNganhId() != null
+                ? req.getNganhId()
+                : danhMucService.resolveNganhId(trimOrNull(req.getNganh()));
+        Integer lopId = req.getLopId() != null
+                ? req.getLopId()
+                : danhMucService.resolveLopId(trimOrNull(req.getLop()), nganhId, req.getKhoaHocId());
+        Integer khoaHocId = req.getKhoaHocId() != null
+                ? req.getKhoaHocId()
+                : danhMucService.resolveKhoaHocId(trimOrNull(req.getKhoaNamNhapHoc()));
+        Integer khoaId = req.getKhoaId() != null
+                ? req.getKhoaId()
+                : danhMucService.resolveKhoaId(trimOrNull(req.getKhoa()));
+        String heDaoTao = trimOrNull(req.getHeDaoTao());
+
+        int page = Math.max(0, req.getPage());
+        int size = Math.max(1, req.getSize());
+        int offset = page * size;
+
+        long total = sinhVienRepository.countByFilters(
+                keyword, trangThaiHocVu, nganhId, lopId, khoaHocId, khoaId, heDaoTao);
+
+        List<SinhVien> content = total == 0
+                ? Collections.emptyList()
+                : sinhVienRepository.findByFilters(
+                        keyword, trangThaiHocVu, nganhId, lopId, khoaHocId, khoaId, heDaoTao,
+                        size, offset);
+
+        // Convert entities to DTOs
+        List<SinhVienResponse> dtoList = content.stream()
+                .map(SinhVienResponse::fromEntity)
+                .toList();
+
+        PagedResponse.PageMetadata meta = new PagedResponse.PageMetadata(page, size, total);
+        return new PagedResponse<>(dtoList, meta);
+    }
+
     public List<SinhVien> getAll() {
         return sinhVienRepository.findAll();
     }
@@ -140,12 +187,16 @@ public class SinhVienService {
     ) {}
 
     /**
-     * Import danh sách sinh viên từ file Excel, upsert theo MSSV.
+     * Import danh sách sinh viên từ file Excel — chỉ thêm mới.
      *
-     * <p>Sau V4: Excel vẫn ghi text (Khoa/Ngành/Lớp/Khóa) để người dùng cuối
-     * không cần biết id. Service tự lookup / tạo danh mục qua
-     * {@link DanhMucService} rồi gắn FK vào SinhVien. Nếu thiếu thông tin danh
-     * mục bắt buộc → dòng bị loại và báo lỗi chi tiết.</p>
+     * <p>Quy tắc:</p>
+     * <ul>
+     *   <li>KHÔNG tự tạo danh mục (Khoa/Ngành/Lớp/Khóa học). Nếu không tìm thấy → báo lỗi.</li>
+     *   <li>MSSV đã tồn tại → báo trùng, KHÔNG ghi đè.</li>
+     *   <li>CCCD trùng với SV khác → báo lỗi.</li>
+     *   <li>MSSV / CCCD trùng trong chính file → báo lỗi.</li>
+     *   <li>Thiếu thông tin bắt buộc → báo lỗi.</li>
+     * </ul>
      */
     @Transactional
     public ImportResult importFromExcel(MultipartFile file) {
@@ -159,7 +210,6 @@ public class SinhVienService {
         }
 
         List<SinhVien> toInsert = new ArrayList<>();
-        List<SinhVien> toUpdate = new ArrayList<>();
         List<SinhVienExcelService.RowError> errors = new ArrayList<>(parsed.errors());
 
         Set<String> seenMssv = new HashSet<>();
@@ -170,54 +220,52 @@ public class SinhVienService {
             nextRow++;
             if (!seenMssv.add(sv.getMssv())) {
                 errors.add(new SinhVienExcelService.RowError(nextRow,
-                        "MSSV " + sv.getMssv() + " bị lặp trong cùng file, bỏ qua dòng này."));
+                        "MSSV '" + sv.getMssv() + "' bị lặp trong cùng file, bỏ qua dòng này."));
                 continue;
             }
 
             if (sv.getCccd() != null && !sv.getCccd().isBlank()) {
                 if (sinhVienRepository.existsByCccdAndMssvNot(sv.getCccd(), sv.getMssv())) {
                     errors.add(new SinhVienExcelService.RowError(nextRow,
-                            "CCCD " + sv.getCccd() + " đã thuộc sinh viên khác, bỏ qua MSSV " + sv.getMssv() + "."));
+                            "CCCD '" + sv.getCccd() + "' đã thuộc sinh viên khác, bỏ qua MSSV '" + sv.getMssv() + "'."));
                     continue;
                 }
                 if (!seenCccd.add(sv.getCccd())) {
                     errors.add(new SinhVienExcelService.RowError(nextRow,
-                            "CCCD " + sv.getCccd() + " bị lặp trong cùng file, bỏ qua MSSV " + sv.getMssv() + "."));
+                            "CCCD '" + sv.getCccd() + "' bị lặp trong cùng file, bỏ qua MSSV '" + sv.getMssv() + "'."));
                     continue;
                 }
             }
 
-            // Sau V4: Excel chỉ chứa TEXT (Khoa/Ngành/Lớp/Khóa), SinhVienExcelService
-            // tạm set text vào các field VARCHAR. Ở đây resolve sang FK entity.
-            // Nếu dòng đã set *_id (qua API), giữ nguyên.
+            // Sau V4: Excel chỉ chứa TEXT (Khoa/Ngành/Lớp/Khóa). Dùng lookup-only
+            // (findKhoaByTen, findNganhByTen...) — KHÔNG tạo mới danh mục.
+            // Nếu danh mục không tìm thấy → SinhVienExcelService.parseRow() đã báo lỗi
+            // và set null vào FK. Kiểm tra lại ở đây.
             if (sv.getKhoa() == null || sv.getNganh() == null
                     || sv.getLop() == null || sv.getKhoaHoc() == null) {
                 errors.add(new SinhVienExcelService.RowError(nextRow,
-                        "Thiếu thông tin danh mục bắt buộc (Khoa/Ngành/Lớp/Khóa học) cho MSSV "
-                                + sv.getMssv() + "."));
+                        "Thiếu thông tin danh mục bắt buộc (Khoa/Ngành/Lớp/Khóa học) cho MSSV '"
+                                + sv.getMssv() + "'. Vui lòng kiểm tra lại tên Khoa/Ngành/Lớp/Khóa nhập học."));
                 continue;
             }
 
-            Optional<SinhVien> existing = sinhVienRepository.findById(sv.getMssv());
-            if (existing.isPresent()) {
-                copyEditableFields(existing.get(), sv);
-                existing.get().setNgayCapNhat(LocalDateTime.now());
-                toUpdate.add(existing.get());
-            } else {
-                sv.setNgayTao(LocalDateTime.now());
-                toInsert.add(sv);
+            // CHỈ THÊM MỚI — MSSV đã tồn tại → báo trùng, KHÔNG cập nhật
+            if (sinhVienRepository.existsById(sv.getMssv())) {
+                errors.add(new SinhVienExcelService.RowError(nextRow,
+                        "MSSV '" + sv.getMssv() + "' đã tồn tại trong hệ thống. Không ghi đè dữ liệu cũ."));
+                continue;
             }
+
+            sv.setNgayTao(LocalDateTime.now());
+            toInsert.add(sv);
         }
 
         if (!toInsert.isEmpty()) {
             sinhVienRepository.saveAll(toInsert);
         }
-        if (!toUpdate.isEmpty()) {
-            sinhVienRepository.saveAll(toUpdate);
-        }
 
-        return new ImportResult(toInsert.size() + toUpdate.size(), errors.size(),
-                toInsert.size(), toUpdate.size(), errors);
+        return new ImportResult(toInsert.size(), errors.size(),
+                toInsert.size(), 0, errors);
     }
 
     /** Chỉ copy các trường người dùng được sửa qua import — không đụng khóa hay trạng thái hệ thống. */

@@ -108,6 +108,17 @@ export const phieuMuonApi = {
   },
 
   /**
+   * Lấy chi tiết 1 phiếu theo mã phiếu.
+   * Endpoint: GET /api/phieu-muon/{maPhieu}
+   */
+  getByMaPhieu: async (maPhieu: string): Promise<ApiResponse<PhieuMuon>> => {
+    const res = await apiClient.get<ApiResponse<PhieuMuon>>(
+      `/api/phieu-muon/${encodeURIComponent(maPhieu)}`
+    )
+    return res.data
+  },
+
+  /**
    * Từ chối phiếu: Chờ duyệt → Từ chối.
    * Endpoint: PUT /api/phieu-muon/{maPhieu}/tu-choi
    * Body (optional): { lyDoTuChoi: "..." }

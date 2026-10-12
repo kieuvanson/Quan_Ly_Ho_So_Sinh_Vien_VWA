@@ -13,6 +13,50 @@ export interface ImportResult {
 }
 
 /**
+ * Trạng thái dòng trong bảng preview.
+ */
+export type ImportRowStatus = 'VALID' | 'INVALID' | 'DUPLICATE' | 'DUPLICATE_IN_FILE'
+
+/**
+ * Thông tin đối chiếu danh mục của một dòng preview.
+ */
+export interface ImportDanhMucInfo {
+  khoaTen: string | null
+  khoaId: string | null
+  nganhTen: string | null
+  nganhId: string | null
+  lopTen: string | null
+  lopId: string | null
+  khoaHocTen: string | null
+  khoaHocId: string | null
+}
+
+/**
+ * Một dòng trong kết quả preview.
+ */
+export interface ImportRowPreview {
+  excelRow: number
+  mssv: string | null
+  hoTen: string | null
+  status: ImportRowStatus
+  errors: string[]
+  danhMuc: ImportDanhMucInfo | null
+}
+
+/**
+ * Kết quả preview import — trả về từ backend.
+ */
+export interface ImportPreviewResult {
+  totalRows: number
+  validRows: number
+  invalidRows: number
+  duplicateInFile: number
+  rows: ImportRowPreview[]
+  newCount: number
+  duplicateCount: number
+}
+
+/**
  * SinhVien API client.
  * Endpoints:
  * - GET    /api/sinh-vien (search, filter, paginate)
@@ -91,8 +135,8 @@ export const sinhVienApi = {
 
   /**
    * Upload file Excel để import.
-   * - Nếu MSSV đã tồn tại: cập nhật (upsert).
-   * - Nếu chưa có: tạo mới.
+   * Phương thức cũ: upload trực tiếp và ghi ngay.
+   * NÊN dùng preview + confirm thay thế.
    */
   importExcel: async (file: File): Promise<ApiResponse<ImportResult>> => {
     const form = new FormData()
@@ -100,6 +144,33 @@ export const sinhVienApi = {
     const res = await apiClient.post<ApiResponse<ImportResult>>('/api/sinh-vien/import', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    return res.data
+  },
+
+  /**
+   * Bước 1: Preview — upload file Excel để kiểm tra & xem trước dữ liệu.
+   * CHƯA ghi vào database.
+   */
+  previewImport: async (file: File): Promise<ApiResponse<ImportPreviewResult>> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post<ApiResponse<ImportPreviewResult>>(
+      '/api/sinh-vien/import/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return res.data
+  },
+
+  /**
+   * Bước 2: Confirm — xác nhận import các MSSV đã được preview.
+   * GHI dữ liệu vào database.
+   */
+  confirmImport: async (mssvList: string[]): Promise<ApiResponse<ImportResult>> => {
+    const res = await apiClient.post<ApiResponse<ImportResult>>(
+      '/api/sinh-vien/import/confirm',
+      { mssvList }
+    )
     return res.data
   },
 }

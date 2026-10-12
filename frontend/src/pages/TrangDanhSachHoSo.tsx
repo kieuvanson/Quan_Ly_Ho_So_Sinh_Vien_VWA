@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX, Loader2, RotateCcw, CheckCircle2, AlertCircle } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, Eye, FileUp, FileDown, FileX,
+  Loader2, RotateCcw, CheckCircle2, AlertCircle, X, CheckCheck,
+} from 'lucide-react'
 import { sinhVienApi, triggerDownload } from '../api/sinhVien'
 import type { SinhVienSearchParams } from '../api/types'
+import type { ImportPreviewResult, ImportRowPreview } from '../api/sinhVien'
 import { CustomSelect, SearchInput, Button, Toast, Modal } from '../components/ui'
 import './TrangDanhSachHoSo.css'
 
@@ -62,66 +66,6 @@ const LOP_OPTIONS = [
   'K13ANH',
 ]
 
-// Mock data cho giao diện (sẽ thay bằng API thực tế)
-// Cấu trúc phải match với interface SinhVien trong types.ts
-const MOCK_SINH_VIEN = [
-  {
-    mssv: '2673240001',
-    hoTen: 'Nguyễn Hoàng Anh',
-    cccd: '001308034189',
-    ngaySinh: '2008-07-22',
-    nganh: 'Công nghệ thông tin',
-    lop: 'K14CTXHB',
-    khoa: 'Khóa 14',
-    khoaNamHoc: '2026–2029',
-    trangThaiHocVu: 'Đang_học',
-  },
-  {
-    mssv: '2673240002',
-    hoTen: 'Trần Minh Tuấn',
-    cccd: '002308034190',
-    ngaySinh: '2007-03-15',
-    nganh: 'Quản trị kinh doanh',
-    lop: 'K13CTXHB',
-    khoa: 'Khóa 13',
-    khoaNamHoc: '2025–2028',
-    trangThaiHocVu: 'Đang_học',
-  },
-  {
-    mssv: '2673240003',
-    hoTen: 'Lê Thị Mai Lan',
-    cccd: '003308034191',
-    ngaySinh: '2008-11-08',
-    nganh: 'Kế toán',
-    lop: 'K14L',
-    khoa: 'Khóa 14',
-    khoaNamHoc: '2026–2029',
-    trangThaiHocVu: 'Đang_học',
-  },
-  {
-    mssv: '2673240004',
-    hoTen: 'Phạm Đức Minh',
-    cccd: '004308034192',
-    ngaySinh: '2006-05-20',
-    nganh: 'Tài chính - Ngân hàng',
-    lop: 'K15TCNH',
-    khoa: 'Khóa 12',
-    khoaNamHoc: '2024–2027',
-    trangThaiHocVu: 'Bảo_lưu',
-  },
-  {
-    mssv: '2673240005',
-    hoTen: 'Hoàng Văn Hùng',
-    cccd: '005308034193',
-    ngaySinh: '2008-09-12',
-    nganh: 'Công nghệ thông tin',
-    lop: 'K14QTKD',
-    khoa: 'Khóa 14',
-    khoaNamHoc: '2026–2029',
-    trangThaiHocVu: 'Đang_học',
-  },
-]
-
 export function TrangDanhSachHoSo() {
   const navigate = useNavigate()
 
@@ -152,6 +96,14 @@ export function TrangDanhSachHoSo() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isImporting, setIsImporting] = useState(false)
+
+  // Import 2-step: preview
+  const [previewStep, setPreviewStep] = useState<'upload' | 'preview' | 'confirm'>('upload')
+  const [isPreviewing, setIsPreviewing] = useState(false)
+  const [previewResult, setPreviewResult] = useState<ImportPreviewResult | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // Import confirm result
   const [importResult, setImportResult] = useState<{
     successCount: number
     failureCount: number
@@ -161,61 +113,40 @@ export function TrangDanhSachHoSo() {
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Fetch data from API (currently using mock data for UI development)
+  // Fetch data from API
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     
     try {
-      // TODO: Replace with actual API call when backend is ready
-      // Filter mock data based on current filters
-      let filteredData = [...MOCK_SINH_VIEN]
-      
-      // Filter by search query (MSSV, Họ tên, CCCD)
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        filteredData = filteredData.filter(sv => 
-          sv.mssv.toLowerCase().includes(query) ||
-          sv.hoTen.toLowerCase().includes(query) ||
-          sv.cccd.toLowerCase().includes(query)
-        )
+      // Build search params for API
+      const searchParams: SinhVienSearchParams = {
+        keyword: searchQuery || undefined,
+        nganh: nganhFilter || undefined,
+        khoa: khoaFilter || undefined,
+        lop: lopFilter || undefined,
+        trangThaiHocVu: trangThaiFilter ? TRANG_THAI_TO_ENUM[trangThaiFilter as TrangThaiHocVuType] : undefined,
+        page: currentPage - 1, // API uses 0-based pagination
+        size: pageSize,
       }
+
+      // Call API to fetch student list
+      const response = await sinhVienApi.getAll(searchParams)
       
-      // Filter by ngành
-      if (nganhFilter) {
-        filteredData = filteredData.filter(sv => sv.nganh === nganhFilter)
+      if (response.success && response.data) {
+        setSinhVienList(response.data.data || [])
+        setTotalElements(response.data.page?.totalElements || 0)
+        setTotalPages(response.data.page?.totalPages || 0)
+      } else {
+        throw new Error(response.message || 'Không thể tải danh sách sinh viên')
       }
-      
-      // Filter by khóa (e.g., "Khóa 14")
-      if (khoaFilter) {
-        filteredData = filteredData.filter(sv => sv.khoa === khoaFilter)
-      }
-      
-      // Filter by lớp
-      if (lopFilter) {
-        filteredData = filteredData.filter(sv => sv.lop === lopFilter)
-      }
-      
-      // Filter by trạng thái học vụ (convert label to enum)
-      if (trangThaiFilter) {
-        const enumValue = TRANG_THAI_TO_ENUM[trangThaiFilter as TrangThaiHocVuType]
-        filteredData = filteredData.filter(sv => sv.trangThaiHocVu === enumValue)
-      }
-      
-      // Pagination
-      const total = filteredData.length
-      const totalPagesCalc = Math.ceil(total / pageSize)
-      const startIndex = (currentPage - 1) * pageSize
-      const paginatedData = filteredData.slice(startIndex, startIndex + pageSize)
-      
-      setSinhVienList(paginatedData)
-      setTotalElements(total)
-      setTotalPages(totalPagesCalc)
       
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || err.message || 'Đã xảy ra lỗi khi tải dữ liệu'
       setError(errorMessage)
       setSinhVienList([])
+      setTotalElements(0)
+      setTotalPages(0)
     } finally {
       setIsLoading(false)
     }
@@ -285,6 +216,9 @@ export function TrangDanhSachHoSo() {
   function handleImportExcel() {
     setSelectedFile(null)
     setImportResult(null)
+    setPreviewResult(null)
+    setPreviewError(null)
+    setPreviewStep('upload')
     setIsImportModalOpen(true)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -304,20 +238,63 @@ export function TrangDanhSachHoSo() {
     const f = e.target.files?.[0] ?? null
     setSelectedFile(f)
     setImportResult(null)
+    setPreviewResult(null)
+    setPreviewError(null)
+    // Nếu đã ở bước confirm → quay về upload
+    if (previewStep !== 'upload') {
+      setPreviewStep('upload')
+    }
   }
 
-  async function handleSubmitImport() {
+  /** Bước 1: Preview — gọi API kiểm tra file */
+  async function handlePreviewFile() {
     if (!selectedFile) {
       showToast('Vui lòng chọn file Excel trước.', 'error')
       return
     }
+    setIsPreviewing(true)
+    setPreviewError(null)
+    try {
+      const res = await sinhVienApi.previewImport(selectedFile)
+      if (res.success) {
+        setPreviewResult(res.data)
+        setPreviewStep('preview')
+      } else {
+        setPreviewError(res.message || 'Kiểm tra file thất bại.')
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Đã xảy ra lỗi khi kiểm tra file.'
+      setPreviewError(msg)
+    } finally {
+      setIsPreviewing(false)
+    }
+  }
+
+  /** Bước 2: Confirm — gọi API xác nhận import */
+  async function handleConfirmImport() {
+    if (!previewResult) return
+    // Lấy danh sách MSSV hợp lệ từ preview
+    const validMssvList = previewResult.rows
+      .filter((r) => r.status === 'VALID')
+      .map((r) => r.mssv)
+      .filter((mssv): mssv is string => mssv !== null)
+
+    if (validMssvList.length === 0) {
+      showToast('Không có sinh viên hợp lệ nào để import.', 'error')
+      return
+    }
+
     setIsImporting(true)
     try {
-      const res = await sinhVienApi.importExcel(selectedFile)
+      const res = await sinhVienApi.confirmImport(validMssvList)
       if (res.success) {
         setImportResult(res.data)
-        showToast(`Import xong: ${res.data.insertedCount} mới, ${res.data.updatedCount} cập nhật, ${res.data.failureCount} lỗi.`, res.data.failureCount > 0 ? 'info' : 'success')
-        // Reload danh sách sau khi import thành công
+        setPreviewStep('confirm')
+        showToast(
+          `Import thành công: ${res.data.insertedCount} sinh viên.`,
+          'success'
+        )
+        // Reload danh sách
         fetchData()
       } else {
         showToast(res.message || 'Import thất bại.', 'error')
@@ -334,6 +311,9 @@ export function TrangDanhSachHoSo() {
     setIsImportModalOpen(false)
     setSelectedFile(null)
     setImportResult(null)
+    setPreviewResult(null)
+    setPreviewError(null)
+    setPreviewStep('upload')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -603,77 +583,240 @@ export function TrangDanhSachHoSo() {
         )}
       </div>
 
-      {/* Modal Import Excel */}
+      {/* Modal Import Excel — 2 bước: Upload → Preview → Confirm → Kết quả */}
       <Modal
         isOpen={isImportModalOpen}
         onClose={handleCloseImportModal}
         title="Import sinh viên từ Excel"
-        size="md"
+        size="lg"
         footer={
           <>
-            <Button variant="secondary" onClick={handleCloseImportModal} disabled={isImporting}>
-              Đóng
-            </Button>
-            {!importResult && (
-              <Button variant="primary" onClick={handleSubmitImport} disabled={!selectedFile || isImporting}>
-                {isImporting ? 'Đang import...' : 'Import'}
+            {previewStep === 'upload' && (
+              <>
+                <Button variant="secondary" onClick={handleCloseImportModal}>
+                  Đóng
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handlePreviewFile}
+                  disabled={!selectedFile || isPreviewing}
+                  icon={isPreviewing ? <Loader2 size={16} /> : <FileUp size={16} />}
+                >
+                  {isPreviewing ? 'Đang kiểm tra...' : 'Kiểm tra file'}
+                </Button>
+              </>
+            )}
+            {previewStep === 'preview' && (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setPreviewStep('upload')
+                    setPreviewResult(null)
+                  }}
+                  disabled={isImporting}
+                >
+                  Chọn file khác
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleConfirmImport}
+                  disabled={
+                    isImporting ||
+                    !previewResult ||
+                    previewResult.validRows === 0
+                  }
+                  icon={isImporting ? <Loader2 size={16} /> : <CheckCheck size={16} />}
+                >
+                  {isImporting ? 'Đang import...' : `Xác nhận import (${previewResult?.validRows ?? 0})`}
+                </Button>
+              </>
+            )}
+            {previewStep === 'confirm' && (
+              <Button variant="secondary" onClick={handleCloseImportModal}>
+                Đóng
               </Button>
             )}
           </>
         }
       >
-        <div className="trang-danh-sach__import">
-          <div className="trang-danh-sach__import-info">
-            <p>
-              Chọn file Excel (.xlsx) theo đúng định dạng mẫu. Hệ thống sẽ tự động <strong>cập nhật</strong> sinh viên có MSSV trùng hoặc <strong>thêm mới</strong> nếu chưa tồn tại.
-            </p>
-            <Button variant="ghost" size="sm" onClick={handleDownloadTemplate}>
-              <FileDown size={16} /> Tải file mẫu
-            </Button>
-          </div>
+        {/* ===== BƯỚC 1: UPLOAD ===== */}
+        {previewStep === 'upload' && (
+          <div className="trang-danh-sach__import">
+            <div className="trang-danh-sach__import-info">
+              <p>
+                <strong>Bước 1:</strong> Chọn file Excel (.xlsx) theo đúng định dạng mẫu.
+                Hệ thống sẽ kiểm tra dữ liệu trước khi ghi vào database.
+                Chỉ thêm mới sinh viên — <strong>không ghi đè</strong> dữ liệu cũ.
+              </p>
+              <Button variant="ghost" size="sm" onClick={handleDownloadTemplate}>
+                <FileDown size={16} /> Tải file mẫu
+              </Button>
+            </div>
 
-          <div className="trang-danh-sach__import-upload">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileChange}
-              disabled={isImporting}
-            />
-            {selectedFile && (
-              <p className="trang-danh-sach__import-filename">
-                <CheckCircle2 size={14} /> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+            <div className="trang-danh-sach__import-upload">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+                disabled={isPreviewing}
+              />
+              {selectedFile && (
+                <p className="trang-danh-sach__import-filename">
+                  <CheckCircle2 size={14} /> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+            </div>
+
+            {previewError && (
+              <div className="trang-danh-sach__import-error">
+                <AlertCircle size={16} />
+                <span>{previewError}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== BƯỚC 2: PREVIEW ===== */}
+        {previewStep === 'preview' && previewResult && (
+          <div className="trang-danh-sach__import-preview">
+            {/* Thống kê */}
+            <div className="trang-danh-sach__import-preview-stats">
+              <div className="stat-item stat-item--success">
+                <CheckCircle2 size={20} />
+                <div>
+                  <span className="stat-value">{previewResult.validRows}</span>
+                  <span className="stat-label">Sẽ thêm mới</span>
+                </div>
+              </div>
+              <div className="stat-item stat-item--warning">
+                <AlertCircle size={20} />
+                <div>
+                  <span className="stat-value">{previewResult.invalidRows}</span>
+                  <span className="stat-label">Bị lỗi / trùng</span>
+                </div>
+              </div>
+              <div className="stat-item stat-item--info">
+                <FileX size={20} />
+                <div>
+                  <span className="stat-value">{previewResult.totalRows}</span>
+                  <span className="stat-label">Tổng dòng</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bảng preview */}
+            <div className="trang-danh-sach__import-preview-table-wrapper">
+              <table className="trang-danh-sach__import-preview-table">
+                <thead>
+                  <tr>
+                    <th>Dòng</th>
+                    <th>MSSV</th>
+                    <th>Họ tên</th>
+                    <th>Trạng thái</th>
+                    <th>Thông tin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewResult.rows.map((row, idx) => (
+                    <tr
+                      key={idx}
+                      className={
+                        row.status === 'VALID'
+                          ? 'row--valid'
+                          : row.status === 'DUPLICATE' || row.status === 'DUPLICATE_IN_FILE'
+                          ? 'row--duplicate'
+                          : 'row--invalid'
+                      }
+                    >
+                      <td className="col-center">{row.excelRow}</td>
+                      <td>{row.mssv ?? '—'}</td>
+                      <td>{row.hoTen ?? '—'}</td>
+                      <td>
+                        {row.status === 'VALID' && (
+                          <span className="badge badge--success">Hợp lệ</span>
+                        )}
+                        {row.status === 'DUPLICATE' && (
+                          <span className="badge badge--warning">Trùng DB</span>
+                        )}
+                        {row.status === 'DUPLICATE_IN_FILE' && (
+                          <span className="badge badge--warning">Trùng file</span>
+                        )}
+                        {row.status === 'INVALID' && (
+                          <span className="badge badge--danger">Lỗi</span>
+                        )}
+                      </td>
+                      <td className="col-error">
+                        {row.errors.length > 0 && (
+                          <span className="error-text" title={row.errors.join('; ')}>
+                            {row.errors[0]}
+                          </span>
+                        )}
+                        {row.status === 'VALID' && row.danhMuc && (
+                          <span className="info-text">
+                            Khoa: <strong>{row.danhMuc.khoaTen ?? '—'}</strong>
+                            {row.danhMuc.nganhTen ? ` | Ngành: ${row.danhMuc.nganhTen}` : ''}
+                            {row.danhMuc.lopTen ? ` | Lớp: ${row.danhMuc.lopTen}` : ''}
+                            {row.danhMuc.khoaHocTen ? ` | Khóa: ${row.danhMuc.khoaHocTen}` : ''}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {previewResult.validRows > 0 && (
+              <p className="trang-danh-sach__import-preview-note">
+                <CheckCircle2 size={14} />
+                Nhấn <strong>"Xác nhận import"</strong> để thêm {previewResult.validRows} sinh viên mới.
+                Dữ liệu cũ không bị ảnh hưởng.
+              </p>
+            )}
+            {previewResult.validRows === 0 && (
+              <p className="trang-danh-sach__import-preview-note trang-danh-sach__import-preview-note--error">
+                <AlertCircle size={14} />
+                Không có sinh viên hợp lệ nào để import. Vui lòng kiểm tra lại file Excel.
               </p>
             )}
           </div>
+        )}
 
-          {importResult && (
-            <div className="trang-danh-sach__import-result">
-              <h4>Kết quả import</h4>
-              <ul>
-                <li><strong>Tổng thành công:</strong> {importResult.successCount}</li>
-                <li><strong>Thêm mới:</strong> {importResult.insertedCount}</li>
-                <li><strong>Cập nhật:</strong> {importResult.updatedCount}</li>
-                <li><strong>Lỗi:</strong> {importResult.failureCount}</li>
-              </ul>
-              {importResult.errors.length > 0 && (
-                <div className="trang-danh-sach__import-errors">
-                  <h5>Chi tiết lỗi:</h5>
-                  <ul>
-                    {importResult.errors.slice(0, 20).map((e, i) => (
-                      <li key={i}>
-                        <AlertCircle size={14} /> Dòng {e.rowNumber}: {e.message}
-                      </li>
-                    ))}
-                    {importResult.errors.length > 20 && (
-                      <li>... và {importResult.errors.length - 20} lỗi khác</li>
-                    )}
-                  </ul>
-                </div>
-              )}
+        {/* ===== BƯỚC 3: KẾT QUẢ ===== */}
+        {previewStep === 'confirm' && importResult && (
+          <div className="trang-danh-sach__import-result">
+            <div className="result-summary result-summary--success">
+              <CheckCircle2 size={32} />
+              <h4>Import hoàn tất!</h4>
+              <p>Đã thêm thành công <strong>{importResult.insertedCount}</strong> sinh viên.</p>
             </div>
-          )}
-        </div>
+            {importResult.failureCount > 0 && (
+              <div className="result-summary result-summary--warning">
+                <AlertCircle size={24} />
+                <p>
+                  <strong>{importResult.failureCount}</strong> dòng bị lỗi và không được ghi.
+                </p>
+              </div>
+            )}
+            {importResult.errors.length > 0 && (
+              <div className="trang-danh-sach__import-errors">
+                <h5>Chi tiết lỗi:</h5>
+                <ul>
+                  {importResult.errors.slice(0, 30).map((e, i) => (
+                    <li key={i}>
+                      <AlertCircle size={14} /> {e.message}
+                    </li>
+                  ))}
+                  {importResult.errors.length > 30 && (
+                    <li>... và {importResult.errors.length - 30} lỗi khác.</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Toast */}

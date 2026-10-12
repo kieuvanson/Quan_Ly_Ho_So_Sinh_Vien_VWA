@@ -57,7 +57,7 @@ public class SinhVienResponse {
         r.setQueQuan(sv.getQueQuan());
         r.setHeDaoTao(sv.getHeDaoTao());
         
-        // Map từ danh mục
+        // Map nganh, lop từ danh mục
         if (sv.getNganh() != null) {
             r.setNganh(sv.getNganh().getTenNganh());
         }
@@ -65,10 +65,18 @@ public class SinhVienResponse {
             r.setLop(sv.getLop().getTenLop());
         }
         
-        // Map khoa (số khóa) và khoaNamHoc (năm học) từ khoaHoc
+        // Map khoa (Khoa chuyên môn) từ sv.getKhoa()
+        if (sv.getKhoa() != null) {
+            r.setKhoa(sv.getKhoa().getTenKhoa());
+        }
+        
+        // Map khoaNamHoc (niên khóa) từ khoaHoc
         if (sv.getKhoaHoc() != null) {
             KhoaHoc kh = sv.getKhoaHoc();
-            r.setKhoa(formatKhoa(kh.getMaKhoaHoc()));
+            // Nếu khoa (Khoa chuyên môn) chưa được set, fallback từ khoaHoc
+            if (r.getKhoa() == null && kh.getMaKhoaHoc() != null) {
+                r.setKhoa(formatKhoa(kh.getMaKhoaHoc()));
+            }
             r.setKhoaNamHoc(formatKhoaNamHoc(kh));
         }
         

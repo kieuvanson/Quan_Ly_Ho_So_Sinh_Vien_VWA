@@ -124,6 +124,7 @@ export function TrangMuonTra() {
   // Get MSSV from URL if passed from Danh sach ho so
   const [searchParams] = useSearchParams()
   const mssvFromUrl = searchParams.get('mssv')
+  const maPhieuFromUrl = searchParams.get('maPhieu')
 
   // ----- Tab state -----
   const [activeTab, setActiveTab] = useState<'dangmuon' | 'lichsu'>('dangmuon')
@@ -339,6 +340,19 @@ export function TrangMuonTra() {
 
     lookupMssv()
   }, [mssvFromUrl])
+
+  // =========================================================================
+  // Handle maPhieu from URL - tự động highlight và cuộn đến phiếu khi có maPhieu trên URL
+  // =========================================================================
+  useEffect(() => {
+    if (!maPhieuFromUrl) return
+
+    // Fetch danh sách trước nếu chưa load
+    if (dangMuonList.length === 0 && lichSuList.length === 0) {
+      fetchDangMuon()
+      fetchLichSu()
+    }
+  }, [maPhieuFromUrl, dangMuonList.length, lichSuList.length, fetchDangMuon, fetchLichSu])
 
   // =========================================================================
   // Map PhieuMuon (backend DTO) → LichSuItem (UI row)
