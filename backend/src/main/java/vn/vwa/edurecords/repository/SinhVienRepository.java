@@ -95,4 +95,24 @@ public interface SinhVienRepository extends JpaRepository<SinhVien, String> {
             @Param("khoaHocId") Integer khoaHocId,
             @Param("khoaId") Integer khoaId,
             @Param("heDaoTao") String heDaoTao);
+
+    // ============================================================
+    // Đếm tham chiếu (sau V7) — dùng để kiểm tra FK trước khi xóa danh mục
+    // ============================================================
+    // Trước V7, các service xóa danh mục dùng try/catch DataIntegrityViolationException
+    // và trả về thông báo chung ("đang được sử dụng bởi ngành"). Nhưng thực tế
+    // lỗi FK có thể đến từ nhiều bảng (sinh viên, ngành, lớp), gây nhầm lẫn.
+    // Từ V7, ta chủ động count trước → đưa thông báo chính xác bảng nào tham chiếu.
+
+    /** Đếm sinh viên thuộc khoa — FK sinhvien.khoa_id → khoa.id (V4). */
+    long countByKhoa_Id(Integer khoaId);
+
+    /** Đếm sinh viên thuộc ngành — FK sinhvien.nganh_id → nganh.id (V4). */
+    long countByNganh_Id(Integer nganhId);
+
+    /** Đếm sinh viên thuộc lớp — FK sinhvien.lop_id → lop.id (V4). */
+    long countByLop_Id(Integer lopId);
+
+    /** Đếm sinh viên thuộc khóa học — FK sinhvien.khoa_hoc_id → khoa_hoc.id (V4). */
+    long countByKhoaHoc_Id(Integer khoaHocId);
 }

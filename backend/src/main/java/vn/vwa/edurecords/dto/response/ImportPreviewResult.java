@@ -7,6 +7,11 @@ import java.util.List;
  *
  * <p>Trả về thông tin đầy đủ để frontend hiển thị bảng preview gồm:
  * cột trạng thái, lý do lỗi và đối chiếu danh mục.</p>
+ *
+ * <h3>Fail-fast mode (sau V7)</h3>
+ * <p>Khi {@code failFast = true}, hệ thống dừng quét ngay khi gặp dòng lỗi
+ * đầu tiên và trả về trong {@code firstError}. Frontend hiển thị lỗi và yêu
+ * cầu người dùng sửa file Excel trước khi upload lại.</p>
  */
 public class ImportPreviewResult {
 
@@ -31,6 +36,15 @@ public class ImportPreviewResult {
     /** Tổng số sinh viên bị trùng và sẽ bị bỏ qua (MSSV đã tồn tại). */
     private int duplicateCount;
 
+    /** Fail-fast mode: dừng quét khi gặp lỗi đầu tiên. Mặc định false. */
+    private boolean failFast;
+
+    /** Lỗi fail-fast đầu tiên gặp phải (chỉ dùng khi {@code failFast=true}). */
+    private ImportRowPreview firstError;
+
+    /** Thông báo tổng kết (chỉ dùng khi {@code failFast=true}). */
+    private String summaryMessage;
+
     public ImportPreviewResult() {}
 
     public ImportPreviewResult(int totalRows, int validRows, int invalidRows,
@@ -43,6 +57,28 @@ public class ImportPreviewResult {
         this.rows = rows;
         this.newCount = newCount;
         this.duplicateCount = duplicateCount;
+        this.failFast = false;
+    }
+
+    /**
+     * Constructor cho fail-fast: trả về thông tin về dòng lỗi đầu tiên.
+     */
+    public static ImportPreviewResult failFastResult(
+            int totalRows, int validRows,
+            ImportRowPreview firstError, String summaryMessage) {
+        ImportPreviewResult r = new ImportPreviewResult();
+        r.totalRows = totalRows;
+        r.validRows = validRows;
+        r.invalidRows = 1;
+        r.duplicateInFile = 0;
+        r.newCount = 0;
+        r.duplicateCount = 0;
+        r.failFast = true;
+        r.firstError = firstError;
+        r.summaryMessage = summaryMessage;
+        // rows rỗng - chỉ cần firstError để frontend highlight dòng lỗi
+        r.rows = firstError != null ? List.of(firstError) : List.of();
+        return r;
     }
 
     // Getters & setters
@@ -66,6 +102,15 @@ public class ImportPreviewResult {
 
     public int getDuplicateCount() { return duplicateCount; }
     public void setDuplicateCount(int duplicateCount) { this.duplicateCount = duplicateCount; }
+
+    public boolean isFailFast() { return failFast; }
+    public void setFailFast(boolean failFast) { this.failFast = failFast; }
+
+    public ImportRowPreview getFirstError() { return firstError; }
+    public void setFirstError(ImportRowPreview firstError) { this.firstError = firstError; }
+
+    public String getSummaryMessage() { return summaryMessage; }
+    public void setSummaryMessage(String summaryMessage) { this.summaryMessage = summaryMessage; }
 
     /**
      * Kết quả kiểm tra từng dòng Excel.

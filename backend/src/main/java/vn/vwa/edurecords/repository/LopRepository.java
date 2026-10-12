@@ -19,6 +19,16 @@ public interface LopRepository extends JpaRepository<Lop, Integer> {
     Optional<Lop> findByMaLop(String maLop);
 
     /**
+     * Đếm số lớp thuộc ngành — dùng trước khi xóa ngành để báo lỗi chính xác.
+     */
+    long countByNganh_Id(Integer nganhId);
+
+    /**
+     * Đếm số lớp thuộc khóa học — dùng trước khi xóa khóa học để báo lỗi chính xác.
+     */
+    long countByKhoaHoc_Id(Integer khoaHocId);
+
+    /**
      * Tra cứu lớp theo (tên lớp, ngành, khóa học) — định danh logic sau V4.
      * Tên lớp có thể trùng giữa các ngành/khóa, nên cần đủ 3 thuộc tính để lookup chính xác.
      */

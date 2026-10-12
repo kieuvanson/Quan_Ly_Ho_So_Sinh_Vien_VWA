@@ -404,44 +404,37 @@ public class DanhMucExcelService {
 
                 String tenLop = getStringCell(row, 0).trim();
                 String tenNganh = getStringCell(row, 1).trim();
-                String tenKhoa = getStringCell(row, 2).trim(); // Tên khoa chuyên môn
+                String tenKhoaHoc = getStringCell(row, 2).trim(); // Tên khóa năm học (fix bug: cột 2 là Khóa, không phải Khoa)
                 String moTa = getStringCell(row, 3);
 
                 // Validate bắt buộc
-                List<String> rowErrs = validateLopImport(tenLop, tenNganh, tenKhoa);
+                List<String> rowErrs = validateLopImport(tenLop, tenNganh, tenKhoaHoc);
                 if (!rowErrs.isEmpty()) {
                     errors.add(new RowError(i + 1, String.join("; ", rowErrs)));
                     continue;
                 }
 
-                // 1. Tìm Khoa theo tên
-                Optional<Khoa> khoaOpt = khoaRepository.findByTenKhoaIgnoreCase(tenKhoa);
-                if (khoaOpt.isEmpty()) {
-                    errors.add(new RowError(i + 1, "Khoa '" + tenKhoa + "' không tồn tại. Vui lòng tạo Khoa trước."));
-                    continue;
-                }
-
-                // 2. Tìm Ngành theo (tên ngành, khoa_id)
-                Optional<Nganh> nganhOpt = nganhRepository.findFirstByTenNganhIgnoreCaseAndKhoa_Id(tenNganh, khoaOpt.get().getId());
-                if (nganhOpt.isEmpty()) {
-                    errors.add(new RowError(i + 1, "Ngành '" + tenNganh + "' không tồn tại trong khoa '" + tenKhoa + "'. Vui lòng tạo Ngành trước."));
-                    continue;
-                }
-                Nganh nganh = nganhOpt.get();
-
-                // 3. Tìm Khóa năm học theo tên
-                Optional<KhoaHoc> khoaHocOpt = khoaHocRepository.findByTenKhoaHocIgnoreCase(tenKhoa);
+                // 1. Tìm Khóa năm học theo tên (fix bug: tra cứu theo biến tenKhoaHoc)
+                Optional<KhoaHoc> khoaHocOpt = khoaHocRepository.findByTenKhoaHocIgnoreCase(tenKhoaHoc);
                 if (khoaHocOpt.isEmpty()) {
-                    errors.add(new RowError(i + 1, "Khóa năm học '" + tenKhoa + "' không tồn tại. Vui lòng tạo Khóa năm học trước."));
+                    errors.add(new RowError(i + 1, "Khóa năm học '" + tenKhoaHoc + "' không tồn tại. Vui lòng tạo Khóa năm học trước."));
                     continue;
                 }
                 KhoaHoc khoaHoc = khoaHocOpt.get();
+
+                // 2. Tìm Ngành theo tên (lấy bất kỳ ngành nào có tên khớp - ngành thuộc 1 khoa duy nhất)
+                List<Nganh> nganhCandidates = nganhRepository.findByTenNganhIgnoreCase(tenNganh);
+                if (nganhCandidates.isEmpty()) {
+                    errors.add(new RowError(i + 1, "Ngành '" + tenNganh + "' không tồn tại. Vui lòng tạo Ngành trước."));
+                    continue;
+                }
+                Nganh nganh = nganhCandidates.get(0);
 
                 // 4. Kiểm tra trùng Lớp
                 Optional<Lop> existingLop = lopRepository.findFirstByTenLopIgnoreCaseAndNganh_IdAndKhoaHoc_Id(
                         tenLop, nganh.getId(), khoaHoc.getId());
                 if (existingLop.isPresent()) {
-                    errors.add(new RowError(i + 1, "Lớp '" + tenLop + "' đã tồn tại trong ngành '" + tenNganh + "' khóa '" + tenKhoa + "'."));
+                    errors.add(new RowError(i + 1, "Lớp '" + tenLop + "' đã tồn tại trong ngành '" + tenNganh + "' khóa '" + tenKhoaHoc + "'."));
                     continue;
                 }
 
@@ -498,11 +491,11 @@ public class DanhMucExcelService {
         return "KH" + String.format("%02d", max + 1);
     }
 
-    private List<String> validateLopImport(String tenLop, String tenNganh, String tenKhoa) {
+    private List<String> validateLopImport(String tenLop, String tenNganh, String tenKhoaHoc) {
         List<String> errs = new ArrayList<>();
         if (tenLop.isEmpty()) errs.add("Tên lớp không được để trống.");
         if (tenNganh.isEmpty()) errs.add("Tên ngành không được để trống.");
-        if (tenKhoa.isEmpty()) errs.add("Tên khoa không được để trống.");
+        if (tenKhoaHoc.isEmpty()) errs.add("Tên khóa năm học không được để trống.");
         return errs;
     }
 

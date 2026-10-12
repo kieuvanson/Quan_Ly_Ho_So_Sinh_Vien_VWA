@@ -54,6 +54,12 @@ export interface ImportPreviewResult {
   rows: ImportRowPreview[]
   newCount: number
   duplicateCount: number
+  /** Fail-fast mode: dừng quét khi gặp dòng lỗi đầu tiên. Mặc định false. */
+  failFast?: boolean
+  /** Lỗi đầu tiên gặp phải khi fail-fast=true. */
+  firstError?: ImportRowPreview | null
+  /** Thông báo tổng kết (chỉ có khi fail-fast=true). */
+  summaryMessage?: string | null
 }
 
 /**

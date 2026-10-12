@@ -257,7 +257,24 @@ export function TrangDanhSachHoSo() {
     try {
       const res = await sinhVienApi.previewImport(selectedFile)
       if (res.success) {
-        setPreviewResult(res.data)
+        const data = res.data
+        // ===== FAIL-FAST HANDLING (sau V7) =====
+        // Backend dừng quét khi gặp dòng lỗi đầu tiên và trả về firstError.
+        if (data.failFast && data.firstError) {
+          const rowNum = data.firstError.excelRow
+          const mssv = data.firstError.mssv ?? '(trống)'
+          const errMsg = data.firstError.errors?.[0] ?? 'Lỗi không xác định'
+          // Hiển thị lỗi chi tiết kèm số dòng để user mở Excel sửa
+          setPreviewError(
+            `⛔ Phát hiện lỗi ở dòng ${rowNum} (MSSV: ${mssv}):\n${errMsg}\n\n` +
+            `Vui lòng mở file Excel, sửa dòng ${rowNum} và upload lại.`
+          )
+          // KHÔNG chuyển sang bước preview - user phải sửa file trước
+          setPreviewStep('upload')
+          showToast(`Lỗi ở dòng ${rowNum}. Vui lòng sửa file Excel.`, 'error')
+          return
+        }
+        setPreviewResult(data)
         setPreviewStep('preview')
       } else {
         setPreviewError(res.message || 'Kiểm tra file thất bại.')
@@ -681,30 +698,59 @@ export function TrangDanhSachHoSo() {
         {/* ===== BƯỚC 2: PREVIEW ===== */}
         {previewStep === 'preview' && previewResult && (
           <div className="trang-danh-sach__import-preview">
+            {/* Fail-fast warning (nếu có) */}
+            {previewResult.failFast && (
+              <div className="trang-danh-sach__import-failfast">
+                <AlertCircle size={24} />
+                <div>
+                  <h4>⛔ Phát hiện lỗi — Import đã dừng</h4>
+                  <p>
+                    {previewResult.summaryMessage ?? 'Có lỗi trong file Excel. Hệ thống đã dừng quét tại dòng lỗi đầu tiên.'}
+                  </p>
+                  {previewResult.firstError && (
+                    <div className="trang-danh-sach__import-failfast-detail">
+                      <p>
+                        <strong>Dòng {previewResult.firstError.excelRow}</strong>
+                        {previewResult.firstError.mssv && (
+                          <> - MSSV: <code>{previewResult.firstError.mssv}</code></>
+                        )}
+                        {previewResult.firstError.hoTen && (
+                          <> - Họ tên: <code>{previewResult.firstError.hoTen}</code></>
+                        )}
+                      </p>
+                      <ul>
+                        {previewResult.firstError.errors?.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                      <p className="trang-danh-sach__import-failfast-hint">
+                        👉 Mở file Excel, sửa <strong>dòng {previewResult.firstError.excelRow}</strong> và upload lại.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Thống kê */}
-            <div className="trang-danh-sach__import-preview-stats">
-              <div className="stat-item stat-item--success">
-                <CheckCircle2 size={20} />
-                <div>
-                  <span className="stat-value">{previewResult.validRows}</span>
-                  <span className="stat-label">Sẽ thêm mới</span>
+            {!previewResult.failFast && (
+              <div className="trang-danh-sach__import-preview-stats">
+                <div className="stat-item stat-item--success">
+                  <CheckCircle2 size={20} />
+                  <div>
+                    <span className="stat-value">{previewResult.validRows}</span>
+                    <span className="stat-label">Sẽ thêm mới</span>
+                  </div>
+                </div>
+                <div className="stat-item stat-item--info">
+                  <FileX size={20} />
+                  <div>
+                    <span className="stat-value">{previewResult.totalRows}</span>
+                    <span className="stat-label">Tổng dòng</span>
+                  </div>
                 </div>
               </div>
-              <div className="stat-item stat-item--warning">
-                <AlertCircle size={20} />
-                <div>
-                  <span className="stat-value">{previewResult.invalidRows}</span>
-                  <span className="stat-label">Bị lỗi / trùng</span>
-                </div>
-              </div>
-              <div className="stat-item stat-item--info">
-                <FileX size={20} />
-                <div>
-                  <span className="stat-value">{previewResult.totalRows}</span>
-                  <span className="stat-label">Tổng dòng</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Bảng preview */}
             <div className="trang-danh-sach__import-preview-table-wrapper">

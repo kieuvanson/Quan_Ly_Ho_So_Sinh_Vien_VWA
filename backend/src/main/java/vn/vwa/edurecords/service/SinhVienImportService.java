@@ -95,8 +95,17 @@ public class SinhVienImportService {
      * Đọc file Excel, parse từng dòng và kiểm tra đầy đủ.
      * KHÔNG ghi vào database. Kết quả trả về cho frontend hiển thị preview.
      *
+     * <h3>Fail-fast mode (sau V7)</h3>
+     * <p>Khi gặp dòng lỗi đầu tiên (status != VALID), dừng quét ngay và trả về
+     * {@link ImportPreviewResult#failFastResult}. Frontend hiển thị dòng lỗi
+     * và yêu cầu user sửa file Excel trước khi upload lại.</p>
+     *
+     * <p>Trước đây (V6 và cũ hơn) hệ thống quét hết file rồi trả tất cả lỗi.
+     * Hành vi này gây nhầm lẫn vì user phải đọc qua hàng chục dòng lỗi trong
+     * khi chỉ cần sửa 1 dòng trong file.</p>
+     *
      * @param file File Excel (.xlsx / .xls) do người dùng upload.
-     * @return Kết quả preview gồm trạng thái + lỗi từng dòng.
+     * @return Kết quả preview gồm trạng thái + lỗi từng dòng (hoặc firstError nếu fail-fast).
      */
     @Transactional(readOnly = true)
     public ImportPreviewResult preview(org.springframework.web.multipart.MultipartFile file) {
@@ -107,10 +116,6 @@ public class SinhVienImportService {
         Set<String> seenCccdInFile = new HashSet<>();
 
         int validRows = 0;
-        int invalidRows = 0;
-        int duplicateInFile = 0;
-        int newCount = 0;
-        int duplicateCount = 0;
         int processedRows = 0;
 
         try (InputStream is = file.getInputStream();
@@ -122,7 +127,7 @@ public class SinhVienImportService {
             }
 
             int startDataRowIdx = detectDataStartRow(sheet);
-            int physicalRows = sheet.getPhysicalNumberOfRows();
+            int physicalRows = workbook.getSheetAt(0).getPhysicalNumberOfRows();
 
             for (int r = startDataRowIdx; r < physicalRows && processedRows < MAX_PREVIEW_ROWS; r++) {
                 Row row = sheet.getRow(r);
@@ -131,27 +136,29 @@ public class SinhVienImportService {
                 int excelRow = r + 1; // 1-based
                 processedRows++;
 
-                ImportRowPreview preview = parseAndValidateRow(
+                ImportRowPreview rowPreview = parseAndValidateRow(
                         row, excelRow, seenMssvInFile, seenCccdInFile);
-                rowPreviews.add(preview);
 
-                switch (preview.getStatus()) {
-                    case VALID -> {
-                        validRows++;
-                        newCount++;
-                        // Cache để confirm dùng
-                        importCache.put(preview.getMssv(), buildSinhVienFromPreview(preview));
-                    }
-                    case INVALID -> invalidRows++;
-                    case DUPLICATE -> {
-                        invalidRows++;
-                        duplicateCount++;
-                    }
-                    case DUPLICATE_IN_FILE -> {
-                        invalidRows++;
-                        duplicateInFile++;
-                    }
+                // ===== FAIL-FAST: dừng quét khi gặp dòng lỗi đầu tiên =====
+                // Lý do: người dùng chỉ cần sửa 1 dòng, không cần đọc cả
+                // danh sách lỗi. Frontend sẽ highlight dòng lỗi và yêu cầu
+                // upload lại file sau khi sửa.
+                if (rowPreview.getStatus() != RowStatus.VALID) {
+                    String summary = String.format(
+                            "Phát hiện lỗi ở dòng %d (MSSV: %s). "
+                                    + "Vui lòng sửa file Excel và upload lại. "
+                                    + "Không có dòng nào được ghi vào database.",
+                            excelRow,
+                            rowPreview.getMssv() != null ? rowPreview.getMssv() : "(trống)");
+                    log.warn("Fail-fast import tại dòng {}: {}", excelRow, rowPreview.getErrors());
+                    return ImportPreviewResult.failFastResult(
+                            processedRows, validRows, rowPreview, summary);
                 }
+
+                // Dòng hợp lệ → cache để confirm dùng
+                validRows++;
+                rowPreviews.add(rowPreview);
+                importCache.put(rowPreview.getMssv(), buildSinhVienFromPreview(rowPreview));
             }
 
         } catch (IOException e) {
@@ -159,15 +166,15 @@ public class SinhVienImportService {
             throw new RuntimeException("Không đọc được file Excel. Hãy đảm bảo file đúng định dạng.", e);
         }
 
-        // Trả kết quả sau khi try block hoàn tất (processedRows đã được tính đúng)
+        // Tất cả dòng đều VALID → cho phép confirm
         return new ImportPreviewResult(
                 processedRows,
                 validRows,
-                invalidRows,
-                duplicateInFile,
+                0,                  // invalidRows = 0 (fail-fast đã dừng sớm)
+                0,                  // duplicateInFile = 0
                 rowPreviews,
-                newCount,
-                duplicateCount
+                validRows,          // newCount = validRows
+                0                   // duplicateCount = 0
         );
     }
 
@@ -200,10 +207,11 @@ public class SinhVienImportService {
         String heDaoTao = trimToNull(readCellAsString(row.getCell(12)));
 
         // Cột danh mục (đọc text, chưa resolve)
-        String tenKhoa = trimToNull(readCellAsString(row.getCell(10)));
+        // Thứ tự trong file Excel: 8=Tên khoa, 9=Tên ngành, 10=Tên lớp, 11=Tên khóa học
+        String tenKhoa    = trimToNull(readCellAsString(row.getCell(8)));
+        String tenNganh   = trimToNull(readCellAsString(row.getCell(9)));
+        String tenLop     = trimToNull(readCellAsString(row.getCell(10)));
         String tenKhoaHoc = trimToNull(readCellAsString(row.getCell(11)));
-        String tenNganh = trimToNull(readCellAsString(row.getCell(8)));
-        String tenLop = trimToNull(readCellAsString(row.getCell(9)));
 
         // Trạng thái học vụ
         TrangThaiHocVu trangThaiHocVu = TrangThaiHocVu.ĐANG_HỌC;
@@ -309,6 +317,45 @@ public class SinhVienImportService {
      */
     @Transactional
     public SinhVienService.ImportResult confirmImport(List<String> mssvList) {
+        // ===== FAIL-FAST CHECK (sau V7) =====
+        // Đảm bảo rằng user đã preview thành công (không fail-fast) trước khi confirm.
+        // Nếu importCache rỗng → có thể:
+        //   1. User chưa gọi /preview (gọi thẳng /confirm)
+        //   2. /preview trả về fail-fast (không cache gì cả vì dừng giữa chừng)
+        // Trong cả 2 trường hợp → từ chối, yêu cầu preview lại.
+        if (importCache.isEmpty()) {
+            log.warn("confirmImport được gọi nhưng importCache rỗng. Có thể user gọi thẳng /confirm "
+                    + "hoặc /preview trả về fail-fast trước đó.");
+            return new SinhVienService.ImportResult(
+                    0,
+                    mssvList.size(),
+                    0,
+                    0,
+                    mssvList.stream()
+                            .map(mssv -> new SinhVienExcelService.RowError(0,
+                                    "MSSV '" + mssv + "': Bạn cần preview file trước khi confirm. "
+                                            + "Có thể file Excel có lỗi ở dòng nào đó. "
+                                            + "Vui lòng upload lại file đã sửa."))
+                            .toList()
+            );
+        }
+
+        // Kiểm tra tất cả MSSV trong mssvList đều có trong cache
+        // (nếu user sửa MSSV trong payload mà không qua preview → từ chối)
+        List<String> missingInCache = mssvList.stream()
+                .filter(mssv -> !importCache.containsKey(mssv))
+                .toList();
+        if (!missingInCache.isEmpty()) {
+            log.warn("confirmImport: {} MSSV không có trong cache: {}",
+                    missingInCache.size(), missingInCache);
+            List<SinhVienExcelService.RowError> errs = missingInCache.stream()
+                    .map(mssv -> new SinhVienExcelService.RowError(0,
+                            "MSSV '" + mssv + "' không khớp với kết quả preview. "
+                                    + "Vui lòng thực hiện lại từ bước kiểm tra."))
+                    .toList();
+            return new SinhVienService.ImportResult(0, errs.size(), 0, 0, errs);
+        }
+
         List<SinhVien> toInsert = new ArrayList<>();
         List<SinhVienExcelService.RowError> errors = new ArrayList<>();
 

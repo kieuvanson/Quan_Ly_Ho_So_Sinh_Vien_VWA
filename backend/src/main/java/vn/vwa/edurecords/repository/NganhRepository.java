@@ -17,10 +17,21 @@ public interface NganhRepository extends JpaRepository<Nganh, Integer> {
     Optional<Nganh> findByMaNganh(String maNganh);
 
     /**
+     * Đếm số ngành thuộc khoa — dùng trước khi xóa khoa để báo lỗi chính xác.
+     */
+    long countByKhoa_Id(Integer khoaId);
+
+    /**
      * Tra cứu ngành theo (tên ngành, khoa_id) — định danh logic sau V4.
      * Tên ngành có thể trùng giữa các khoa, nên cần khoa_id để disambiguate.
      */
     Optional<Nganh> findFirstByTenNganhIgnoreCaseAndKhoa_Id(String tenNganh, Integer khoaId);
+
+    /**
+     * Tra cứu tất cả ngành theo tên (case-insensitive) — dùng khi import Lớp
+     * để tìm ngành không cần biết khoa.
+     */
+    List<Nganh> findByTenNganhIgnoreCase(String tenNganh);
 
     boolean existsByMaNganh(String maNganh);
 

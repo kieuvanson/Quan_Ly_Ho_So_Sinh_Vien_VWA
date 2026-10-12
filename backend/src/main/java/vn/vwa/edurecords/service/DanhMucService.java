@@ -1,5 +1,7 @@
 package vn.vwa.edurecords.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.vwa.edurecords.dto.request.KhoaHocRequest;
@@ -20,6 +22,7 @@ import vn.vwa.edurecords.repository.KhoaHocRepository;
 import vn.vwa.edurecords.repository.KhoaRepository;
 import vn.vwa.edurecords.repository.LopRepository;
 import vn.vwa.edurecords.repository.NganhRepository;
+import vn.vwa.edurecords.repository.SinhVienRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -43,19 +46,24 @@ import java.util.Optional;
 @Service
 public class DanhMucService {
 
+    private static final Logger log = LoggerFactory.getLogger(DanhMucService.class);
+
     private final KhoaRepository khoaRepository;
     private final NganhRepository nganhRepository;
     private final KhoaHocRepository khoaHocRepository;
     private final LopRepository lopRepository;
+    private final SinhVienRepository sinhVienRepository;
 
     public DanhMucService(KhoaRepository khoaRepository,
                           NganhRepository nganhRepository,
                           KhoaHocRepository khoaHocRepository,
-                          LopRepository lopRepository) {
+                          LopRepository lopRepository,
+                          SinhVienRepository sinhVienRepository) {
         this.khoaRepository = khoaRepository;
         this.nganhRepository = nganhRepository;
         this.khoaHocRepository = khoaHocRepository;
         this.lopRepository = lopRepository;
+        this.sinhVienRepository = sinhVienRepository;
     }
 
     // ====================== LIST (cho dropdown) ======================
@@ -341,11 +349,31 @@ public class DanhMucService {
             throw new ResourceNotFoundException("KHOA_NOT_FOUND",
                     "Không tìm thấy khoa với ID: " + id);
         }
+        // === Check tham chiếu TRƯỚC khi xóa để đưa thông báo chính xác ===
+        // FK từ: nganh (qua khoa_id), sinhvien (qua khoa_id, V4)
+        long nganhCount = nganhRepository.countByKhoa_Id(id);
+        long sinhVienCount = sinhVienRepository.countByKhoa_Id(id);
+        if (nganhCount > 0 || sinhVienCount > 0) {
+            StringBuilder detail = new StringBuilder("Không thể xóa khoa vì đang được sử dụng bởi: ");
+            if (sinhVienCount > 0) {
+                detail.append(sinhVienCount).append(" sinh viên");
+            }
+            if (sinhVienCount > 0 && nganhCount > 0) {
+                detail.append(" và ");
+            }
+            if (nganhCount > 0) {
+                detail.append(nganhCount).append(" ngành");
+            }
+            detail.append(". Vui lòng xóa hoặc chuyển sang khoa khác trước.");
+            throw new BadRequestException("KHOA_IN_USE", detail.toString());
+        }
+        // Check xong → an toàn để xóa (giữ try/catch để bắt FK không lường trước)
         try {
             khoaRepository.deleteById(id);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("Khoa id={} bị FK constraint dù đã check trước: {}", id, ex.getMessage());
             throw new BadRequestException("KHOA_IN_USE",
-                    "Khoa đang được sử dụng bởi ngành. Không thể xóa.");
+                    "Khoa đang được sử dụng bởi dữ liệu khác. Không thể xóa.");
         }
     }
 
@@ -417,11 +445,29 @@ public class DanhMucService {
             throw new ResourceNotFoundException("NGANH_NOT_FOUND",
                     "Không tìm thấy ngành với ID: " + id);
         }
+        // Check tham chiếu: lop (qua nganh_id), sinhvien (qua nganh_id, V4)
+        long lopCount = lopRepository.countByNganh_Id(id);
+        long sinhVienCount = sinhVienRepository.countByNganh_Id(id);
+        if (lopCount > 0 || sinhVienCount > 0) {
+            StringBuilder detail = new StringBuilder("Không thể xóa ngành vì đang được sử dụng bởi: ");
+            boolean first = true;
+            if (sinhVienCount > 0) {
+                detail.append(sinhVienCount).append(" sinh viên");
+                first = false;
+            }
+            if (lopCount > 0) {
+                if (!first) detail.append(" và ");
+                detail.append(lopCount).append(" lớp");
+            }
+            detail.append(". Vui lòng xóa hoặc chuyển sang ngành khác trước.");
+            throw new BadRequestException("NGANH_IN_USE", detail.toString());
+        }
         try {
             nganhRepository.deleteById(id);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("Nganh id={} bị FK constraint dù đã check trước: {}", id, ex.getMessage());
             throw new BadRequestException("NGANH_IN_USE",
-                    "Ngành đang được sử dụng bởi lớp. Không thể xóa.");
+                    "Ngành đang được sử dụng bởi dữ liệu khác. Không thể xóa.");
         }
     }
 
@@ -462,11 +508,29 @@ public class DanhMucService {
             throw new ResourceNotFoundException("KHOAHOC_NOT_FOUND",
                     "Không tìm thấy khóa học với ID: " + id);
         }
+        // Check tham chiếu: lop (qua khoa_hoc_id), sinhvien (qua khoa_hoc_id, V4)
+        long lopCount = lopRepository.countByKhoaHoc_Id(id);
+        long sinhVienCount = sinhVienRepository.countByKhoaHoc_Id(id);
+        if (lopCount > 0 || sinhVienCount > 0) {
+            StringBuilder detail = new StringBuilder("Không thể xóa khóa học vì đang được sử dụng bởi: ");
+            boolean first = true;
+            if (sinhVienCount > 0) {
+                detail.append(sinhVienCount).append(" sinh viên");
+                first = false;
+            }
+            if (lopCount > 0) {
+                if (!first) detail.append(" và ");
+                detail.append(lopCount).append(" lớp");
+            }
+            detail.append(". Vui lòng xóa hoặc chuyển sang khóa học khác trước.");
+            throw new BadRequestException("KHOAHOC_IN_USE", detail.toString());
+        }
         try {
             khoaHocRepository.deleteById(id);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("KhoaHoc id={} bị FK constraint dù đã check trước: {}", id, ex.getMessage());
             throw new BadRequestException("KHOAHOC_IN_USE",
-                    "Khóa học đang được sử dụng bởi lớp. Không thể xóa.");
+                    "Khóa học đang được sử dụng bởi dữ liệu khác. Không thể xóa.");
         }
     }
 
@@ -519,11 +583,19 @@ public class DanhMucService {
             throw new ResourceNotFoundException("LOP_NOT_FOUND",
                     "Không tìm thấy lớp với ID: " + id);
         }
+        // Check tham chiếu: sinhvien (qua lop_id, V4)
+        long sinhVienCount = sinhVienRepository.countByLop_Id(id);
+        if (sinhVienCount > 0) {
+            throw new BadRequestException("LOP_IN_USE",
+                    "Không thể xóa lớp vì đang được sử dụng bởi " + sinhVienCount
+                            + " sinh viên. Vui lòng chuyển sinh viên sang lớp khác trước.");
+        }
         try {
             lopRepository.deleteById(id);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("Lop id={} bị FK constraint dù đã check trước: {}", id, ex.getMessage());
             throw new BadRequestException("LOP_IN_USE",
-                    "Lớp đang được sử dụng bởi sinh viên. Không thể xóa.");
+                    "Lớp đang được sử dụng bởi dữ liệu khác. Không thể xóa.");
         }
     }
 }

@@ -827,6 +827,68 @@
   color: #dc2626;
   background-color: #fef2f2;
   border: 1px solid #fecaca;
+  white-space: pre-line; /* Cho phép xuống dòng từ \n */
+}
+
+/* ===== Fail-fast box (sau V7) ===== */
+.trang-danh-sach__import-failfast {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: #fef2f2;
+  border: 2px solid #dc2626;
+  color: #991b1b;
+  margin-bottom: var(--space-4);
+}
+
+.trang-danh-sach__import-failfast h4 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--font-size-base);
+  color: #dc2626;
+}
+
+.trang-danh-sach__import-failfast p {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+
+.trang-danh-sach__import-failfast-detail {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background-color: #ffffff;
+  border-radius: var(--radius-sm);
+  border: 1px solid #fecaca;
+}
+
+.trang-danh-sach__import-failfast-detail code {
+  background-color: #fef3c7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-sm);
+  color: #92400e;
+}
+
+.trang-danh-sach__import-failfast-detail ul {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+  color: #dc2626;
+  font-size: var(--font-size-sm);
+}
+
+.trang-danh-sach__import-failfast-detail ul li {
+  margin-bottom: var(--space-1);
+}
+
+.trang-danh-sach__import-failfast-hint {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background-color: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  color: #78350f;
+  font-weight: var(--font-weight-medium);
 }
 
 /* Result summary */

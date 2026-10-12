@@ -189,7 +189,17 @@ public class SinhVienService {
     /**
      * Import danh sách sinh viên từ file Excel — chỉ thêm mới.
      *
-     * <p>Quy tắc:</p>
+     * <h3>Fail-fast mode (sau V7)</h3>
+     * <p>Dừng import ngay khi gặp dòng lỗi đầu tiên. KHÔNG lưu bất kỳ dòng nào
+     * vào DB. Trả về lỗi chi tiết (dòng, MSSV, lý do) để user sửa file và upload
+     * lại.</p>
+     *
+     * <p>Trước đây (V6 và cũ hơn) dùng "best-effort": bỏ qua dòng lỗi, lưu dòng OK.
+     * Điều này khiến user không biết mình đang import thiếu dữ liệu. Vì MSSV
+     * còn lại sau cùng là không xác định được → fail-fast giúp user thấy ngay
+     * lỗi và quyết định sửa hoặc xóa dòng đó trước khi import.</p>
+     *
+     * <h3>Quy tắc (giữ nguyên từ V6)</h3>
      * <ul>
      *   <li>KHÔNG tự tạo danh mục (Khoa/Ngành/Lớp/Khóa học). Nếu không tìm thấy → báo lỗi.</li>
      *   <li>MSSV đã tồn tại → báo trùng, KHÔNG ghi đè.</li>
@@ -209,63 +219,88 @@ public class SinhVienService {
                     "Không đọc được file Excel. Hãy tải mẫu và điền theo đúng định dạng.");
         }
 
-        List<SinhVien> toInsert = new ArrayList<>();
-        List<SinhVienExcelService.RowError> errors = new ArrayList<>(parsed.errors());
+        // Nếu parser đã có lỗi → fail-fast ngay từ bước parse
+        // (SinhVienExcelService.read() đã thu thập lỗi theo từng dòng)
+        if (!parsed.errors().isEmpty()) {
+            log.warn("importFromExcel: parser phát hiện {} lỗi. Fail-fast.", parsed.errors().size());
+            return new ImportResult(0, parsed.errors().size(), 0, 0, parsed.errors());
+        }
 
-        Set<String> seenMssv = new HashSet<>();
-        Set<String> seenCccd = new HashSet<>();
         int nextRow = 0;
-
         for (SinhVien sv : parsed.sinhViens()) {
             nextRow++;
-            if (!seenMssv.add(sv.getMssv())) {
-                errors.add(new SinhVienExcelService.RowError(nextRow,
-                        "MSSV '" + sv.getMssv() + "' bị lặp trong cùng file, bỏ qua dòng này."));
-                continue;
-            }
+            int excelRow = nextRow + 1; // +1 vì dòng 1 là header
 
-            if (sv.getCccd() != null && !sv.getCccd().isBlank()) {
-                if (sinhVienRepository.existsByCccdAndMssvNot(sv.getCccd(), sv.getMssv())) {
-                    errors.add(new SinhVienExcelService.RowError(nextRow,
-                            "CCCD '" + sv.getCccd() + "' đã thuộc sinh viên khác, bỏ qua MSSV '" + sv.getMssv() + "'."));
-                    continue;
-                }
-                if (!seenCccd.add(sv.getCccd())) {
-                    errors.add(new SinhVienExcelService.RowError(nextRow,
-                            "CCCD '" + sv.getCccd() + "' bị lặp trong cùng file, bỏ qua MSSV '" + sv.getMssv() + "'."));
-                    continue;
-                }
-            }
+            // Kiểm tra trùng MSSV trong file
+            // (best-effort đã loại bỏ Set seenMssv — bây giờ fail-fast tại dòng lỗi đầu tiên)
+            // Để giữ logic fail-fast, ta chuyển sang dùng Set local tại đây
+            // và return ngay khi trùng.
+            // Lưu ý: dùng single-pass không tối ưu bằng 2-pass, nhưng file import
+            // giới hạn ~10MB nên không lo performance.
 
-            // Sau V4: Excel chỉ chứa TEXT (Khoa/Ngành/Lớp/Khóa). Dùng lookup-only
-            // (findKhoaByTen, findNganhByTen...) — KHÔNG tạo mới danh mục.
-            // Nếu danh mục không tìm thấy → SinhVienExcelService.parseRow() đã báo lỗi
-            // và set null vào FK. Kiểm tra lại ở đây.
+            // === Validate FK đã resolve ===
             if (sv.getKhoa() == null || sv.getNganh() == null
                     || sv.getLop() == null || sv.getKhoaHoc() == null) {
-                errors.add(new SinhVienExcelService.RowError(nextRow,
-                        "Thiếu thông tin danh mục bắt buộc (Khoa/Ngành/Lớp/Khóa học) cho MSSV '"
-                                + sv.getMssv() + "'. Vui lòng kiểm tra lại tên Khoa/Ngành/Lớp/Khóa nhập học."));
-                continue;
+                List<SinhVienExcelService.RowError> errs = List.of(
+                        new SinhVienExcelService.RowError(excelRow,
+                                "Thiếu thông tin danh mục bắt buộc (Khoa/Ngành/Lớp/Khóa học) cho MSSV '"
+                                        + sv.getMssv() + "'. Vui lòng kiểm tra lại tên Khoa/Ngành/Lớp/Khóa nhập học."));
+                return new ImportResult(0, 1, 0, 0, errs);
             }
 
-            // CHỈ THÊM MỚI — MSSV đã tồn tại → báo trùng, KHÔNG cập nhật
+            // === CHỈ THÊM MỚI ===
             if (sinhVienRepository.existsById(sv.getMssv())) {
-                errors.add(new SinhVienExcelService.RowError(nextRow,
-                        "MSSV '" + sv.getMssv() + "' đã tồn tại trong hệ thống. Không ghi đè dữ liệu cũ."));
-                continue;
+                List<SinhVienExcelService.RowError> errs = List.of(
+                        new SinhVienExcelService.RowError(excelRow,
+                                "MSSV '" + sv.getMssv() + "' đã tồn tại trong hệ thống. "
+                                        + "Không ghi đè dữ liệu cũ."));
+                return new ImportResult(0, 1, 0, 0, errs);
             }
+        }
 
+        // Đến đây: tất cả dòng đều pass validate. Còn phải check trùng MSSV/CCCD
+        // trong chính file (2-pass để phát hiện lỗi sớm nhất).
+        Set<String> seenMssv = new HashSet<>();
+        Set<String> seenCccd = new HashSet<>();
+        nextRow = 0;
+        for (SinhVien sv : parsed.sinhViens()) {
+            nextRow++;
+            int excelRow = nextRow + 1;
+            if (!seenMssv.add(sv.getMssv())) {
+                List<SinhVienExcelService.RowError> errs = List.of(
+                        new SinhVienExcelService.RowError(excelRow,
+                                "MSSV '" + sv.getMssv() + "' bị lặp trong cùng file, "
+                                        + "ở dòng " + excelRow + ". Vui lòng sửa file Excel."));
+                return new ImportResult(0, 1, 0, 0, errs);
+            }
+            if (sv.getCccd() != null && !sv.getCccd().isBlank()) {
+                if (sinhVienRepository.existsByCccdAndMssvNot(sv.getCccd(), sv.getMssv())) {
+                    List<SinhVienExcelService.RowError> errs = List.of(
+                            new SinhVienExcelService.RowError(excelRow,
+                                    "CCCD '" + sv.getCccd() + "' đã thuộc sinh viên khác, "
+                                            + "ở dòng " + excelRow + " (MSSV '" + sv.getMssv() + "')."));
+                    return new ImportResult(0, 1, 0, 0, errs);
+                }
+                if (!seenCccd.add(sv.getCccd())) {
+                    List<SinhVienExcelService.RowError> errs = List.of(
+                            new SinhVienExcelService.RowError(excelRow,
+                                    "CCCD '" + sv.getCccd() + "' bị lặp trong cùng file, "
+                                            + "ở dòng " + excelRow + " (MSSV '" + sv.getMssv() + "')."));
+                    return new ImportResult(0, 1, 0, 0, errs);
+                }
+            }
+        }
+
+        // Tất cả validate xong → ghi DB (single saveAll)
+        List<SinhVien> toInsert = new ArrayList<>();
+        for (SinhVien sv : parsed.sinhViens()) {
             sv.setNgayTao(LocalDateTime.now());
             toInsert.add(sv);
         }
+        sinhVienRepository.saveAll(toInsert);
 
-        if (!toInsert.isEmpty()) {
-            sinhVienRepository.saveAll(toInsert);
-        }
-
-        return new ImportResult(toInsert.size(), errors.size(),
-                toInsert.size(), 0, errors);
+        log.info("importFromExcel: ghi thành công {} sinh viên (fail-fast mode).", toInsert.size());
+        return new ImportResult(toInsert.size(), 0, toInsert.size(), 0, List.of());
     }
 
     /** Chỉ copy các trường người dùng được sửa qua import — không đụng khóa hay trạng thái hệ thống. */

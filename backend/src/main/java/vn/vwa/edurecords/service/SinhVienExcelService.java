@@ -1,4 +1,4 @@
-package vn.vwa.edurecords.service;
+ package vn.vwa.edurecords.service;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -28,7 +28,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -49,7 +51,7 @@ public class SinhVienExcelService {
 
     private static final String[] HEADERS = new String[] {
         "MSSV", "Họ tên", "Ngày sinh", "Giới tính", "CCCD", "SĐT",
-        "Email", "Quê quán", "Ngành", "Lớp", "Khoa", "Khóa nhập học",
+        "Email", "Quê quán", "Khoa", "Ngành", "Lớp", "Khóa nhập học",
         "Hệ đào tạo", "Trạng thái học vụ"
     };
 
@@ -112,9 +114,9 @@ public class SinhVienExcelService {
                 Nganh nganh = sv.getNganh();
                 Lop lop = sv.getLop();
                 KhoaHoc kh = sv.getKhoaHoc();
-                writeCell(row, 8, nganh != null ? safeGetTenNganh(nganh) : null);
-                writeCell(row, 9, lop != null ? lop.getTenLop() : null);
-                writeCell(row, 10, khoa != null ? khoa.getTenKhoa() : null);
+                writeCell(row, 8, khoa != null ? khoa.getTenKhoa() : null);
+                writeCell(row, 9, nganh != null ? safeGetTenNganh(nganh) : null);
+                writeCell(row, 10, lop != null ? lop.getTenLop() : null);
                 writeCell(row, 11, kh != null ? kh.getTenKhoaHoc() : null);
                 writeCell(row, 12, sv.getHeDaoTao());
                 writeCell(row, 13, sv.getTrangThaiHocVu() != null ? sv.getTrangThaiHocVu().getDisplayName() : null);
@@ -165,9 +167,9 @@ public class SinhVienExcelService {
             writeCell(exampleRow, 5, "0912345678");
             writeCell(exampleRow, 6, "a@example.com");
             writeCell(exampleRow, 7, "Hà Nội");
-            writeCell(exampleRow, 8, "Công nghệ thông tin");
-            writeCell(exampleRow, 9, "CNTT-2023.1");
-            writeCell(exampleRow, 10, "Khoa CNTT");
+            writeCell(exampleRow, 8, "Khoa CNTT");
+            writeCell(exampleRow, 9, "Công nghệ thông tin");
+            writeCell(exampleRow, 10, "CNTT-2023.1");
             writeCell(exampleRow, 11, "2023");
             writeCell(exampleRow, 12, "Chính quy");
             writeCell(exampleRow, 13, "Đang học");
@@ -191,6 +193,9 @@ public class SinhVienExcelService {
             }
 
             int startDataRowIdx = detectDataStartRow(sheet);
+            // Tự động nhận diện vị trí cột từ header để KHÔNG phụ thuộc thứ tự cố định.
+            int[] colIdx = detectColumns(sheet, startDataRowIdx - 1, errors);
+
             int physicalRows = sheet.getPhysicalNumberOfRows();
             int importedRowNumber = 0;
 
@@ -201,7 +206,7 @@ public class SinhVienExcelService {
                 importedRowNumber++;
                 int excelRow = r + 1;
                 try {
-                    SinhVien sv = parseRow(row, excelRow, errors, importedRowNumber);
+                    SinhVien sv = parseRow(row, excelRow, errors, importedRowNumber, colIdx);
                     if (sv == null) continue; // parseRow đã push lỗi
                     if (sv.getMssv() == null || sv.getMssv().isBlank()) {
                         errors.add(new RowError(excelRow, "Thiếu MSSV."));
@@ -226,16 +231,73 @@ public class SinhVienExcelService {
     }
 
     /**
+     * Tự động phát hiện vị trí cột từ dòng header.
+     * Trả về mảng int[] có 14 phần tử theo thứ tự:
+     * 0:MSSV, 1:Họ tên, 2:Ngày sinh, 3:Giới tính, 4:CCCD, 5:SĐT,
+     * 6:Email, 7:Quê quán, 8:Khoa, 9:Ngành, 10:Lớp, 11:Khóa, 12:Hệ, 13:Trạng thái.
+     * Nếu không tìm thấy cột danh mục, trả về -1 để báo lỗi ở từng dòng.
+     */
+    private int[] detectColumns(Sheet sheet, int headerRowIdx, List<RowError> errors) {
+        int[] idx = new int[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        Row header = sheet.getRow(headerRowIdx);
+        if (header == null) return idx;
+
+        Map<String, Integer> headerMap = new HashMap<>();
+        for (int c = header.getFirstCellNum(); c < header.getLastCellNum(); c++) {
+            Cell cell = header.getCell(c);
+            if (cell == null) continue;
+            String name = trimToNull(readCellAsString(cell));
+            if (name != null) headerMap.put(normalize(name), c);
+        }
+
+        idx[0] = findHeader(headerMap, "mssv", "ma so sinh vien", "mã số sv");
+        idx[1] = findHeader(headerMap, "ho ten", "ho va ten", "họ tên", "họ và tên", "ten", "tên", "ten sinh vien", "tên sinh viên");
+        idx[2] = findHeader(headerMap, "ngay sinh", "ngày sinh", "ngay sinh:", "dob", "ngày sinh:");
+        idx[3] = findHeader(headerMap, "gioi tinh", "giới tính", "gioi tinh:", "sex", "gender", "giới tính:");
+        idx[4] = findHeader(headerMap, "cccd", "cmnd", "so cccd", "số cccd", "căn cước");
+        idx[5] = findHeader(headerMap, "sdt", "số điện thoại", "so dien thoai", "phone", "số dt", "điện thoại");
+        idx[6] = findHeader(headerMap, "email", "mail", "thư điện tử");
+        idx[7] = findHeader(headerMap, "que quan", "quê quán", "que quan:", "address", "dia chi", "địa chỉ", "quê quán:");
+        idx[8] = findHeader(headerMap, "khoa", "khoa:", "tên khoa", "ten khoa", "khoa chuyen mon", "khoa chuyên môn");
+        idx[9] = findHeader(headerMap, "nganh", "ngành", "nganh:", "tên ngành", "ten nganh", "ngành:");
+        idx[10] = findHeader(headerMap, "lop", "lớp", "lop:", "tên lớp", "ten lop", "lớp:");
+        idx[11] = findHeader(headerMap, "khoa hoc", "khóa học", "ten khoa hoc", "tên khóa học", "khoa nhap hoc", "khóa nhập học", "khoa nien hoc", "khóa niên học", "khoa dao tao", "khóa đào tạo", "khoa hoc:", "khoa nhap hoc:");
+        idx[12] = findHeader(headerMap, "he dao tao", "hệ đào tạo", "he:", "training system", "ten he dao tao", "tên hệ đào tạo", "hệ:");
+        idx[13] = findHeader(headerMap, "trang thai hoc vu", "trạng thái học vụ", "trang thai:", "trang thai hoc vu:", "trang thai:", "ten trang thai", "tên trạng thái", "status", "trang thai");
+
+        if (idx[0] == -1) errors.add(new RowError(0, "Không tìm thấy cột MSSV trong header."));
+        if (idx[1] == -1) errors.add(new RowError(0, "Không tìm thấy cột Họ tên trong header."));
+
+        return idx;
+    }
+
+    private int findHeader(Map<String, Integer> map, String... candidates) {
+        for (String c : candidates) {
+            Integer idx = map.get(normalize(c));
+            if (idx != null) return idx;
+        }
+        return -1;
+    }
+
+    private String normalize(String s) {
+        if (s == null) return "";
+        return s.toLowerCase()
+                .replaceAll("[\\s:]+", " ")
+                .trim();
+    }
+
+    /**
      * Parse 1 dòng Excel thành SinhVien, có resolve FK qua {@link DanhMucService}.
      *
+     * @param colIdx mảng vị trí cột do {@link #detectColumns} trả về.
      * @return SinhVien nếu parse OK, hoặc {@code null} nếu dòng bị loại (lỗi đã push vào errors).
      */
-    private SinhVien parseRow(Row row, int excelRow, List<RowError> errors, int importedRowNumber) {
+    private SinhVien parseRow(Row row, int excelRow, List<RowError> errors, int importedRowNumber, int[] colIdx) {
         SinhVien sv = new SinhVien();
-        sv.setMssv(trimToNull(readCellAsString(row.getCell(0))));
-        sv.setHoTen(trimToNull(readCellAsString(row.getCell(1))));
+        sv.setMssv(trimToNull(readCellAsString(safeCell(row, colIdx[0]))));
+        sv.setHoTen(trimToNull(readCellAsString(safeCell(row, colIdx[1]))));
 
-        Cell ngaySinhCell = row.getCell(2);
+        Cell ngaySinhCell = safeCell(row, colIdx[2]);
         if (ngaySinhCell != null) {
             if (ngaySinhCell.getCellType() == CellType.NUMERIC) {
                 Date d = ngaySinhCell.getDateCellValue();
@@ -264,19 +326,17 @@ public class SinhVienExcelService {
             }
         }
 
-        sv.setGioiTinh(trimToNull(readCellAsString(row.getCell(3))));
-        sv.setCccd(trimToNull(readCellAsString(row.getCell(4))));
-        sv.setSdt(trimToNull(readCellAsString(row.getCell(5))));
-        sv.setEmail(trimToNull(readCellAsString(row.getCell(6))));
-        sv.setQueQuan(trimToNull(readCellAsString(row.getCell(7))));
+        sv.setGioiTinh(trimToNull(readCellAsString(safeCell(row, colIdx[3]))));
+        sv.setCccd(trimToNull(readCellAsString(safeCell(row, colIdx[4]))));
+        sv.setSdt(trimToNull(readCellAsString(safeCell(row, colIdx[5]))));
+        sv.setEmail(trimToNull(readCellAsString(safeCell(row, colIdx[6]))));
+        sv.setQueQuan(trimToNull(readCellAsString(safeCell(row, colIdx[7]))));
 
-        // Sau V4: cột 8..11 là TÊN danh mục. Resolve qua DanhMucService.
-        // Thứ tự: Ngành(8), Lớp(9), Khoa(10), Khóa học(11) — cần Khoa trước
-        // Ngành, Khóa học trước Lớp.
-        String tenNganh    = trimToNull(readCellAsString(row.getCell(8)));
-        String tenLop      = trimToNull(readCellAsString(row.getCell(9)));
-        String tenKhoa     = trimToNull(readCellAsString(row.getCell(10)));
-        String tenKhoaHoc  = trimToNull(readCellAsString(row.getCell(11)));
+        // Tự động resolve FK theo vị trí cột đã detect từ header.
+        String tenKhoa     = trimToNull(readCellAsString(safeCell(row, colIdx[8])));
+        String tenNganh    = trimToNull(readCellAsString(safeCell(row, colIdx[9])));
+        String tenLop      = trimToNull(readCellAsString(safeCell(row, colIdx[10])));
+        String tenKhoaHoc  = trimToNull(readCellAsString(safeCell(row, colIdx[11])));
 
         Optional<Khoa> khoa = tenKhoa == null
                 ? Optional.empty()
@@ -292,14 +352,49 @@ public class SinhVienExcelService {
                 ? danhMucService.findLopByTen(tenLop, nganh.get(), khoaHoc.get())
                 : Optional.empty();
 
+        // Đối với 4 trường bắt buộc (Khoa, Ngành, Lớp, Khóa học):
+        //   - Nếu Excel có ghi tên mà không tìm thấy → báo lỗi NGAY tại parse
+        //     để người dùng biết dòng nào sai, thay vì đợi tới lúc INSERT mới
+        //     nổ FK constraint (Not-Null).
+        //   - Nếu Excel bỏ trống cả 4 → để null, SinhVienService sẽ báo lỗi
+        //     "Thiếu thông tin danh mục bắt buộc" ở bước validate trước save.
+        if (tenKhoa != null && khoa.isEmpty()) {
+            errors.add(new RowError(excelRow, "Không tìm thấy Khoa: '" + tenKhoa + "'."));
+            return null;
+        }
+        if (tenKhoaHoc != null && khoaHoc.isEmpty()) {
+            errors.add(new RowError(excelRow, "Không tìm thấy Khóa học: '" + tenKhoaHoc + "'."));
+            return null;
+        }
+        if (tenNganh != null && nganh.isEmpty()) {
+            errors.add(new RowError(excelRow, "Không tìm thấy Ngành: '" + tenNganh + "'."));
+            return null;
+        }
+        if (tenLop != null && (nganh.isEmpty() || khoaHoc.isEmpty())) {
+            // Lớp cần cả Ngành + Khóa học mới lookup được
+            String missing = new StringBuilder()
+                    .append(nganh.isEmpty() ? "Ngành '" + tenNganh + "' " : "")
+                    .append(khoaHoc.isEmpty() ? "Khóa học '" + tenKhoaHoc + "' " : "")
+                    .toString().trim();
+            errors.add(new RowError(excelRow,
+                    "Không thể tìm Lớp '" + tenLop + "' vì thiếu " + missing + "."));
+            return null;
+        }
+        if (tenLop != null && nganh.isPresent() && khoaHoc.isPresent() && lop.isEmpty()) {
+            errors.add(new RowError(excelRow,
+                    "Không tìm thấy Lớp '" + tenLop + "' thuộc Ngành '" + tenNganh
+                            + "' - Khóa học '" + tenKhoaHoc + "'."));
+            return null;
+        }
+
         khoa.ifPresent(sv::setKhoa);
         nganh.ifPresent(sv::setNganh);
         lop.ifPresent(sv::setLop);
         khoaHoc.ifPresent(sv::setKhoaHoc);
 
-        sv.setHeDaoTao(trimToNull(readCellAsString(row.getCell(12))));
+        sv.setHeDaoTao(trimToNull(readCellAsString(safeCell(row, colIdx[12]))));
 
-        String trangThai = trimToNull(readCellAsString(row.getCell(13)));
+        String trangThai = trimToNull(readCellAsString(safeCell(row, colIdx[13])));
         if (trangThai != null) {
             try {
                 sv.setTrangThaiHocVu(TrangThaiHocVu.fromDisplayName(trangThai));
@@ -309,6 +404,12 @@ public class SinhVienExcelService {
         }
 
         return sv;
+    }
+
+    /** Lấy cell an toàn: trả về null nếu colIdx = -1 (cột không tồn tại trong header). */
+    private Cell safeCell(Row row, int colIdx) {
+        if (colIdx < 0) return null;
+        return row.getCell(colIdx);
     }
 
     private int detectDataStartRow(Sheet sheet) {
