@@ -191,4 +191,199 @@ Liên hệ đội phát triển — việc thêm/bớt cột cần cập nhật 
 
 ---
 
-**Phiên bản tài liệu:** 1.0 — cập nhật cùng feature Import/Export Excel.
+# PHẦN 2 — Hướng dẫn Import/Export Danh mục (Khoa → Ngành → Khóa học → Lớp)
+
+> **Phạm vi:** Trang **Cài đặt** → 4 tab **Khoa / Ngành / Khóa học / Lớp**. Mỗi tab có 3 nút: **Thêm mới**, **Import**, **Export**.
+
+---
+
+## 9. Tại sao phải Import theo THỨ TỰ?
+
+Vì các danh mục có **quan hệ phụ thuộc** trong database:
+
+```
+Khoa (độc lập)            ← Bước 1
+  └── Ngành (cần Khoa)     ← Bước 2
+Khóa học (độc lập)        ← Bước 3
+  └── Lớp (cần Ngành + Khóa học)  ← Bước 4
+```
+
+Nếu import sai thứ tự (VD: import Lớp trước khi chưa có Ngành), hệ thống sẽ **báo lỗi từng dòng** — dòng nào thiếu danh mục cha sẽ bị bỏ qua.
+
+> ⚠️ **Nguyên tắc vàng:** Import theo đúng thứ tự 1 → 2 → 3 → 4. Không được nhảy cóc.
+
+---
+
+## 10. Bước 1/4 — Import KHOA
+
+### 10.1. Cấu trúc file Excel
+
+File `.xlsx` có **2 cột** theo đúng thứ tự (hệ thống đọc theo **vị trí cột**, không theo tên):
+
+| # | Header (dòng 2) | Bắt buộc? | Quy tắc |
+|---|---|---|---|
+| 1 | `Tên khoa` | ✅ Bắt buộc | Tối đa 150 ký tự. **Không được trùng** với khoa đã có. |
+| 2 | `Mô tả` | Tùy chọn | Tối đa 500 ký tự. Có thể để trống. |
+
+### 10.2. Ví dụ
+
+| Tên khoa | Mô tả |
+|---|---|
+| Khoa Công nghệ thông tin | Khoa chuyên ngành CNTT và các ngành liên quan |
+| Khoa Kinh tế | Khoa đào tạo các ngành kinh tế, quản trị |
+| Khoa Ngoại ngữ | Khoa đào tạo tiếng Anh, Trung, Nhật |
+
+### 10.3. Lỗi thường gặp
+
+| Lỗi | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Tên khoa không được để trống.` | Cột Tên khoa bị bỏ trống. | Điền tên khoa. |
+| `Khoa 'X' đã tồn tại.` | Tên khoa trùng với khoa đã có trong DB. | Đổi tên khác, hoặc bỏ qua dòng này. |
+
+### 10.4. Cách import
+
+1. Vào **Cài đặt** → tab **Khoa**.
+2. Bấm nút **Import** ở thanh công cụ.
+3. Modal mở → bấm **Tải file mẫu** để tải file `mau-import-khoa.xlsx` với 2 cột `Tên khoa`, `Mô tả`.
+4. Mở file, **giữ nguyên dòng header**, điền dữ liệu từ dòng 3.
+5. Lưu file `.xlsx` → upload lại → bấm **Import**.
+6. Hệ thống báo: tổng dòng, thêm mới, lỗi (nếu có).
+
+---
+
+## 11. Bước 2/4 — Import NGÀNH
+
+### 11.1. Cấu trúc file Excel
+
+File `.xlsx` có **3 cột** theo đúng thứ tự:
+
+| # | Header (dòng 2) | Bắt buộc? | Quy tắc |
+|---|---|---|---|
+| 1 | `Tên ngành` | ✅ Bắt buộc | Tối đa 150 ký tự. |
+| 2 | `Tên khoa` | ✅ Bắt buộc | Phải **trùng khớp 100%** với tên khoa đã import ở Bước 1 (so sánh không phân biệt hoa/thường, bỏ khoảng trắng đầu/cuối). |
+| 3 | `Mô tả` | Tùy chọn | Tối đa 500 ký tự. |
+
+### 11.2. Ví dụ
+
+| Tên ngành | Tên khoa | Mô tả |
+|---|---|---|
+| Công nghệ thông tin | Khoa Công nghệ thông tin | Ngành CNTT chuyên về phần mềm |
+| Trí tuệ nhân tạo | Khoa Công nghệ thông tin | Ngành AI, Machine Learning |
+| Quản trị kinh doanh | Khoa Kinh tế | Ngành QTKD chuyên ngành |
+
+### 11.3. Lỗi thường gặp
+
+| Lỗi | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Tên ngành không được để trống.` | Cột Tên ngành bị bỏ trống. | Điền tên ngành. |
+| `Tên khoa không được để trống.` | Cột Tên khoa bị bỏ trống. | Điền tên khoa (xem bước 1). |
+| `Khoa 'X' không tồn tại. Vui lòng tạo Khoa trước.` | Tên khoa trong file **chưa có** trong DB. | Về tab Khoa → import Khoa đó trước. |
+| `Ngành 'X' đã tồn tại trong khoa 'Y'.` | Cùng (tên ngành, tên khoa) đã có. | Đổi tên ngành khác, hoặc bỏ dòng. |
+
+### 11.4. ⚠️ Lưu ý quan trọng: Tên khoa phải khớp chính xác
+
+Hệ thống tìm khoa bằng **so sánh chuỗi** (case-insensitive, trim khoảng trắng). Nếu trong DB là `Khoa Công nghệ thông tin` mà trong file ghi `CNTT` → **không tìm thấy**.
+
+**Mẹo:** Bấm **Export** ở tab Khoa trước → copy chính xác cột `Tên khoa` → paste vào file import Ngành.
+
+---
+
+## 12. Bước 3/4 — Import KHÓA HỌC (Khóa năm học)
+
+### 12.1. Cấu trúc file Excel
+
+File `.xlsx` có **4 cột** theo đúng thứ tự:
+
+| # | Header (dòng 2) | Bắt buộc? | Quy tắc |
+|---|---|---|---|
+| 1 | `Tên khóa năm học` | ✅ Bắt buộc | Tối đa 100 ký tự. **Không trùng** với khóa đã có. |
+| 2 | `Năm bắt đầu` | Tùy chọn | Phải là **số nguyên** (VD: 2024). |
+| 3 | `Năm kết thúc` | Tùy chọn | Phải là **số nguyên** ≥ Năm bắt đầu. |
+| 4 | `Mô tả` | Tùy chọn | Tối đa 500 ký tự. |
+
+### 12.2. Ví dụ
+
+| Tên khóa năm học | Năm bắt đầu | Năm kết thúc | Mô tả |
+|---|---|---|---|
+| Khóa 14 (2026–2030) | 2026 | 2030 | Sinh viên nhập học năm 2026 |
+| Khóa 13 (2025–2029) | 2025 | 2029 | Sinh viên nhập học năm 2025 |
+
+### 12.3. Lỗi thường gặp
+
+| Lỗi | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Tên khóa học không được để trống.` | Cột tên bị trống. | Điền tên khóa. |
+| `Năm bắt đầu phải là số.` | Ghi text như "2024" nhưng format cell là text. | Đổi format cell thành Number nguyên. |
+| `Năm kết thúc phải lớn hơn hoặc bằng năm bắt đầu.` | `namKetThuc < namBatDau`. | Sửa lại năm. |
+| `Khóa học 'X' đã tồn tại.` | Trùng tên. | Đổi tên khác. |
+
+---
+
+## 13. Bước 4/4 — Import LỚP
+
+### 13.1. Cấu trúc file Excel
+
+File `.xlsx` có **4 cột** theo đúng thứ tự:
+
+| # | Header (dòng 2) | Bắt buộc? | Quy tắc |
+|---|---|---|---|
+| 1 | `Tên lớp` | ✅ Bắt buộc | Tối đa 100 ký tự. |
+| 2 | `Tên ngành` | ✅ Bắt buộc | Phải **trùng khớp 100%** với tên ngành đã import ở Bước 2. |
+| 3 | `Tên khoa năm học` | ✅ Bắt buộc | Phải **trùng khớp 100%** với tên khóa học đã import ở Bước 3. |
+| 4 | `Mô tả` | Tùy chọn | Tối đa 500 ký tự. |
+
+### 13.2. Ví dụ
+
+| Tên lớp | Tên ngành | Tên khoa năm học | Mô tả |
+|---|---|---|---|
+| CNTT-2026.1 | Công nghệ thông tin | Khóa 14 (2026–2030) | Lớp chất lượng cao |
+| AI-2025.2 | Trí tuệ nhân tạo | Khóa 13 (2025–2029) | Lớp AI nâng cao |
+
+### 13.3. Lỗi thường gặp
+
+| Lỗi | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `Tên lớp không được để trống.` | Cột Tên lớp trống. | Điền tên. |
+| `Khoa 'X' không tồn tại. Vui lòng tạo Khoa trước.` | Ngành đang reference tới Khoa chưa có. | Import Khoa trước (Bước 1). |
+| `Ngành 'X' không tồn tại trong khoa 'Y'. Vui lòng tạo Ngành trước.` | Tên ngành trong file chưa có trong DB. | Import Ngành trước (Bước 2). |
+| `Khóa năm học 'X' không tồn tại. Vui lòng tạo Khóa năm học trước.` | Tên khóa học trong file chưa có. | Import Khóa học trước (Bước 3). |
+| `Lớp 'X' đã tồn tại trong ngành 'Y' khóa 'Z'.` | Trùng (tên lớp, ngành, khóa học). | Đổi tên lớp khác. |
+
+### 13.4. Mẹo tránh lỗi chính tả
+
+1. Bấm **Export** ở tab **Ngành** → copy chính xác cột `Tên ngành` → paste vào cột `Tên ngành` của file Lớp.
+2. Tương tự với tab **Khóa học** → copy cột `Tên khóa năm học` → paste vào file Lớp.
+3. Như vậy sẽ khớp 100%, không sợ lệch 1 ký tự.
+
+---
+
+## 14. Checklist trước khi Import danh mục
+
+- [ ] Đã import xong **Khoa** (Bước 1) trước.
+- [ ] Đã kiểm tra tab **Khoa** hiển thị đúng các khoa vừa tạo.
+- [ ] File Excel dùng đúng **header** theo bảng ở từng bước.
+- [ ] **Tên khoa / Tên ngành / Tên khóa học** trong file khớp chính xác với DB (copy từ file Export nếu cần).
+- [ ] Không trộn dòng trống xen kẽ.
+- [ ] File dung lượng < 5 MB, định dạng `.xlsx`.
+
+---
+
+## 15. Quy trình tổng hợp (end-to-end)
+
+```
+1. Tab Khoa      → Import khoa.xlsx      → ✅ Thành công
+2. Tab Ngành     → Import nganh.xlsx     → ✅ Thành công  
+3. Tab Khóa học  → Import khoa-hoc.xlsx  → ✅ Thành công
+4. Tab Lớp       → Import lop.xlsx       → ✅ Thành công
+5. Tab Sinh viên → Import sinh-vien.xlsx → ✅ Thành công (tham khảo Phần 1)
+```
+
+> Nếu bất kỳ bước nào fail toàn bộ, **dừng lại** và kiểm tra:
+> 1. File header có đúng số cột theo thứ tự không?
+> 2. Dữ liệu trong file có khớp với DB không?
+> 3. Trong file có dòng nào bị trống hoàn toàn không?
+> 4. Kết quả import có hiển thị **danh sách lỗi theo dòng** không? Đọc kỹ thông báo lỗi.
+
+---
+
+**Phiên bản tài liệu:** 1.1 — bổ sung Phần 2 (Import/Export Danh mục theo thứ tự cascade).
