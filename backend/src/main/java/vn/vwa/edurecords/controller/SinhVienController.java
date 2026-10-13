@@ -12,10 +12,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import vn.vwa.edurecords.dto.request.ImportConfirmRequest;
+import vn.vwa.edurecords.dto.request.SinhVienBulkRequest;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.ImportPreviewResult;
 import vn.vwa.edurecords.dto.response.PagedResponse;
+import vn.vwa.edurecords.dto.response.SinhVienBulkResult;
 import vn.vwa.edurecords.dto.response.SinhVienResponse;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.service.SinhVienExcelService;
@@ -23,6 +25,8 @@ import vn.vwa.edurecords.service.SinhVienImportService;
 import vn.vwa.edurecords.service.SinhVienService;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -177,9 +181,15 @@ public class SinhVienController {
     /**
      * GET /api/sinh-vien/export?keyword=&nganh=&...
      * Trả về file .xlsx theo cùng filter với search.
-     * Hỗ trợ thêm tham số scope:
-     *   - "filtered" (mặc định): toàn bộ kết quả theo filter (size=10000)
-     *   - "page": chỉ trang hiện tại
+     *
+     * <p>Hỗ trợ các scope:
+     * <ul>
+     *   <li>{@code filtered} (mặc định): toàn bộ kết quả theo filter (size=10000).</li>
+     *   <li>{@code page}: chỉ trang hiện tại.</li>
+     *   <li>{@code selected}: chỉ những MSSV đã chọn trên UI — truyền
+     *       nhiều {@code ?mssv=A&mssv=B} hoặc một {@code ?mssvs=A,B,C}.</li>
+     * </ul>
+     * </p>
      */
     @GetMapping("/export")
     @PreAuthorize("hasRole('ADMIN')")
@@ -198,7 +208,9 @@ public class SinhVienController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "0") int sortDirection,
-            @RequestParam(defaultValue = "filtered") String scope) {
+            @RequestParam(defaultValue = "filtered") String scope,
+            @RequestParam(required = false) List<String> mssv,
+            @RequestParam(required = false) String mssvs) {
 
         try {
             SinhVienSearchRequest req = new SinhVienSearchRequest();
@@ -214,23 +226,36 @@ public class SinhVienController {
             req.setLopId(lopId);
             req.setKhoaHocId(khoaHocId);
             req.setSortDirection(sortDirection);
+            req.setScope(scope);
 
-            List<SinhVien> data;
-            if ("page".equalsIgnoreCase(scope)) {
+            byte[] bytes;
+            String filenamePrefix;
+            if ("selected".equalsIgnoreCase(scope)) {
+                // Hợp nhất mssv (nhiều param) và mssvs (CSV) → một danh sách duy nhất.
+                List<String> mssvList = mergeSelectedMssv(mssv, mssvs);
+                req.setSelectedMssvs(mssvList);
+                if (mssvList.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "scope='selected' yêu cầu truyền ít nhất 1 MSSV (?mssv=... hoặc ?mssvs=A,B,C).");
+                }
+                bytes = sinhVienService.exportByMssvList(mssvList);
+                filenamePrefix = "danh-sach-sinh-vien-da-chon";
+            } else if ("page".equalsIgnoreCase(scope)) {
                 req.setPage(page);
                 req.setSize(size);
                 PagedResponse<List<SinhVien>> result = sinhVienService.search(req);
-                data = result.getData();
+                bytes = sinhVienExcelService.export(result.getData());
+                filenamePrefix = "danh-sach-sinh-vien";
             } else {
-                // filtered: lấy tất cả - size tối đa
+                // filtered (mặc định)
                 req.setPage(0);
                 req.setSize(10000);
                 PagedResponse<List<SinhVien>> result = sinhVienService.search(req);
-                data = result.getData();
+                bytes = sinhVienExcelService.export(result.getData());
+                filenamePrefix = "danh-sach-sinh-vien";
             }
 
-            byte[] bytes = sinhVienExcelService.export(data);
-            String filename = "danh-sach-sinh-vien-" + System.currentTimeMillis() + ".xlsx";
+            String filename = filenamePrefix + "-" + System.currentTimeMillis() + ".xlsx";
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType(
@@ -245,7 +270,38 @@ public class SinhVienController {
             // không nuốt lỗi thành 500 rỗng không có thông tin chẩn đoán.
             log.error("Không xuất được file Excel danh sách sinh viên", ex);
             return ResponseEntity.internalServerError().build();
+        } catch (IllegalArgumentException ex) {
+            // Trả 400 cho lỗi validate input tầng controller.
+            log.warn("Export lỗi input: {}", ex.getMessage());
+            return ResponseEntity.badRequest().build();
         }
+    }
+
+    /**
+     * Hợp nhất danh sách MSSV từ hai kiểu tham số:
+     * <ul>
+     *   <li>{@code mssv} — Spring bind nhiều {@code ?mssv=A&mssv=B} thành List&lt;String&gt;.</li>
+     *   <li>{@code mssvs} — CSV {@code ?mssvs=A,B,C}, tự split và bỏ phần tử rỗng.</li>
+     * </ul>
+     * Kết quả giữ thứ tự xuất hiện, bỏ trùng và trim.
+     */
+    private static List<String> mergeSelectedMssv(List<String> mssv, String mssvs) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        if (mssv != null) {
+            for (String m : mssv) {
+                if (m != null) {
+                    String t = m.trim();
+                    if (!t.isEmpty()) set.add(t);
+                }
+            }
+        }
+        if (mssvs != null && !mssvs.isBlank()) {
+            for (String m : mssvs.split(",")) {
+                String t = m.trim();
+                if (!t.isEmpty()) set.add(t);
+            }
+        }
+        return new ArrayList<>(set);
     }
 
     /**
@@ -364,5 +420,58 @@ public class SinhVienController {
 
         SinhVienService.ImportResult result = sinhVienImportService.confirmImport(request.getMssvList());
         return ResponseEntity.ok(ApiResponse.success("Import sinh viên hoàn tất", result));
+    }
+
+    // ============================================================
+    // BULK OPERATIONS
+    // ============================================================
+
+    /**
+     * PUT /api/sinh-vien/bulk/trang-thai
+     * Cập nhật trạng thái học vụ cho nhiều sinh viên cùng lúc.
+     *
+     * <p>Body: { mssvList, trangThaiHocVu, ghiChu? }
+     * <p>Trả về: { total, successCount, failureCount, results: [{mssv, success, code?, message?}] }
+     * <p>Quyền: ADMIN.
+     */
+    @PutMapping("/bulk/trang-thai")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<SinhVienBulkResult>> bulkUpdateTrangThai(
+            @Valid @RequestBody SinhVienBulkRequest req) {
+        log.info("bulkUpdateTrangThai: {} SV, trạng thái={}",
+                req.getMssvList().size(), req.getTrangThaiHocVu());
+        SinhVienBulkResult result = sinhVienService.bulkUpdateTrangThaiHocVu(req);
+        return ResponseEntity.ok(ApiResponse.success(
+                String.format("Cập nhật %d/%d sinh viên thành công.",
+                        result.getSuccessCount(), result.getTotal()),
+                result));
+    }
+
+    /**
+     * DELETE /api/sinh-vien/bulk
+     * Xóa nhiều sinh viên theo danh sách MSSV, có kiểm tra an toàn FK.
+     *
+     * <p>Body: { mssvList, ghiChu? }
+     * <p>Trả về: { total, successCount, failureCount, results: [{mssv, success, code?, message?}] }
+     * <p>Quyền: ADMIN.
+     *
+     * <p>Quy tắc xóa:
+     * <ul>
+     *   <li>SV phải tồn tại.</li>
+     *   <li>SV không còn hồ sơ giấy tờ.</li>
+     *   <li>SV không có phiếu đang hoạt động (Chờ duyệt/Đang mượn/Quá hạn).</li>
+     *   <li>Audit log được ghi trước khi xóa.</li>
+     * </ul>
+     */
+    @DeleteMapping("/bulk")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<SinhVienBulkResult>> bulkDelete(
+            @Valid @RequestBody SinhVienBulkRequest req) {
+        log.info("bulkDelete: {} SV", req.getMssvList().size());
+        SinhVienBulkResult result = sinhVienService.bulkDelete(req);
+        return ResponseEntity.ok(ApiResponse.success(
+                String.format("Xóa %d/%d sinh viên thành công.",
+                        result.getSuccessCount(), result.getTotal()),
+                result));
     }
 }

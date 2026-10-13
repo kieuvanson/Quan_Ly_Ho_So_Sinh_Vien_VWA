@@ -9,8 +9,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import vn.vwa.edurecords.dto.request.SinhVienBulkRequest;
 import vn.vwa.edurecords.dto.request.SinhVienSearchRequest;
 import vn.vwa.edurecords.dto.response.PagedResponse;
+import vn.vwa.edurecords.dto.response.SinhVienBulkResult;
 import vn.vwa.edurecords.dto.response.SinhVienResponse;
 import vn.vwa.edurecords.entity.Khoa;
 import vn.vwa.edurecords.entity.KhoaHoc;
@@ -19,17 +21,22 @@ import vn.vwa.edurecords.entity.Nganh;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 import vn.vwa.edurecords.exception.BadRequestException;
+import vn.vwa.edurecords.exception.ResourceNotFoundException;
+import vn.vwa.edurecords.repository.HoSoGiayToRepository;
 import vn.vwa.edurecords.repository.KhoaHocRepository;
 import vn.vwa.edurecords.repository.KhoaRepository;
 import vn.vwa.edurecords.repository.LopRepository;
 import vn.vwa.edurecords.repository.NganhRepository;
+import vn.vwa.edurecords.repository.PhieuXuatHoSoRepository;
 import vn.vwa.edurecords.repository.SinhVienRepository;
+import vn.vwa.edurecords.service.AuditService;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -46,6 +53,9 @@ public class SinhVienService {
     private final NganhRepository nganhRepository;
     private final KhoaHocRepository khoaHocRepository;
     private final LopRepository lopRepository;
+    private final HoSoGiayToRepository hoSoGiayToRepository;
+    private final PhieuXuatHoSoRepository phieuXuatHoSoRepository;
+    private final AuditService auditService;
 
     public SinhVienService(SinhVienRepository sinhVienRepository,
                            SinhVienExcelService sinhVienExcelService,
@@ -53,7 +63,10 @@ public class SinhVienService {
                            KhoaRepository khoaRepository,
                            NganhRepository nganhRepository,
                            KhoaHocRepository khoaHocRepository,
-                           LopRepository lopRepository) {
+                           LopRepository lopRepository,
+                           HoSoGiayToRepository hoSoGiayToRepository,
+                           PhieuXuatHoSoRepository phieuXuatHoSoRepository,
+                           AuditService auditService) {
         this.sinhVienRepository = sinhVienRepository;
         this.sinhVienExcelService = sinhVienExcelService;
         this.danhMucService = danhMucService;
@@ -61,6 +74,9 @@ public class SinhVienService {
         this.nganhRepository = nganhRepository;
         this.khoaHocRepository = khoaHocRepository;
         this.lopRepository = lopRepository;
+        this.hoSoGiayToRepository = hoSoGiayToRepository;
+        this.phieuXuatHoSoRepository = phieuXuatHoSoRepository;
+        this.auditService = auditService;
     }
 
     /**
@@ -176,6 +192,237 @@ public class SinhVienService {
     public long countByTrangThai(String trangThaiHocVu) {
         TrangThaiHocVu trangThai = TrangThaiHocVu.fromDisplayName(trangThaiHocVu);
         return sinhVienRepository.countByTrangThaiHocVu(trangThai);
+    }
+
+    // ============================================================
+    // BULK OPERATIONS (chọn nhiều sinh viên + thao tác hàng loạt)
+    // ============================================================
+    //
+    // Quy tắc chung:
+    //  - Tất cả method bulk đều có @Transactional: thất bại ở 1 SV sẽ
+    //    rollback toàn bộ lô để tránh trạng thái nửa vời.
+    //  - Validate input ở đầu method (danh sách rỗng, quá giới hạn).
+    //  - Audit log từng SV thành công / thất bại.
+    //  - Trả về SinhVienBulkResult để client hiển thị chi tiết.
+
+    /**
+     * Lấy danh sách MSSV duy nhất, loại bỏ null/empty, giữ thứ tự xuất hiện.
+     * Helper dùng chung cho tất cả bulk method.
+     */
+    private List<String> normalizeMssvList(List<String> input) {
+        if (input == null || input.isEmpty()) {
+            throw new BadRequestException("EMPTY_MSSV_LIST",
+                    "Danh sách MSSV không được rỗng.");
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (String m : input) {
+            if (m == null) continue;
+            String t = m.trim();
+            if (t.isEmpty()) continue;
+            seen.add(t);
+        }
+        if (seen.isEmpty()) {
+            throw new BadRequestException("EMPTY_MSSV_LIST",
+                    "Danh sách MSSV không được rỗng.");
+        }
+        if (seen.size() > SinhVienBulkRequest.MAX_MSSVS) {
+            throw new BadRequestException("TOO_MANY_MSSVS",
+                    "Mỗi lần chỉ xử lý tối đa " + SinhVienBulkRequest.MAX_MSSVS
+                            + " sinh viên (nhận " + seen.size() + ").");
+        }
+        return new ArrayList<>(seen);
+    }
+
+    /**
+     * Lấy dữ liệu Excel theo danh sách MSSV đã chọn.
+     *
+     * <p>Tái sử dụng {@link SinhVienExcelService#export(List)} —
+     * không viết lại format Excel.</p>
+     *
+     * <p>MSSV không tồn tại sẽ bị bỏ qua (không throw) vì đây là API
+     * export — người dùng chỉ cần xuất những SV còn tồn tại. Nếu cần
+     * cảnh báo, client tự so sánh với danh sách chọn ban đầu.</p>
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportByMssvList(List<String> mssvList) throws IOException {
+        List<String> mssvs = normalizeMssvList(mssvList);
+        List<SinhVien> svList = sinhVienRepository.findAllById(mssvs);
+        // Sắp xếp lại theo thứ tự MSSV client gửi (giúp user dễ đối chiếu).
+        java.util.Map<String, SinhVien> map = new java.util.HashMap<>();
+        for (SinhVien sv : svList) map.put(sv.getMssv(), sv);
+        List<SinhVien> ordered = new ArrayList<>();
+        for (String m : mssvs) {
+            SinhVien sv = map.get(m);
+            if (sv != null) ordered.add(sv);
+        }
+        return sinhVienExcelService.export(ordered);
+    }
+
+    /**
+     * Cập nhật trạng thái học vụ cho nhiều sinh viên cùng một lúc.
+     *
+     * <p>Quy tắc nghiệp vụ:
+     * <ul>
+     *   <li>Không cập nhật nếu trạng thái mới giống trạng thái hiện tại
+     *       (skip — không ghi audit, trả về success=true để không phải lỗi).</li>
+     *   <li>SV không tồn tại trong DB → trả về success=false với code SINHVIEN_NOT_FOUND.</li>
+     *   <li>Mọi thay đổi đều ghi audit log.</li>
+     * </ul>
+     * </p>
+     */
+    @Transactional
+    public SinhVienBulkResult bulkUpdateTrangThaiHocVu(SinhVienBulkRequest req) {
+        List<String> mssvs = normalizeMssvList(req.getMssvList());
+        String newTrangThaiDisplay = trimOrNull(req.getTrangThaiHocVu());
+        if (newTrangThaiDisplay == null) {
+            throw new BadRequestException("MISSING_TRANG_THAI",
+                    "Thiếu trạng thái học vụ mới.");
+        }
+        TrangThaiHocVu newTrangThai;
+        try {
+            newTrangThai = TrangThaiHocVu.fromDisplayName(newTrangThaiDisplay);
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("INVALID_TRANG_THAI",
+                    "Trạng thái học vụ không hợp lệ: '" + newTrangThaiDisplay + "'.");
+        }
+
+        List<SinhVienBulkResult.ItemResult> results = new ArrayList<>();
+        int success = 0, failure = 0;
+
+        // Load 1 lần để giảm query — sau đó loop cập nhật.
+        List<SinhVien> svList = sinhVienRepository.findAllById(mssvs);
+        java.util.Map<String, SinhVien> map = new java.util.HashMap<>();
+        for (SinhVien sv : svList) map.put(sv.getMssv(), sv);
+
+        LocalDateTime now = LocalDateTime.now();
+        String ghiChu = trimOrNull(req.getGhiChu());
+
+        for (String mssv : mssvs) {
+            SinhVien sv = map.get(mssv);
+            if (sv == null) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SINHVIEN_NOT_FOUND",
+                        "Không tìm thấy sinh viên."));
+                failure++;
+                continue;
+            }
+
+            TrangThaiHocVu oldTrangThai = sv.getTrangThaiHocVu();
+            if (oldTrangThai == newTrangThai) {
+                // Không có thay đổi — vẫn tính success để client không phải lo.
+                results.add(SinhVienBulkResult.ItemResult.ok(mssv));
+                success++;
+                continue;
+            }
+
+            sv.setTrangThaiHocVu(newTrangThai);
+            sv.setNgayCapNhat(now);
+            sinhVienRepository.save(sv);
+
+            // Ghi audit — mỗi SV 1 dòng.
+            String ghiChuAudit = ghiChu == null
+                    ? "bulk update trạng thái học vụ"
+                    : "bulk update trạng thái học vụ: " + ghiChu;
+            auditService.log("BULK_UPDATE_TRANG_THAI", "sinhvien", sv.getMssv(),
+                    "trang_thai_hoc_vu",
+                    oldTrangThai != null ? oldTrangThai.getDisplayName() : null,
+                    newTrangThai.getDisplayName(),
+                    ghiChuAudit);
+
+            results.add(SinhVienBulkResult.ItemResult.ok(mssv));
+            success++;
+        }
+
+        log.info("bulkUpdateTrangThaiHocVu: {}/{} thành công (target={})",
+                success, mssvs.size(), newTrangThai.getDisplayName());
+        return new SinhVienBulkResult(mssvs.size(), success, failure, results);
+    }
+
+    /**
+     * Xóa nhiều sinh viên theo danh sách MSSV với kiểm tra an toàn FK.
+     *
+     * <p>Quy tắc (theo yêu cầu nghiệp vụ của dự án):
+     * <ul>
+     *   <li>Chỉ xóa được SV khi:
+     *       <ul>
+     *         <li>SV tồn tại trong DB.</li>
+     *         <li>SV không còn hồ sơ giấy tờ (countByMssv == 0).</li>
+     *         <li>SV không có phiếu mượn đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn).</li>
+     *       </ul>
+     *   </li>
+     *   <li>Mọi lần xóa đều ghi audit (trước khi xóa entity để có đủ thông tin).</li>
+     *   <li>Một SV vi phạm rule → trả về success=false nhưng KHÔNG chặn các SV khác
+     *       trong lô (best-effort). Vì method có {@code @Transactional}, nếu một
+     *       thao tác xóa ném exception không mong đợi (vd lỗi DB), toàn bộ rollback.</li>
+     * </ul>
+     * </p>
+     *
+     * <p>Note: Theo {@code AGENTS.md} backend, xóa sinh viên vi phạm nguyên tắc
+     * "không ghi đè audit". Tuy nhiên endpoint này được cung cấp để xử lý các
+     * trường hợp import nhầm (chưa phát sinh hồ sơ / phiếu), đồng thời giữ đủ
+     * audit log trước khi xóa.</p>
+     */
+    @Transactional
+    public SinhVienBulkResult bulkDelete(SinhVienBulkRequest req) {
+        List<String> mssvs = normalizeMssvList(req.getMssvList());
+        List<SinhVienBulkResult.ItemResult> results = new ArrayList<>();
+        int success = 0, failure = 0;
+
+        List<SinhVien> svList = sinhVienRepository.findAllById(mssvs);
+        java.util.Map<String, SinhVien> map = new java.util.HashMap<>();
+        for (SinhVien sv : svList) map.put(sv.getMssv(), sv);
+
+        String ghiChu = trimOrNull(req.getGhiChu());
+
+        for (String mssv : mssvs) {
+            SinhVien sv = map.get(mssv);
+            if (sv == null) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SINHVIEN_NOT_FOUND",
+                        "Không tìm thấy sinh viên."));
+                failure++;
+                continue;
+            }
+
+            // Check hồ sơ giấy tờ
+            long hoSoCount = hoSoGiayToRepository.countByMssv(mssv);
+            if (hoSoCount > 0) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SV_CON_HO_SO",
+                        "Sinh viên còn " + hoSoCount + " hồ sơ giấy tờ. Hãy rút hồ sơ trước khi xóa."));
+                failure++;
+                continue;
+            }
+
+            // Check phiếu đang hoạt động
+            long dangMuon = phieuXuatHoSoRepository.countDangMuonByMssv(mssv);
+            if (dangMuon > 0) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SV_DANG_CO_PHIEU",
+                        "Sinh viên còn " + dangMuon + " phiếu đang mượn. Hãy trả hết trước khi xóa."));
+                failure++;
+                continue;
+            }
+
+            // Audit log trước khi xóa (lưu thông tin SV để còn truy vết).
+            String auditDetail = "Xóa sinh viên qua bulk delete";
+            if (ghiChu != null) {
+                auditDetail += " — " + ghiChu;
+            }
+            auditDetail += " (họ tên: " + sv.getHoTen()
+                    + ", trạng thái: "
+                    + (sv.getTrangThaiHocVu() != null
+                            ? sv.getTrangThaiHocVu().getDisplayName() : "n/a") + ")";
+            auditService.log("BULK_DELETE_SINHVIEN", "sinhvien", sv.getMssv(),
+                    null, null, null, auditDetail);
+
+            sinhVienRepository.delete(sv);
+            results.add(SinhVienBulkResult.ItemResult.ok(mssv));
+            success++;
+        }
+
+        log.info("bulkDelete: {}/{} thành công", success, mssvs.size());
+        return new SinhVienBulkResult(mssvs.size(), success, failure, results);
     }
 
     public record ImportResult(

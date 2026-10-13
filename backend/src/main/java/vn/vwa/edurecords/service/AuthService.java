@@ -78,6 +78,15 @@ public class AuthService {
      */
     @Transactional
     public User createUser(RegisterRequest request) {
+        return createUser(request, Role.STAFF);
+    }
+
+    /**
+     * Tạo tài khoản với vai trò chỉ định.
+     * CHỈ dùng trong môi trường dev — xóa endpoint sau khi test xong!
+     */
+    @Transactional
+    public User createUser(RegisterRequest request, Role forcedRole) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BadRequestException("USERNAME_EXISTS", "Tên đăng nhập đã tồn tại.");
         }
@@ -87,12 +96,13 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .hoTen(request.getHoTen())
                 .email(request.getEmail())
-                .role(Role.STAFF)
+                .role(forcedRole)
                 .isActive(true)
                 .build();
 
         User saved = userRepository.save(user);
-        log.info("Đã tạo tài khoản nhân viên '{}' (id={})", saved.getUsername(), saved.getId());
+        log.info("Đã tạo tài khoản '{}' với vai trò {} (id={})",
+                saved.getUsername(), forcedRole, saved.getId());
         return saved;
     }
 

@@ -13,12 +13,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import vn.vwa.edurecords.dto.request.PhieuMuonBulkRequest;
 import vn.vwa.edurecords.dto.request.PhieuMuonRequest;
 import vn.vwa.edurecords.dto.request.PhieuMuonSearchRequest;
 import vn.vwa.edurecords.dto.request.PhieuTraRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.dto.response.PhieuMuonResponse;
+import vn.vwa.edurecords.dto.response.SinhVienBulkResult;
 import vn.vwa.edurecords.service.PhieuXuatHoSoService;
 
 import java.util.List;
@@ -178,6 +180,28 @@ public class PhieuXuatHoSoController {
         PhieuMuonResponse result = phieuXuatHoSoService.traPhieu(maPhieu,
                 req != null ? req : new PhieuTraRequest());
         return ResponseEntity.ok(ApiResponse.success("Trả hồ sơ thành công", result));
+    }
+
+    /**
+     * POST /api/phieu-muon/bulk
+     * Tạo phiếu Mượn tạm thời / Rút vĩnh viễn cho NHIỀU sinh viên cùng lúc.
+     *
+     * <p>Dùng cho chức năng "Mượn/Trả lô" và "Rút hồ sơ lô" trên trang
+     * Danh sách hồ sơ. Mỗi sinh viên được xử lý độc lập (best-effort);
+     * một SV lỗi không chặn các SV khác trong cùng request.</p>
+     *
+     * <p>Body: xem {@link PhieuMuonBulkRequest}.</p>
+     * <p>Trả về: {@link SinhVienBulkResult} với success/failure chi tiết.</p>
+     */
+    @PostMapping("/bulk")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<SinhVienBulkResult>> bulkCreatePhieu(
+            @Valid @RequestBody PhieuMuonBulkRequest req) {
+        SinhVienBulkResult result = phieuXuatHoSoService.bulkCreatePhieu(req);
+        return ResponseEntity.ok(ApiResponse.success(
+                String.format("Đã tạo phiếu cho %d/%d sinh viên.",
+                        result.getSuccessCount(), result.getTotal()),
+                result));
     }
 
     /**

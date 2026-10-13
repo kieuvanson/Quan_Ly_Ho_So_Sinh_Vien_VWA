@@ -1,7 +1,9 @@
 package vn.vwa.edurecords.dto.request;
 
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
+
+import java.util.List;
 
 /**
  * Filter request cho {@code GET /api/sinh-vien}.
@@ -47,6 +49,23 @@ public class SinhVienSearchRequest {
     @Max(1)
     private int sortDirection = 0;
 
+    /**
+     * Phạm vi dữ liệu xuất Excel.
+     * <ul>
+     *   <li>{@code filtered} (mặc định): toàn bộ kết quả theo filter hiện tại.</li>
+     *   <li>{@code page}: chỉ trang hiện tại.</li>
+     *   <li>{@code selected}: chỉ những MSSV đã chọn trên UI ({@link #selectedMssvs}).</li>
+     * </ul>
+     */
+    private String scope = "filtered";
+
+    /**
+     * Danh sách MSSV được chọn — chỉ dùng khi {@link #scope} = "selected".
+     * Có thể nhận ở dạng nhiều param {@code ?mssv=A&mssv=B} (Spring bind List<String>)
+     * hoặc một param {@code ?mssvs=A,B,C} (CSV — service tự split).
+     */
+    private List<String> selectedMssvs;
+
     public SinhVienSearchRequest() {}
 
     public String getKeyword() { return keyword; }
@@ -90,6 +109,12 @@ public class SinhVienSearchRequest {
 
     public int getSortDirection() { return sortDirection; }
     public void setSortDirection(int sortDirection) { this.sortDirection = sortDirection; }
+
+    public String getScope() { return scope; }
+    public void setScope(String scope) { this.scope = scope; }
+
+    public List<String> getSelectedMssvs() { return selectedMssvs; }
+    public void setSelectedMssvs(List<String> selectedMssvs) { this.selectedMssvs = selectedMssvs; }
 
     public boolean hasKeyword() {
         return keyword != null && !keyword.trim().isEmpty();

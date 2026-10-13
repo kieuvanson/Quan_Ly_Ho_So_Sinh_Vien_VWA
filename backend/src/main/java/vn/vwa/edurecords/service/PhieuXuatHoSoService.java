@@ -9,10 +9,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.vwa.edurecords.dto.request.PhieuMuonBulkRequest;
 import vn.vwa.edurecords.dto.request.PhieuMuonRequest;
 import vn.vwa.edurecords.dto.request.PhieuMuonSearchRequest;
 import vn.vwa.edurecords.dto.request.PhieuTraRequest;
 import vn.vwa.edurecords.dto.response.PhieuMuonResponse;
+import vn.vwa.edurecords.dto.response.SinhVienBulkResult;
 import vn.vwa.edurecords.entity.ChiTietPhieu;
 import vn.vwa.edurecords.entity.HoSoGiayTo;
 import vn.vwa.edurecords.entity.PhieuXuatHoSo;
@@ -29,8 +31,10 @@ import vn.vwa.edurecords.repository.UserRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -303,6 +307,264 @@ public class PhieuXuatHoSoService {
                 "soLuongHoSo", null, String.valueOf(maHoSoList.size()), nguoiTao);
 
         return getById(maPhieu);
+    }
+
+    /**
+     * Bulk tạo phiếu Mượn tạm thời / Rút vĩnh viễn cho nhiều sinh viên.
+     *
+     * <p>Endpoint lý dựng từ trang "Danh sách hồ sơ" — khi user chọn nhiều SV
+     * rồi bấm "Mượn/Trả lô" hoặc "Rút hồ sơ lô". Mỗi SV được xử lý độc lập
+     * (best-effort); một SV lỗi không chặn các SV khác.</p>
+     *
+     * <p><b>Quy tắc nghiệp vụ (giữ nguyên với {@link #createPhieu}):</b></p>
+     * <ul>
+     *   <li>SV 'Đã rút hồ sơ' → không cho Mượn tạm thời.</li>
+     *   <li>Mượn tạm thời bắt buộc có ngayTraDuKien + danhSachMaHoSo có ít nhất
+     *       1 mã thuộc về SV.</li>
+     *   <li>Rút vĩnh viễn không cho khi còn phiếu 'Đang mượn' chưa trả.</li>
+     *   <li>Rút vĩnh viễn áp dụng TOÀN BỘ giấy tờ hiện có của SV (kể cả khi
+     *       client không gửi danhSachMaHoSo).</li>
+     * </ul>
+     *
+     * <p>Lỗi trả về theo từng SV qua {@link SinhVienBulkResult.ItemResult}.</p>
+     *
+     * @param req   Yêu cầu bulk (chứa mssvList, loaiPhieu, ngayMuon, ...).
+     * @return      Tổng số SV, success/failure, danh sách kết quả từng SV
+     *        (kèm maPhieu nếu tạo thành công).
+     */
+    @Transactional
+    public SinhVienBulkResult bulkCreatePhieu(PhieuMuonBulkRequest req) {
+        // === Validate inputs ===
+        if (req == null) {
+            throw new BadRequestException("EMPTY_REQUEST", "Thiếu body request.");
+        }
+        if (req.getMssvList() == null || req.getMssvList().isEmpty()) {
+            throw new BadRequestException("EMPTY_MSSV_LIST", "Danh sách MSSV không được rỗng.");
+        }
+        if (req.getMssvList().size() > PhieuMuonBulkRequest.MAX_MSSVS) {
+            throw new BadRequestException("TOO_MANY_MSSVS",
+                    "Mỗi lần chỉ xử lý tối đa " + PhieuMuonBulkRequest.MAX_MSSVS
+                            + " sinh viên (nhận " + req.getMssvList().size() + ").");
+        }
+
+        // Chuẩn hoá + dedupe MSSV nhưng giữ thứ tự
+        Set<String> mssvSet = new LinkedHashSet<>();
+        for (String m : req.getMssvList()) {
+            if (m == null) continue;
+            String t = m.trim();
+            if (!t.isEmpty()) mssvSet.add(t);
+        }
+        if (mssvSet.isEmpty()) {
+            throw new BadRequestException("EMPTY_MSSV_LIST", "Danh sách MSSV không được rỗng.");
+        }
+        List<String> mssvs = new ArrayList<>(mssvSet);
+
+        String loaiPhieu = req.getLoaiPhieu() == null ? "" : req.getLoaiPhieu().trim();
+        if (!LOAI_MUON_TAM_THOI.equals(loaiPhieu) && !LOAI_RUT_VINH_VIEN.equals(loaiPhieu)) {
+            throw new BadRequestException("INVALID_LOAI_PHIEU",
+                    "loaiPhieu phải là 'Mượn tạm thời' hoặc 'Rút vĩnh viễn'.");
+        }
+
+        LocalDate ngayMuon;
+        try {
+            ngayMuon = LocalDate.parse(req.getNgayMuon());
+        } catch (DateTimeParseException ex) {
+            throw new BadRequestException("INVALID_NGAY_MUON",
+                    "ngayMuon phải có định dạng yyyy-MM-dd.");
+        }
+        LocalDate ngayTraDuKien = null;
+        if (req.getNgayTraDuKien() != null && !req.getNgayTraDuKien().isBlank()) {
+            try {
+                ngayTraDuKien = LocalDate.parse(req.getNgayTraDuKien());
+            } catch (DateTimeParseException ex) {
+                throw new BadRequestException("INVALID_NGAY_TRA_DU_KIEN",
+                        "ngayTraDuKien phải có định dạng yyyy-MM-dd.");
+            }
+        }
+
+        if (LOAI_MUON_TAM_THOI.equals(loaiPhieu) && ngayTraDuKien == null) {
+            throw new BadRequestException("MISSING_HAN_TRA",
+                    "Phiếu mượn tạm thời phải có hạn trả dự kiến.");
+        }
+
+        String lyDo = req.getLyDo() == null ? "" : req.getLyDo().trim();
+        if (lyDo.isEmpty()) {
+            throw new BadRequestException("MISSING_LY_DO", "Thiếu lý do mượn / rút.");
+        }
+        String ghiChu = req.getGhiChu();
+
+        List<String> inputMaHoSo = req.getDanhSachMaHoSo() == null
+                ? Collections.emptyList()
+                : req.getDanhSachMaHoSo().stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+
+        // Load tất cả SV một lần để tránh N+1
+        List<SinhVien> svList = sinhVienRepository.findAllById(mssvs);
+        Map<String, SinhVien> svMap = svList.stream()
+                .collect(Collectors.toMap(SinhVien::getMssv, s -> s, (a, b) -> a));
+
+        // Load tất cả hồ sơ theo MSSV (gộp 1 query thay vì N query)
+        Map<String, List<String>> hoSoByMssv = new java.util.HashMap<>();
+        for (String mssv : mssvs) {
+            hoSoByMssv.put(mssv, phieuXuatHoSoRepository.findMaHoSoByMssv(mssv));
+        }
+        // Map maHoSo -> mssv để check quyền sở hữu
+        Map<String, String> maHoSoToMssv = new java.util.HashMap<>();
+        for (Map.Entry<String, List<String>> e : hoSoByMssv.entrySet()) {
+            for (String ma : e.getValue()) {
+                maHoSoToMssv.put(ma, e.getKey());
+            }
+        }
+
+        List<SinhVienBulkResult.ItemResult> results = new ArrayList<>();
+        int success = 0, failure = 0;
+
+        for (String mssv : mssvs) {
+            SinhVien sv = svMap.get(mssv);
+            if (sv == null) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SINHVIEN_NOT_FOUND", "Không tìm thấy sinh viên."));
+                failure++;
+                continue;
+            }
+
+            // === Validate rule cho SV này ===
+            if (LOAI_MUON_TAM_THOI.equals(loaiPhieu)
+                    && TrangThaiHocVu.ĐÃ_RÚT_HỒ_SƠ.getDisplayName()
+                            .equals(sv.getTrangThaiHocVu().getDisplayName())) {
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "SV_DA_RUT_HO_SO",
+                        "Sinh viên đã rút hồ sơ, không thể tạo phiếu mượn tạm thời."));
+                failure++;
+                continue;
+            }
+
+            if (LOAI_RUT_VINH_VIEN.equals(loaiPhieu)) {
+                long dangMuon = phieuXuatHoSoRepository.countDangMuonByMssv(mssv);
+                if (dangMuon > 0) {
+                    results.add(SinhVienBulkResult.ItemResult.fail(
+                            mssv, "SV_DANG_CO_PHIEU_MUON",
+                            "Sinh viên đang có " + dangMuon
+                                    + " phiếu mượn tạm thời chưa trả. "
+                                    + "Vui lòng trả hết trước khi rút vĩnh viễn."));
+                    failure++;
+                    continue;
+                }
+            }
+
+            // === Xác định danh sách mã hồ sơ áp dụng cho SV này ===
+            List<String> maHoSoList;
+            if (LOAI_RUT_VINH_VIEN.equals(loaiPhieu)) {
+                maHoSoList = hoSoByMssv.getOrDefault(mssv, Collections.emptyList());
+                if (maHoSoList.isEmpty()) {
+                    results.add(SinhVienBulkResult.ItemResult.fail(
+                            mssv, "SV_KHONG_CO_HO_SO",
+                            "Sinh viên không có hồ sơ giấy tờ nào để rút vĩnh viễn."));
+                    failure++;
+                    continue;
+                }
+                // Nếu client có gửi danh sách → đối chiếu với toàn bộ hồ sơ
+                if (!inputMaHoSo.isEmpty()) {
+                    Set<String> clientSet = new LinkedHashSet<>(inputMaHoSo);
+                    Set<String> dbSet = new LinkedHashSet<>(maHoSoList);
+                    if (!clientSet.equals(dbSet)) {
+                        results.add(SinhVienBulkResult.ItemResult.fail(
+                                mssv, "RUT_VINH_VIEN_PHAI_TOAN_BO",
+                                "Rút vĩnh viễn phải áp dụng cho TOÀN BỘ giấy tờ của sinh viên ("
+                                        + dbSet.size() + " hồ sơ)."));
+                        failure++;
+                        continue;
+                    }
+                }
+            } else {
+                // Mượn tạm thời — lọc chỉ giữ những mã thuộc về SV này
+                maHoSoList = new ArrayList<>();
+                for (String ma : inputMaHoSo) {
+                    String owner = maHoSoToMssv.get(ma);
+                    if (owner == null) {
+                        results.add(SinhVienBulkResult.ItemResult.fail(
+                                mssv, "HO_SO_NOT_FOUND",
+                                "Mã hồ sơ '" + ma + "' không tồn tại."));
+                        failure++;
+                        maHoSoList = null;
+                        break;
+                    }
+                    if (!mssv.equals(owner)) {
+                        results.add(SinhVienBulkResult.ItemResult.fail(
+                                mssv, "HO_SO_KHONG_THUOC_SV",
+                                "Hồ sơ '" + ma + "' không thuộc sinh viên " + mssv));
+                        failure++;
+                        maHoSoList = null;
+                        break;
+                    }
+                    maHoSoList.add(ma);
+                }
+                if (maHoSoList == null) {
+                    continue;
+                }
+                if (maHoSoList.isEmpty()) {
+                    results.add(SinhVienBulkResult.ItemResult.fail(
+                            mssv, "MISSING_HO_SO",
+                            "Phiếu mượn tạm thời phải chọn ít nhất 1 hồ sơ giấy tờ."));
+                    failure++;
+                    continue;
+                }
+            }
+
+            // === Tạo phiếu (giống logic createPhieu đơn lẻ) ===
+            try {
+                String maPhieu = generateMaPhieu();
+                String nguoiTao = currentUsername();
+
+                PhieuXuatHoSo phieu = new PhieuXuatHoSo();
+                phieu.setMaPhieu(maPhieu);
+                phieu.setMssv(mssv);
+                phieu.setLoaiPhieu(loaiPhieu);
+                phieu.setTrangThai(TRANG_THAI_MOI);
+                phieu.setLyDo(lyDo);
+                phieu.setNgayMuon(ngayMuon);
+                phieu.setNgayTraDuKien(ngayTraDuKien);
+                phieu.setGhiChu(ghiChu);
+                phieu.setNguoiTao(nguoiTao);
+                phieu.setNgayTao(LocalDateTime.now());
+
+                phieuXuatHoSoRepository.save(phieu);
+
+                for (String maHoSo : maHoSoList) {
+                    ChiTietPhieu ct = new ChiTietPhieu();
+                    ct.setMaCt(generateMaCt());
+                    ct.setMaPhieu(maPhieu);
+                    ct.setMaHoSo(maHoSo);
+                    ct.setNgayTao(LocalDateTime.now());
+                    chiTietPhieuRepository.save(ct);
+                }
+
+                auditService.log("CREATE_PHIEU_BULK", "phieu_xuat_ho_so", maPhieu,
+                        "loaiPhieu+trangThai", null,
+                        loaiPhieu + "|" + TRANG_THAI_MOI, nguoiTao);
+                auditService.log("CREATE_PHIEU_BULK", "phieu_xuat_ho_so", maPhieu,
+                        "soLuongHoSo", null, String.valueOf(maHoSoList.size()), nguoiTao);
+
+                // Trả về ItemResult "ok" với maPhieu trong message để client có thể liên kết
+                SinhVienBulkResult.ItemResult r = new SinhVienBulkResult.ItemResult(
+                        mssv, true, "PHIEU_CREATED",
+                        "Tạo phiếu " + maPhieu + " (" + maHoSoList.size() + " hồ sơ).");
+                results.add(r);
+                success++;
+            } catch (Exception ex) {
+                log.error("bulkCreatePhieu lỗi cho MSSV={}", mssv, ex);
+                results.add(SinhVienBulkResult.ItemResult.fail(
+                        mssv, "INTERNAL_ERROR",
+                        "Lỗi hệ thống: " + ex.getMessage()));
+                failure++;
+            }
+        }
+
+        log.info("bulkCreatePhieu: {}/{} thành công (loaiPhieu={})",
+                success, mssvs.size(), loaiPhieu);
+        return new SinhVienBulkResult(mssvs.size(), success, failure, results);
     }
 
     /**
