@@ -63,6 +63,21 @@ export interface ImportPreviewResult {
 }
 
 /**
+ * Kết quả bulk operation trả về từ backend.
+ */
+export interface BulkResult {
+  total: number
+  successCount: number
+  failureCount: number
+  results: Array<{
+    mssv: string
+    success: boolean
+    code?: string
+    message?: string
+  }>
+}
+
+/**
  * SinhVien API client.
  * Endpoints:
  * - GET    /api/sinh-vien (search, filter, paginate)
@@ -70,16 +85,27 @@ export interface ImportPreviewResult {
  * - GET    /api/sinh-vien/export (download xlsx)
  * - GET    /api/sinh-vien/import-template (download template xlsx)
  * - POST   /api/sinh-vien/import (upload xlsx)
+ * - PUT    /api/sinh-vien/bulk/trang-thai (bulk update trạng thái học vụ)
+ * - DELETE /api/sinh-vien/bulk (bulk delete)
  */
 export const sinhVienApi = {
   /**
    * Get paginated list of students with search and filter.
+   *
+   * <p>Ưu tiên truyền {@code *_id} (Integer) khi UI đã chọn id danh mục.
+   * Backend tự fallback resolve từ String nếu client cũ chỉ gửi tên.</p>
    */
   getAll: async (params: SinhVienSearchParams = {}): Promise<ApiResponse<SinhVienPagedResponse>> => {
     const searchParams = new URLSearchParams()
 
     if (params.keyword) searchParams.append('keyword', params.keyword)
     if (params.trangThaiHocVu) searchParams.append('trangThaiHocVu', params.trangThaiHocVu)
+    // *_id là filter chính xác theo FK; chỉ gửi khi là số nguyên hợp lệ.
+    if (isPositiveInt(params.nganhId)) searchParams.append('nganhId', String(params.nganhId))
+    if (isPositiveInt(params.lopId)) searchParams.append('lopId', String(params.lopId))
+    if (isPositiveInt(params.khoaHocId)) searchParams.append('khoaHocId', String(params.khoaHocId))
+    if (isPositiveInt(params.khoaId)) searchParams.append('khoaId', String(params.khoaId))
+    // String filters là fallback cho client cũ; backend cũng nhận để resolve.
     if (params.nganh) searchParams.append('nganh', params.nganh)
     if (params.lop) searchParams.append('lop', params.lop)
     if (params.khoaNamNhapHoc) searchParams.append('khoaNamNhapHoc', params.khoaNamNhapHoc)
@@ -105,13 +131,26 @@ export const sinhVienApi = {
   },
 
   /**
-   * Download Excel theo filter hiện tại.
-   * @param scope 'filtered' = toàn bộ kết quả lọc, 'page' = chỉ trang hiện tại
+   * Download Excel.
+   * - `scope='filtered'` (mặc định): toàn bộ kết quả lọc.
+   * - `scope='page'`: chỉ trang hiện tại.
+   * - `scope='selected'`: chỉ những MSSV đã chọn trên UI.
+   *
+   * Backend nhận `mssv` (List<String>) và `mssvs` (CSV) — gửi cả 2 để tương thích.
    */
-  exportExcel: async (params: SinhVienSearchParams = {}, scope: 'filtered' | 'page' = 'filtered'): Promise<Blob> => {
+  exportExcel: async (
+    params: SinhVienSearchParams = {},
+    scope: 'filtered' | 'page' | 'selected' = 'filtered',
+    selectedMssv?: string[]
+  ): Promise<Blob> => {
     const searchParams = new URLSearchParams()
     if (params.keyword) searchParams.append('keyword', params.keyword)
     if (params.trangThaiHocVu) searchParams.append('trangThaiHocVu', params.trangThaiHocVu)
+    // Gửi *_id (ưu tiên) — backend đã nhận và dùng FK.
+    if (isPositiveInt(params.nganhId)) searchParams.append('nganhId', String(params.nganhId))
+    if (isPositiveInt(params.lopId)) searchParams.append('lopId', String(params.lopId))
+    if (isPositiveInt(params.khoaHocId)) searchParams.append('khoaHocId', String(params.khoaHocId))
+    if (isPositiveInt(params.khoaId)) searchParams.append('khoaId', String(params.khoaId))
     if (params.nganh) searchParams.append('nganh', params.nganh)
     if (params.lop) searchParams.append('lop', params.lop)
     if (params.khoaNamNhapHoc) searchParams.append('khoaNamNhapHoc', params.khoaNamNhapHoc)
@@ -122,6 +161,16 @@ export const sinhVienApi = {
       if (params.size !== undefined) searchParams.append('size', String(params.size))
     }
     searchParams.append('scope', scope)
+
+    if (scope === 'selected') {
+      if (!selectedMssv || selectedMssv.length === 0) {
+        throw new Error('Danh sách MSSV được chọn đang trống.')
+      }
+      // Backend nhận nhiều param `mssv=A&mssv=B` (Spring List<String>)
+      // HOẶC 1 param `mssvs=A,B,C` (CSV) — gửi cả 2.
+      selectedMssv.forEach((m) => searchParams.append('mssv', m))
+      searchParams.append('mssvs', selectedMssv.join(','))
+    }
 
     const res = await apiClient.get(`/api/sinh-vien/export?${searchParams.toString()}`, {
       responseType: 'blob',
@@ -179,6 +228,55 @@ export const sinhVienApi = {
     )
     return res.data
   },
+
+  /**
+   * Cập nhật trạng thái học vụ cho NHIỀU sinh viên (bulk).
+   *
+   * Backend: PUT /api/sinh-vien/bulk/trang-thai
+   * Body: { mssvList, trangThaiHocVu, ghiChu? }
+   * Trả về: { total, successCount, failureCount, results: [{mssv, success, code?, message?}] }
+   */
+  bulkUpdateTrangThaiHocVu: async (
+    mssvList: string[],
+    trangThaiHocVu: string,
+    ghiChu?: string
+  ): Promise<ApiResponse<BulkResult>> => {
+    const res = await apiClient.put<ApiResponse<BulkResult>>(
+      '/api/sinh-vien/bulk/trang-thai',
+      { mssvList, trangThaiHocVu, ghiChu }
+    )
+    return res.data
+  },
+
+  /**
+   * Xóa hàng loạt sinh viên theo danh sách MSSV.
+   *
+   * Backend: DELETE /api/sinh-vien/bulk
+   * Body: { mssvList, ghiChu? }
+   * Trả về: { total, successCount, failureCount, results: [{mssv, success, code?, message?}] }
+   *
+   * Quy tắc xóa (backend):
+   * - SV phải tồn tại.
+   * - SV không còn hồ sơ giấy tờ.
+   * - SV không có phiếu mượn đang hoạt động.
+   */
+  bulkDelete: async (
+    mssvList: string[],
+    ghiChu?: string
+  ): Promise<ApiResponse<BulkResult>> => {
+    const res = await apiClient.delete<ApiResponse<BulkResult>>(
+      '/api/sinh-vien/bulk',
+      { data: { mssvList, ghiChu } }
+    )
+    return res.data
+  },
+}
+
+/**
+ * Helper: kiểm tra giá trị id hợp lệ (số nguyên dương, không phải NaN/undefined/null/0).
+ */
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && Number.isInteger(value)
 }
 
 /**

@@ -86,6 +86,36 @@ export const phieuMuonApi = {
   },
 
   /**
+   * Tạo phiếu mượn / rút hồ sơ hàng loạt cho nhiều sinh viên.
+   * Endpoint: POST /api/phieu-muon/bulk
+   * Body: {
+   *   mssvList: string[],
+   *   loaiPhieu: 'Mượn tạm thời' | 'Rút vĩnh viễn',
+   *   ngayMuon: 'yyyy-MM-dd',
+   *   ngayTraDuKien?: 'yyyy-MM-dd' (bắt buộc với Mượn tạm thời),
+   *   lyDo: string,
+   *   ghiChu?: string,
+   *   danhSachMaHoSo?: string[]  (chỉ dùng cho Mượn tạm thời; với Rút vĩnh viễn để trống = lấy toàn bộ)
+   * }
+   * Trả về: SinhVienBulkResult
+   */
+  bulkCreate: async (body: {
+    mssvList: string[]
+    loaiPhieu: string
+    ngayMuon: string
+    ngayTraDuKien?: string
+    lyDo: string
+    ghiChu?: string
+    danhSachMaHoSo?: string[]
+  }): Promise<ApiResponse<import('./sinhVien').BulkResult>> => {
+    const res = await apiClient.post<ApiResponse<import('./sinhVien').BulkResult>>(
+      '/api/phieu-muon/bulk',
+      body
+    )
+    return res.data
+  },
+
+  /**
    * Lấy danh sách phiếu đang hoạt động (Chờ duyệt / Đang mượn / Quá hạn) của 1 SV.
    * Endpoint: GET /api/phieu-muon/by-mssv/{mssv}
    */

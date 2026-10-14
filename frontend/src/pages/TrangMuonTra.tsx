@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, FileX, Loader2, RotateCcw, Plus, ArrowRightLeft, AlertCircle, X } from 'lucide-react'
 import { CustomSelect, SearchInput, Button, Toast, Modal, FormInput } from '../components/ui'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
 import { authStore } from '../lib/authStore'
@@ -125,6 +125,38 @@ export function TrangMuonTra() {
   const [searchParams] = useSearchParams()
   const mssvFromUrl = searchParams.get('mssv')
   const maPhieuFromUrl = searchParams.get('maPhieu')
+
+  // ----- Bulk mode (từ trang Danh sách hồ sơ) -----
+  const [bulkMssvList, setBulkMssvList] = useState<string[]>([])
+  const [bulkModeBanner, setBulkModeBanner] = useState<string | null>(null)
+  const isBulkMode = searchParams.get('mode') === 'bulk'
+
+  // Đọc danh sách MSSV từ sessionStorage khi mở trang với mode=bulk.
+  useEffect(() => {
+    if (!isBulkMode) {
+      setBulkMssvList([])
+      setBulkModeBanner(null)
+      return
+    }
+    try {
+      const raw = sessionStorage.getItem('vwa-bulk-muon-mssvs')
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setBulkMssvList(parsed)
+          setBulkModeBanner(
+            `Bạn đang mở từ thao tác hàng loạt với ${parsed.length} sinh viên đã chọn. ` +
+              'Hiện backend chưa hỗ trợ tạo phiếu mượn/trả hàng loạt — ' +
+              'hãy xử lý từng sinh viên qua form bên dưới.'
+          )
+          // Auto-fill MSSV đầu tiên để bắt đầu nhanh
+          setMuonForm((f) => ({ ...f, mssv: parsed[0] }))
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [isBulkMode])
 
   // ----- Tab state -----
   const [activeTab, setActiveTab] = useState<'dangmuon' | 'lichsu'>('dangmuon')
@@ -666,6 +698,43 @@ export function TrangMuonTra() {
         <h2 className="trang-muon-tra__title">Mượn / trả hồ sơ</h2>
         <p className="trang-muon-tra__subtitle">Quản lý tình trạng mượn và trả hồ sơ sinh viên</p>
       </div>
+
+      {/* Banner bulk mode */}
+      {bulkModeBanner && (
+        <div className="trang-muon-tra__bulk-banner">
+          <AlertCircle size={18} />
+          <div className="trang-muon-tra__bulk-banner-content">
+            <strong>Thao tác hàng loạt:</strong> {bulkModeBanner}
+            {bulkMssvList.length > 0 && (
+              <details className="trang-muon-tra__bulk-banner-list">
+                <summary>Danh sách {bulkMssvList.length} MSSV</summary>
+                <div className="trang-muon-tra__bulk-banner-mssvs">
+                  {bulkMssvList.map((m) => (
+                    <code key={m} className="trang-muon-tra__bulk-banner-mssv">{m}</code>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+          <button
+            type="button"
+            className="trang-muon-tra__bulk-banner-close"
+            onClick={() => {
+              setBulkModeBanner(null)
+              setBulkMssvList([])
+              try {
+                sessionStorage.removeItem('vwa-bulk-muon-mssvs')
+              } catch {
+                // ignore
+              }
+            }}
+            title="Đóng banner"
+            aria-label="Đóng banner"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="trang-muon-tra__tabs">

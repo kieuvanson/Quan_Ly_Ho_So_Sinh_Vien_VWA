@@ -281,15 +281,38 @@ export interface TrangThaiPhieuItem {
 
 /**
  * Search/filter params for sinh-vien API.
+ *
+ * <p>UI giữ nhãn tiếng Việt cho dropdown, nhưng khi gọi API ưu tiên truyền
+ * {@code *_id} (Integer) để backend truy vấn theo đúng khóa ngoại. Các field
+ * String cũ vẫn được giữ để tương thích ngược; backend sẽ tự resolve.</p>
  */
 export interface SinhVienSearchParams {
+  /** Từ khóa tìm theo họ tên, MSSV, CCCD. */
   keyword?: string
+  /** Tên/giá trị trạng thái học vụ (UI label, vd: "Đang học" → backend enum). */
   trangThaiHocVu?: string
+
+  /** Tên ngành — fallback nếu chưa có {@link nganhId}. */
   nganh?: string
+  /** Tên lớp — fallback nếu chưa có {@link lopId}. */
   lop?: string
+  /** Tên khóa học (niên khóa) — fallback nếu chưa có {@link khoaHocId}. */
   khoaNamNhapHoc?: string
+  /** Tên khoa chuyên môn — fallback nếu chưa có {@link khoaId}. */
   khoa?: string
+
+  /** Hệ đào tạo. */
   heDaoTao?: string
+
+  /** ID ngành (ưu tiên hơn {@link nganh}). Backend filter theo {@code sinhvien.nganh_id}. */
+  nganhId?: number
+  /** ID lớp (ưu tiên hơn {@link lop}). Backend filter theo {@code sinhvien.lop_id}. */
+  lopId?: number
+  /** ID khóa học/niên khóa (ưu tiên hơn {@link khoaNamNhapHoc}). Backend filter theo {@code sinhvien.khoa_hoc_id}. */
+  khoaHocId?: number
+  /** ID khoa chuyên môn (ưu tiên hơn {@link khoa}). Backend filter theo {@code sinhvien.khoa_id}. */
+  khoaId?: number
+
   page?: number
   size?: number
   sortDirection?: number

@@ -158,6 +158,25 @@ p {
 }
 
 /* ========================================
+   Reset list / button marker toàn cục
+   ========================================
+   Một số trình duyệt (Chromium đặc biệt) hiển thị ::marker cho <button>
+   / <td> chứa <button> trong table-cell nếu không có reset rõ ràng.
+   Hiện tượng này từng gây ra "dấu chấm thừa" cạnh checkbox ở bảng
+   danh sách hồ sơ. Reset toàn cục để tránh lặp lại. */
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+button {
+  /* Đảm bảo button không có marker nào từ ::marker. */
+  list-style: none;
+}
+
+/* ========================================
    Links
    ======================================== */
 a {

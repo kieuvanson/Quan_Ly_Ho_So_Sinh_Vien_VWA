@@ -294,7 +294,17 @@ public class SinhVienImportService {
             );
         }
 
-        return new ImportRowPreview(excelRow, mssv, hoTen, status, errors, dmInfo);
+        // --- 9. Build ImportRowPreview với đầy đủ thông tin cá nhân ---
+        ImportRowPreview preview = new ImportRowPreview(excelRow, mssv, hoTen, status, errors, dmInfo);
+        // Lưu các trường cá nhân để sử dụng khi confirm
+        preview.setNgaySinh(ngaySinh != null ? ngaySinh.toLocalDate().toString() : null);
+        preview.setGioiTinh(gioiTinh);
+        preview.setCccd(cccd);
+        preview.setSdt(sdt);
+        preview.setEmail(email);
+        preview.setQueQuan(queQuan);
+        preview.setHeDaoTao(heDaoTao);
+        return preview;
     }
 
     // ================================================================
@@ -541,14 +551,14 @@ public class SinhVienImportService {
         sv.setMssv(preview.getMssv());
         sv.setHoTen(preview.getHoTen());
 
-        // Ngày sinh (parse lại từ row đã đọc - ở đây null vì đã parse rồi)
-        sv.setNgaySinh(null);
-        sv.setGioiTinh(null);
-        sv.setCccd(null);
-        sv.setSdt(null);
-        sv.setEmail(null);
-        sv.setQueQuan(null);
-        sv.setHeDaoTao(null);
+        // Các trường cá nhân từ preview
+        sv.setNgaySinh(parseNgaySinhString(preview.getNgaySinh()));
+        sv.setGioiTinh(preview.getGioiTinh());
+        sv.setCccd(preview.getCccd());
+        sv.setSdt(preview.getSdt());
+        sv.setEmail(preview.getEmail());
+        sv.setQueQuan(preview.getQueQuan());
+        sv.setHeDaoTao(preview.getHeDaoTao());
         sv.setTrangThaiHocVu(TrangThaiHocVu.ĐANG_HỌC);
 
         if (preview.getDanhMuc() != null) {
@@ -604,6 +614,38 @@ public class SinhVienImportService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /**
+     * Parse chuỗi ngày sinh theo định dạng "yyyy-MM-dd" hoặc "yyyy/MM/dd".
+     */
+    private LocalDateTime parseNgaySinhString(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return null;
+        try {
+            // Định dạng "yyyy-MM-dd"
+            if (dateStr.contains("-")) {
+                String[] parts = dateStr.split("-");
+                if (parts.length == 3) {
+                    int y = Integer.parseInt(parts[0].trim());
+                    int m = Integer.parseInt(parts[1].trim());
+                    int d = Integer.parseInt(parts[2].trim());
+                    return LocalDateTime.of(y, m, d, 0, 0);
+                }
+            }
+            // Định dạng "yyyy/MM/dd"
+            if (dateStr.contains("/")) {
+                String[] parts = dateStr.split("/");
+                if (parts.length == 3) {
+                    int y = Integer.parseInt(parts[0].trim());
+                    int m = Integer.parseInt(parts[1].trim());
+                    int d = Integer.parseInt(parts[2].trim());
+                    return LocalDateTime.of(y, m, d, 0, 0);
+                }
+            }
+        } catch (Exception ignored) {
+            // Ignore parse errors
+        }
+        return null;
     }
 
     // ================================================================

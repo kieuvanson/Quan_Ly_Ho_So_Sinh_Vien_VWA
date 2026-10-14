@@ -134,6 +134,27 @@ public class ImportPreviewResult {
         /** Thông tin đối chiếu danh mục (nếu hợp lệ). */
         private DanhMucInfo danhMuc;
 
+        /** Ngày sinh (định dạng ISO 8601: yyyy-MM-dd). */
+        private String ngaySinh;
+
+        /** Giới tính. */
+        private String gioiTinh;
+
+        /** Căn cước công dân. */
+        private String cccd;
+
+        /** Số điện thoại. */
+        private String sdt;
+
+        /** Email. */
+        private String email;
+
+        /** Quê quán. */
+        private String queQuan;
+
+        /** Hệ đào tạo. */
+        private String heDaoTao;
+
         public ImportRowPreview() {}
 
         public ImportRowPreview(int excelRow, String mssv, String hoTen,
@@ -164,6 +185,27 @@ public class ImportPreviewResult {
 
         public DanhMucInfo getDanhMuc() { return danhMuc; }
         public void setDanhMuc(DanhMucInfo danhMuc) { this.danhMuc = danhMuc; }
+
+        public String getNgaySinh() { return ngaySinh; }
+        public void setNgaySinh(String ngaySinh) { this.ngaySinh = ngaySinh; }
+
+        public String getGioiTinh() { return gioiTinh; }
+        public void setGioiTinh(String gioiTinh) { this.gioiTinh = gioiTinh; }
+
+        public String getCccd() { return cccd; }
+        public void setCccd(String cccd) { this.cccd = cccd; }
+
+        public String getSdt() { return sdt; }
+        public void setSdt(String sdt) { this.sdt = sdt; }
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+
+        public String getQueQuan() { return queQuan; }
+        public void setQueQuan(String queQuan) { this.queQuan = queQuan; }
+
+        public String getHeDaoTao() { return heDaoTao; }
+        public void setHeDaoTao(String heDaoTao) { this.heDaoTao = heDaoTao; }
     }
 
     /** Trạng thái dòng trong bảng preview. */

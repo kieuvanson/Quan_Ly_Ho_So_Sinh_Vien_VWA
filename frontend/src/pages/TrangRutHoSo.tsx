@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileX, RotateCcw, Plus, AlertCircle, Loader2, History } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, FileX, RotateCcw, Plus, AlertCircle, Loader2, History, X } from 'lucide-react'
 import { SearchInput, Button, Toast, Modal, FormInput } from '../components/ui'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
 import type { PhieuMuon } from '../api/types'
@@ -76,6 +76,37 @@ export function TrangRutHoSo() {
   // Get MSSV from URL if passed from Danh sach ho so or Chi tiet ho so
   const [searchParams] = useSearchParams()
   const mssvFromUrl = searchParams.get('mssv')
+
+  // ----- Bulk mode (từ trang Danh sách hồ sơ) -----
+  const isBulkModeRut = searchParams.get('mode') === 'bulk'
+  const [bulkMssvList, setBulkMssvList] = useState<string[]>([])
+  const [bulkModeBanner, setBulkModeBanner] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isBulkModeRut) {
+      setBulkMssvList([])
+      setBulkModeBanner(null)
+      return
+    }
+    try {
+      const raw = sessionStorage.getItem('vwa-bulk-rut-mssvs')
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setBulkMssvList(parsed)
+          setBulkModeBanner(
+            `Bạn đang mở từ thao tác hàng loạt với ${parsed.length} sinh viên đã chọn. ` +
+              'Hiện backend chưa hỗ trợ rút hồ sơ hàng loạt — ' +
+              'hãy xử lý từng sinh viên qua form bên dưới.'
+          )
+          // Auto-fill MSSV đầu tiên
+          setRutForm((f) => ({ ...f, mssv: parsed[0] }))
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [isBulkModeRut])
 
   // ----- Tab state -----
   const [activeTab, setActiveTab] = useState<'daRut' | 'lichSu'>('daRut')
@@ -805,6 +836,43 @@ export function TrangRutHoSo() {
             : 'Theo dõi lịch sử thực hiện rút hồ sơ'}
         </p>
       </div>
+
+      {/* Banner bulk mode */}
+      {bulkModeBanner && (
+        <div className="trang-rut-ho-so__bulk-banner">
+          <AlertCircle size={18} />
+          <div className="trang-rut-ho-so__bulk-banner-content">
+            <strong>Thao tác hàng loạt:</strong> {bulkModeBanner}
+            {bulkMssvList.length > 0 && (
+              <details className="trang-rut-ho-so__bulk-banner-list">
+                <summary>Danh sách {bulkMssvList.length} MSSV</summary>
+                <div className="trang-rut-ho-so__bulk-banner-mssvs">
+                  {bulkMssvList.map((m) => (
+                    <code key={m} className="trang-rut-ho-so__bulk-banner-mssv">{m}</code>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+          <button
+            type="button"
+            className="trang-rut-ho-so__bulk-banner-close"
+            onClick={() => {
+              setBulkModeBanner(null)
+              setBulkMssvList([])
+              try {
+                sessionStorage.removeItem('vwa-bulk-rut-mssvs')
+              } catch {
+                // ignore
+              }
+            }}
+            title="Đóng banner"
+            aria-label="Đóng banner"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="trang-rut-ho-so__tabs">

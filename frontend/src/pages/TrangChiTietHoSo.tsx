@@ -19,6 +19,7 @@ import {
   Inbox,
   FileText,
   User,
+  FileUp,
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
 import { hoSoGiayToApi, loaiGiayToApi } from '../api/hoSoGiayTo'
@@ -744,6 +745,9 @@ export function TrangChiTietHoSo() {
         </Button>
         <Button variant="secondary" icon={<Printer size={18} />} onClick={handleInHoSo}>
           In / xuất hồ sơ
+        </Button>
+        <Button variant="secondary" icon={<FileUp size={18} />} onClick={() => {}}>
+          Import hồ sơ
         </Button>
       </div>
 

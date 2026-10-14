@@ -1,5 +1,7 @@
 package vn.vwa.edurecords.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -43,6 +45,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class PhieuXuatHoSoService {
+
+    private static final Logger log = LoggerFactory.getLogger(PhieuXuatHoSoService.class);
 
     private final PhieuXuatHoSoRepository phieuXuatHoSoRepository;
     private final SinhVienRepository sinhVienRepository;
