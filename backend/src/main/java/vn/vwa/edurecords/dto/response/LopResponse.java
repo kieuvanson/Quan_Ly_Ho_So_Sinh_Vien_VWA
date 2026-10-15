@@ -9,6 +9,8 @@ public class LopResponse {
     private String maLop;
     private String tenLop;
     private NganhSimple nganh;
+    /** Khoa suy ra từ nganh.khoa (Lớp không có khoa trực tiếp). */
+    private NganhResponse.KhoaSimple khoa;
     private KhoaHocSimple khoaHoc;
     private String moTa;
     private Boolean dangSuDung;
@@ -28,6 +30,13 @@ public class LopResponse {
         r.ngayCapNhat = lop.getNgayCapNhat();
         if (lop.getNganh() != null) {
             r.nganh = new NganhSimple(lop.getNganh().getId(), lop.getNganh().getTenNganh());
+            // Suy ra khoa từ nganh.khoa
+            if (lop.getNganh().getKhoa() != null) {
+                r.khoa = new NganhResponse.KhoaSimple(
+                        lop.getNganh().getKhoa().getId(),
+                        lop.getNganh().getKhoa().getTenKhoa()
+                );
+            }
         }
         if (lop.getKhoaHoc() != null) {
             r.khoaHoc = new KhoaHocSimple(
@@ -79,6 +88,7 @@ public class LopResponse {
     public String getMaLop() { return maLop; }
     public String getTenLop() { return tenLop; }
     public NganhSimple getNganh() { return nganh; }
+    public NganhResponse.KhoaSimple getKhoa() { return khoa; }
     public KhoaHocSimple getKhoaHoc() { return khoaHoc; }
     public String getMoTa() { return moTa; }
     public Boolean getDangSuDung() { return dangSuDung; }

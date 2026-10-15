@@ -1,5 +1,8 @@
 import { apiClient } from './client'
-import type { ApiResponse, HoSoGiayTo, LoaiGiayTo } from './types'
+import type {
+  ApiResponse, HoSoGiayTo, HoSoGiayToListItem, HoSoGiayToSearchParams,
+  LoaiGiayTo, PagedResponse,
+} from './types'
 
 /**
  * HoSoGiayTo API client.
@@ -104,6 +107,39 @@ export const hoSoGiayToApi = {
   delete: async (maHoSo: string): Promise<ApiResponse<void>> => {
     const response = await apiClient.delete<ApiResponse<void>>(
       `/api/ho-so-giay-to/${encodeURIComponent(maHoSo)}`
+    )
+    return response.data
+  },
+
+  /**
+   * Tìm kiếm phân trang hồ sơ giấy tờ (kèm thông tin sinh viên) cho bảng
+   * "Danh sách hồ sơ giấy tờ".
+   *
+   * @param params.keyword         tìm trên MSSV hoặc họ tên
+   * @param params.maLoai          mã loại (GT01..GT13)
+   * @param params.trangThaiNop    Chưa nộp / Đã nộp / Thiếu / Không hợp lệ
+   * @param params.nganhId         lọc theo ngành SV
+   * @param params.lopId           lọc theo lớp SV
+   * @param params.khoaHocId       lọc theo khóa học SV
+   * @param params.trangThaiHocVu  Đang_học / Bảo_lưu / Đình_chỉ / Tốt_nghiệp / Đã_rút_hồ_sơ
+   * @param params.page            0-based
+   * @param params.size            kích thước trang (mặc định 25)
+   */
+  searchList: async (
+    params: HoSoGiayToSearchParams
+  ): Promise<ApiResponse<PagedResponse<HoSoGiayToListItem[]>>> => {
+    const sp = new URLSearchParams()
+    if (params.keyword) sp.append('keyword', params.keyword)
+    if (params.maLoai) sp.append('maLoai', params.maLoai)
+    if (params.trangThaiNop) sp.append('trangThaiNop', params.trangThaiNop)
+    if (params.nganhId !== undefined) sp.append('nganhId', String(params.nganhId))
+    if (params.lopId !== undefined) sp.append('lopId', String(params.lopId))
+    if (params.khoaHocId !== undefined) sp.append('khoaHocId', String(params.khoaHocId))
+    if (params.trangThaiHocVu) sp.append('trangThaiHocVu', params.trangThaiHocVu)
+    sp.append('page', String(params.page ?? 0))
+    sp.append('size', String(params.size ?? 25))
+    const response = await apiClient.get<ApiResponse<PagedResponse<HoSoGiayToListItem[]>>>(
+      `/api/ho-so-giay-to/all?${sp.toString()}`
     )
     return response.data
   },

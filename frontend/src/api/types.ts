@@ -155,6 +155,44 @@ export interface HoSoGiayTo {
 }
 
 /**
+ * Row phẳng cho bảng "Danh sách hồ sơ giấy tờ" trên frontend.
+ * Trả về từ {@code GET /api/ho-so-giay-to/all}.
+ *
+ * Projection từ {@code ho_so_giay_to JOIN sinhvien JOIN loai_giay_to}.
+ */
+export interface HoSoGiayToListItem {
+  maHoSo: string
+  mssv: string
+  maLoai: string
+  tenLoai: string
+  loaiBatBuoc: boolean | null
+  trangThaiNop: string
+  banGocBanSao: string | null
+  fileDinhKem: string | null
+  viTriLuuKho: string | null
+  hoTen: string
+  tenNganh: string
+  tenLop: string
+  tenKhoa: string
+  trangThaiHocVu: string
+  ngayTao: string
+  ngayCapNhat: string | null
+}
+
+/** Filter cho {@code hoSoGiayToApi.searchList}. */
+export interface HoSoGiayToSearchParams {
+  keyword?: string
+  maLoai?: string
+  trangThaiNop?: string
+  nganhId?: number
+  lopId?: number
+  khoaHocId?: number
+  trangThaiHocVu?: string
+  page?: number
+  size?: number
+}
+
+/**
  * LoaiGiayTo data from backend API.
  */
 export interface LoaiGiayTo {
@@ -207,6 +245,8 @@ export interface Lop {
   maLop: string
   tenLop: string
   nganh: { id: number; tenNganh: string; khoa?: { id: number; tenKhoa: string } | null } | null
+  /** Khoa suy ra từ nganh.khoa (Lớp không có khoa trực tiếp). */
+  khoa: { id: number; tenKhoa: string } | null
   khoaHoc: {
     id: number
     tenKhoaHoc: string

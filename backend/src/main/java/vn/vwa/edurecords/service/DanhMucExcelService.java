@@ -195,8 +195,9 @@ public class DanhMucExcelService {
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            int startRow = detectDataStartRow(sheet);
             int lastRow = Math.min(sheet.getLastRowNum(), MAX_ROWS);
-            for (int i = 1; i <= lastRow; i++) {
+            for (int i = startRow; i <= lastRow; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 totalRows++;
@@ -250,8 +251,9 @@ public class DanhMucExcelService {
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            int startRow = detectDataStartRow(sheet);
             int lastRow = Math.min(sheet.getLastRowNum(), MAX_ROWS);
-            for (int i = 1; i <= lastRow; i++) {
+            for (int i = startRow; i <= lastRow; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 totalRows++;
@@ -317,8 +319,9 @@ public class DanhMucExcelService {
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            int startRow = detectDataStartRow(sheet);
             int lastRow = Math.min(sheet.getLastRowNum(), MAX_ROWS);
-            for (int i = 1; i <= lastRow; i++) {
+            for (int i = startRow; i <= lastRow; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 totalRows++;
@@ -396,8 +399,9 @@ public class DanhMucExcelService {
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            int startRow = detectDataStartRow(sheet);
             int lastRow = Math.min(sheet.getLastRowNum(), MAX_ROWS);
-            for (int i = 1; i <= lastRow; i++) {
+            for (int i = startRow; i <= lastRow; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 totalRows++;
@@ -511,8 +515,9 @@ public class DanhMucExcelService {
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            int startRow = detectDataStartRow(sheet);
             int lastRow = Math.min(sheet.getLastRowNum(), MAX_ROWS);
-            for (int i = 1; i <= lastRow; i++) {
+            for (int i = startRow; i <= lastRow; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 totalRows++;
@@ -588,6 +593,83 @@ public class DanhMucExcelService {
             }
         }
         return true;
+    }
+
+    /**
+     * Tự nhận diện dòng bắt đầu chứa dữ liệu (bỏ qua header + hướng dẫn).
+     *
+     * <h4>Quy tắc (quét tối đa 5 dòng đầu)</h4>
+     * <ol>
+     *   <li>Dòng trống → bỏ qua.</li>
+     *   <li>Dòng chứa "hướng dẫn" → bỏ qua.</li>
+     *   <li>Dòng chứa từ khóa header (MSSV, Họ tên, Tên khoa, Tên ngành,
+     *       Tên lớp, Tên khóa năm học, Tên giấy tờ, ...) → bỏ qua.</li>
+     *   <li>Mặc định: dòng đầu tiên còn lại là dữ liệu.</li>
+     * </ol>
+     *
+     * <p>Mục đích: hỗ trợ file có/không có dòng hướng dẫn, có/không có header.</p>
+     */
+    private int detectDataStartRow(Sheet sheet) {
+        // Từ khóa đặc trưng cho header (không phải dữ liệu)
+        // Lowercase + bỏ dấu để so sánh không phân biệt
+        Set<String> HEADER_KEYWORDS = new HashSet<>(Set.of(
+                // === Header cho sinh viên / hồ sơ ===
+                "mssv", "mã sv", "ma sv",
+                "họ tên", "ho ten", "họ và tên", "ho va ten", "tên sinh viên",
+                "ngày sinh", "ngay sinh", "giới tính", "gioi tinh",
+                "cccd", "cmnd", "sđt", "sdt", "email", "quê quán", "que quan",
+                "trạng thái học vụ", "trang thai hoc vu", "trạng thái nộp", "trang thai nop",
+                "bản gốc", "ban goc", "bản gốc/bản sao", "ban goc/ban sao",
+                "file đính kèm", "file dinh kem", "vị trí lưu kho", "vi tri luu kho",
+                // === Header cho danh mục ===
+                "tên khoa", "ten khoa", "mã khoa", "ma khoa",
+                "tên ngành", "ten nganh", "mã ngành", "ma nganh",
+                "tên lớp", "ten lop", "mã lớp", "ma lop",
+                "tên khóa năm học", "ten khoa hoc", "ten khoa nam hoc",
+                "mã khóa năm học", "ma khoa hoc", "ma khoa nam hoc",
+                "năm bắt đầu", "nam bat dau", "năm kết thúc", "nam ket thuc",
+                "khóa năm học", "khoa nam hoc",
+                "tên giấy tờ", "ten giay to", "mã loại", "ma loai",
+                "bắt buộc", "bat buoc", "thứ tự hiển thị", "thu tu hien thi",
+                "đang sử dụng", "dang su dung",
+                // === Header chung ===
+                "header", "tiêu đề", "tieu de", "stt", "mô tả", "mo ta", "ghi chú", "ghi chu"
+        ));
+
+        int maxScan = Math.min(sheet.getPhysicalNumberOfRows(), 5);
+        for (int r = 0; r < maxScan; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+
+            // Ghép text của cả dòng
+            StringBuilder allText = new StringBuilder();
+            int lastCell = Math.max(row.getLastCellNum(), 0);
+            for (int c = 0; c < lastCell; c++) {
+                String v = getStringCell(row, c);
+                if (v != null && !v.isEmpty()) {
+                    allText.append(v.toLowerCase(java.util.Locale.ROOT)).append(' ');
+                }
+            }
+            String line = allText.toString().trim();
+            if (line.isEmpty()) continue;
+
+            // Quy tắc 1: dòng hướng dẫn
+            if (line.contains("hướng dẫn") || line.contains("huong dan")) {
+                continue;
+            }
+
+            // Quy tắc 2: dòng có chứa từ khóa header → là header
+            boolean isHeader = HEADER_KEYWORDS.stream().anyMatch(line::contains);
+            if (isHeader) {
+                continue;
+            }
+
+            // Đây là dòng dữ liệu đầu tiên
+            return r;
+        }
+        // Fallback: nếu toàn bộ 5 dòng đầu đều trống/header/hướng dẫn
+        // thì mặc định bỏ 1 dòng (giữ hành vi cũ cho file header-only)
+        return 1;
     }
 
     private String getStringCell(Row row, int colIndex) {

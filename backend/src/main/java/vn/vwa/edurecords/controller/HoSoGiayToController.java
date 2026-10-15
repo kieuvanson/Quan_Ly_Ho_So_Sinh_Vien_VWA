@@ -7,6 +7,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import vn.vwa.edurecords.dto.request.HoSoGiayToRequest;
 import vn.vwa.edurecords.dto.response.ApiResponse;
+import vn.vwa.edurecords.dto.response.HoSoGiayToListItem;
+import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.entity.HoSoGiayTo;
 import vn.vwa.edurecords.service.HoSoGiayToService;
 
@@ -131,5 +133,46 @@ public class HoSoGiayToController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable String maHoSo) {
         hoSoGiayToService.delete(maHoSo);
         return ResponseEntity.ok(ApiResponse.success("Xóa hồ sơ giấy tờ thành công", (Void) null));
+    }
+
+    /**
+     * GET /api/ho-so-giay-to/all - Tìm kiếm phân trang cho bảng "Danh sách hồ sơ
+     * giấy tờ" trên frontend (ADMIN).
+     *
+     * <p>Trả về projection phẳng: mỗi dòng = 1 hồ sơ giấy tờ kèm thông tin
+     * sinh viên (họ tên, ngành, lớp, khóa, trạng thái học vụ).</p>
+     *
+     * <p>Filter (tất cả optional):</p>
+     * <ul>
+     *   <li>{@code keyword} — tìm trên MSSV hoặc họ tên (LIKE, case-insensitive)</li>
+     *   <li>{@code maLoai} — mã loại giấy tờ (GT01..GT13)</li>
+     *   <li>{@code trangThaiNop} — Chưa nộp / Đã nộp / Thiếu / Không hợp lệ</li>
+     *   <li>{@code nganhId}, {@code lopId}, {@code khoaHocId} — lọc theo danh mục SV</li>
+     *   <li>{@code trangThaiHocVu} — Đang_học / Bảo_lưu / Đình_chỉ / Tốt_nghiệp / Đã_rút_hồ_sơ</li>
+     *   <li>{@code page} (0-based), {@code size}</li>
+     * </ul>
+     */
+    @GetMapping("/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<PagedResponse<List<HoSoGiayToListItem>>>> searchList(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String maLoai,
+            @RequestParam(required = false) String trangThaiNop,
+            @RequestParam(required = false) Integer nganhId,
+            @RequestParam(required = false) Integer lopId,
+            @RequestParam(required = false) Integer khoaHocId,
+            @RequestParam(required = false) String trangThaiHocVu,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+
+        // Clamp size to reasonable range to avoid abuse.
+        int safeSize = Math.max(1, Math.min(size, 200));
+        int safePage = Math.max(0, page);
+
+        PagedResponse<List<HoSoGiayToListItem>> result = hoSoGiayToService.searchList(
+                keyword, maLoai, trangThaiNop,
+                nganhId, lopId, khoaHocId, trangThaiHocVu,
+                safePage, safeSize);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

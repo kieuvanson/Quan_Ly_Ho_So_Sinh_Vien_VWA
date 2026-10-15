@@ -652,17 +652,58 @@ public class SinhVienImportService {
     // HELPER: EXCEL
     // ================================================================
 
+    /**
+     * Tự nhận diện dòng bắt đầu chứa dữ liệu thực (bỏ qua header + hướng dẫn).
+     *
+     * <h4>Quy tắc (quét tối đa 5 dòng đầu)</h4>
+     * <ol>
+     *   <li>Dòng trống → bỏ qua.</li>
+     *   <li>Dòng chứa "hướng dẫn" → bỏ qua.</li>
+     *   <li>Dòng chứa từ khóa header (MSSV, Họ tên, Ngày sinh, ...) → bỏ qua.</li>
+     *   <li>Mặc định: dòng đầu tiên còn lại là dữ liệu.</li>
+     * </ol>
+     */
     private int detectDataStartRow(Sheet sheet) {
-        Row firstRow = sheet.getRow(0);
-        if (firstRow == null) return 1;
-        Cell firstCell = firstRow.getCell(0);
-        if (firstCell != null) {
-            String txt = readCellAsString(firstCell);
-            if (txt != null && txt.toLowerCase().contains("hướng dẫn")) {
-                return 2;
+        Set<String> HEADER_KEYWORDS = Set.of(
+                "mssv", "mã sv", "ma sv",
+                "họ tên", "ho ten", "họ và tên", "ho va ten", "tên sinh viên",
+                "ngày sinh", "ngay sinh", "giới tính", "gioi tinh",
+                "mã loại", "ma loai", "mã loại giấy tờ", "ma loai giay to",
+                "tên giấy tờ", "ten giay to",
+                "loại dòng", "loai dong",
+                "trạng thái nộp", "trang thai nop",
+                "bản gốc", "ban goc", "bản gốc/bản sao", "ban goc/ban sao",
+                "file đính kèm", "file dinh kem",
+                "vị trí lưu kho", "vi tri luu kho",
+                "cccd", "cmnd", "sđt", "sdt", "email", "quê quán", "que quan",
+                "khoa", "ngành", "nganh", "lớp", "lop", "khóa học", "khoa hoc",
+                "hệ đào tạo", "he dao tao",
+                "trạng thái học vụ", "trang thai hoc vu",
+                "header", "tiêu đề", "tieu de"
+        );
+
+        int maxScan = Math.min(sheet.getPhysicalNumberOfRows(), 5);
+        for (int r = 0; r < maxScan; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+
+            StringBuilder allText = new StringBuilder();
+            int lastCell = row.getLastCellNum();
+            for (int c = 0; c < lastCell; c++) {
+                String v = trimToNull(readCellAsString(row.getCell(c)));
+                if (v != null) {
+                    allText.append(v.toLowerCase(Locale.ROOT)).append(' ');
+                }
             }
+            String line = allText.toString().trim();
+            if (line.isEmpty()) continue;
+
+            if (line.contains("hướng dẫn") || line.contains("huong dan")) continue;
+            if (HEADER_KEYWORDS.stream().anyMatch(line::contains)) continue;
+
+            return r;
         }
-        return 1;
+        return 0;
     }
 
     private boolean isRowEmpty(Row row) {

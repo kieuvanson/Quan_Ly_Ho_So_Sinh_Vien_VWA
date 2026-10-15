@@ -1136,7 +1136,7 @@ function LopContent() {
               <td className="cai-dat-table__cell cai-dat-table__cell--center cai-dat-table__cell--nowrap">{String(index + 1).padStart(2, '0')}</td>
               <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">{item.maLop}</td>
               <td className="cai-dat-table__cell">{item.tenLop}</td>
-              <td className="cai-dat-table__cell">{item.nganh?.khoa?.tenKhoa || '-'}</td>
+              <td className="cai-dat-table__cell">{item.khoa?.tenKhoa || item.nganh?.khoa?.tenKhoa || '-'}</td>
               <td className="cai-dat-table__cell">{item.nganh?.tenNganh || '-'}</td>
               <td className="cai-dat-table__cell cai-dat-table__cell--nowrap">
                 {item.khoaHoc?.namBatDau && item.khoaHoc?.namKetThuc
