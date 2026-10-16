@@ -89,7 +89,6 @@ const TRANG_THAI_OPTIONS = [
 ]
 
 const LOAI_HO_SO_OPTIONS = [
-  { value: '', label: 'Tất cả loại hồ sơ' },
   { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
 ]
 
@@ -1229,8 +1228,13 @@ export function TrangMuonTra() {
           {sinhVienInfo && (
             <div className="trang-muon-tra__form-section">
               <h3 className="trang-muon-tra__form-section-title">
-                Chọn hồ sơ giấy tờ * ({selectedMaHoSo.length}/{hoSoList.length} đã chọn)
+                Chọn hồ sơ giấy tờ *
               </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 13, color: '#6b7280' }}>
+                  {selectedMaHoSo.length}/{hoSoList.length} đã chọn
+                </span>
+              </div>
               {isLoadingHoSo ? (
                 <div className="trang-muon-tra__loading" style={{ padding: 16 }}>
                   <Loader2 className="trang-muon-tra__loading-icon" size={20} />
@@ -1239,28 +1243,47 @@ export function TrangMuonTra() {
               ) : hoSoList.length === 0 ? (
                 <p style={{ color: '#6b7280' }}>Sinh viên chưa có hồ sơ giấy tờ nào.</p>
               ) : (
-                <div className="trang-muon-tra__hoso-list">
-                  {hoSoList.map((hs) => (
-                    <label key={hs.maHoSo} className="trang-muon-tra__hoso-item">
-                      <input
-                        type="checkbox"
-                        checked={selectedMaHoSo.includes(hs.maHoSo)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
-                          } else {
-                            setSelectedMaHoSo((prev) => prev.filter((id) => id !== hs.maHoSo))
-                          }
-                        }}
-                      />
-                      <span className="trang-muon-tra__hoso-code">{hs.maHoSo}</span>
-                      <span className="trang-muon-tra__hoso-loai">{hs.maLoai}</span>
-                      <span className="trang-muon-tra__hoso-trangthai">{hs.trangThaiNop}</span>
-                      {hs.viTriLuuKho && (
-                        <span className="trang-muon-tra__hoso-vitri">{hs.viTriLuuKho}</span>
-                      )}
-                    </label>
-                  ))}
+                <div className="trang-muon-tra__hoso-table-wrapper">
+                  <table className="trang-muon-tra__hoso-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 48, textAlign: 'center' }}>STT</th>
+                        <th>Tên giấy tờ</th>
+                        <th style={{ width: 120, textAlign: 'center' }}>Loại</th>
+                        <th style={{ width: 130, textAlign: 'center' }}>Trạng thái nộp</th>
+                        <th style={{ width: 60, textAlign: 'center' }}>Chọn</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hoSoList.map((hs, index) => {
+                        const isChecked = selectedMaHoSo.includes(hs.maHoSo)
+                        const tenGiayTo = hs.tenGiayTo || hs.maLoai || '—'
+                        const loai = hs.banGocBanSao || '—'
+                        const trangThai = hs.trangThaiNop || '—'
+                        return (
+                          <tr key={hs.maHoSo} className={isChecked ? 'trang-muon-tra__hoso-row--selected' : ''}>
+                            <td style={{ textAlign: 'center' }}>{index + 1}</td>
+                            <td>{tenGiayTo}</td>
+                            <td style={{ textAlign: 'center' }}>{loai}</td>
+                            <td style={{ textAlign: 'center' }}>{trangThai}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
+                                  } else {
+                                    setSelectedMaHoSo((prev) => prev.filter((id) => id !== hs.maHoSo))
+                                  }
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -1480,7 +1503,7 @@ export function TrangMuonTra() {
       <Modal
         isOpen={modalTuChoiOpen}
         onClose={() => setModalTuChoiOpen(false)}
-        title="Từ chối phiếu mượn / rút"
+        title="Từ chối phiếu mượn"
         size="md"
         footer={
           <>

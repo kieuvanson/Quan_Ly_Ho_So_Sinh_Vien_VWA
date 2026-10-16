@@ -431,7 +431,7 @@
 }
 
 .trang-rut-ho-so__table .col-thaotac {
-  width: 100px;
+  min-width: 220px;
   text-align: center;
 }
 
@@ -673,6 +673,11 @@
 
   .trang-rut-ho-so__actions {
     flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .trang-rut-ho-so__table .col-thaotac {
+    min-width: 160px;
   }
 
   .trang-rut-ho-so__form-grid,

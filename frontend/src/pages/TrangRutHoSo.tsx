@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Eye, FileX, RotateCcw, Plus, AlertCircle, Loader2, History, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, FileX, RotateCcw, Plus, AlertCircle, Loader2, X, CheckCircle, XCircle } from 'lucide-react'
 import { SearchInput, Button, Toast, Modal, FormInput } from '../components/ui'
 import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
 import type { PhieuMuon } from '../api/types'
@@ -37,19 +37,14 @@ interface HoSoDaRutItem {
   ghiChu: string
   trangThai: string
   ngayTao: string
-}
-
-/** Row "Lịch sử rút hồ sơ" — map từ PhieuMuon (backend). */
-interface LichSuRutItem {
-  maPhieu: string
-  mssv: string
-  hoTen: string
-  ngayRut: string
-  canBoPhuTrach: string
-  lyDo: string
-  ghiChu: string
-  trangThai: string
-  ngayTao: string
+  /** Ngày sinh sinh viên. */
+  ngaySinh?: string | null
+  /** Giới tính sinh viên. */
+  gioiTinh?: string | null
+  /** Tên ngành học. */
+  nganh?: string | null
+  /** Niên khóa / khóa năm học. */
+  khoaNamHoc?: string | null
 }
 
 // =========================================================================
@@ -108,37 +103,25 @@ export function TrangRutHoSo() {
     }
   }, [isBulkModeRut])
 
-  // ----- Tab state -----
-  const [activeTab, setActiveTab] = useState<'daRut' | 'lichSu'>('daRut')
-
-  // ===== TAB 1: Hồ sơ đã rút =====
+  // ===== Hồ sơ đã rút =====
   const [hoSoDaRutList, setHoSoDaRutList] = useState<HoSoDaRutItem[]>([])
   const [isLoadingDaRut, setIsLoadingDaRut] = useState(false)
   const [errorDaRut, setErrorDaRut] = useState<string | null>(null)
   const [totalElementsDaRut, setTotalElementsDaRut] = useState(0)
 
-  // Filter tab 1
+  // Filter
   const [searchDaRut, setSearchDaRut] = useState('')
   const [tuNgayDaRut, setTuNgayDaRut] = useState('')
   const [denNgayDaRut, setDenNgayDaRut] = useState('')
   const [currentPageDaRut, setCurrentPageDaRut] = useState(0)
 
-  // ===== TAB 2: Lịch sử rút hồ sơ =====
-  const [lichSuList, setLichSuList] = useState<LichSuRutItem[]>([])
-  const [isLoadingLichSu, setIsLoadingLichSu] = useState(false)
-  const [errorLichSu, setErrorLichSu] = useState<string | null>(null)
-  const [totalElementsLichSu, setTotalElementsLichSu] = useState(0)
-
-  // Filter tab 2
-  const [searchLichSu, setSearchLichSu] = useState('')
-  const [tuNgayLichSu, setTuNgayLichSu] = useState('')
-  const [denNgayLichSu, setDenNgayLichSu] = useState('')
-  const [currentPageLichSu, setCurrentPageLichSu] = useState(0)
-
   // ----- Modal state -----
   const [modalRutOpen, setModalRutOpen] = useState(false)
   const [modalChiTietOpen, setModalChiTietOpen] = useState(false)
   const [modalXacNhanOpen, setModalXacNhanOpen] = useState(false)
+  const [modalDuyetOpen, setModalDuyetOpen] = useState(false)
+  const [modalTuChoiOpen, setModalTuChoiOpen] = useState(false)
+  const [tuChoiLyDo, setTuChoiLyDo] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // ----- Student info (form Rút) -----
@@ -147,7 +130,7 @@ export function TrangRutHoSo() {
   const [mssvError, setMssvError] = useState('')
 
   // ----- Selected record for modal -----
-  const [selectedRecord, setSelectedRecord] = useState<HoSoDaRutItem | LichSuRutItem | null>(null)
+  const [selectedRecord, setSelectedRecord] = useState<HoSoDaRutItem | null>(null)
 
   // ----- Form state -----
   const [rutForm, setRutForm] = useState({
@@ -169,29 +152,19 @@ export function TrangRutHoSo() {
       mssv: p.mssv,
       hoTen: p.hoTenSinhVien || '',
       cccd: '',
-      sdt: '',
-      khoa: '',
-      lop: '',
+      sdt: p.sdt || '',
+      khoa: p.tenKhoa || '',
+      lop: p.tenLop || '',
       ngayRut: p.ngayMuon || p.ngayTao ? (p.ngayMuon || p.ngayTao?.split('T')[0] || '') : '',
       canBoPhuTrach: p.nguoiTao || '',
       lyDo: p.lyDo || '',
       ghiChu: p.ghiChu || '',
       trangThai: p.trangThai,
       ngayTao: p.ngayTao || '',
-    }
-  }
-
-  function mapPhieuMuonToLichSu(p: PhieuMuon): LichSuRutItem {
-    return {
-      maPhieu: p.maPhieu,
-      mssv: p.mssv,
-      hoTen: p.hoTenSinhVien || '',
-      ngayRut: p.ngayMuon || p.ngayTao ? (p.ngayMuon || p.ngayTao?.split('T')[0] || '') : '',
-      canBoPhuTrach: p.nguoiTao || '',
-      lyDo: p.lyDo || '',
-      ghiChu: p.ghiChu || '',
-      trangThai: p.trangThai,
-      ngayTao: p.ngayTao || '',
+      ngaySinh: p.ngaySinh ?? undefined,
+      gioiTinh: p.gioiTinh ?? undefined,
+      nganh: p.tenNganh ?? undefined,
+      khoaNamHoc: p.khoaNamHoc ?? undefined,
     }
   }
 
@@ -235,50 +208,9 @@ export function TrangRutHoSo() {
     }
   }, [searchDaRut, tuNgayDaRut, denNgayDaRut, currentPageDaRut])
 
-  const fetchLichSu = useCallback(async () => {
-    setIsLoadingLichSu(true)
-    setErrorLichSu(null)
-    try {
-      const res = await phieuMuonApi.getLichSu({
-        keyword: searchLichSu.trim() || undefined,
-        loaiHoSo: LOAI_PHIEU_RUT,
-        fromDate: tuNgayLichSu || undefined,
-        toDate: denNgayLichSu || undefined,
-        page: currentPageLichSu,
-        size: PAGE_SIZE,
-      })
-
-      if (res.success && res.data) {
-        const items: LichSuRutItem[] = (res.data.data || [])
-          .filter(p => p.loaiPhieu === LOAI_PHIEU_RUT)
-          .map(mapPhieuMuonToLichSu)
-        setLichSuList(items)
-        setTotalElementsLichSu(res.data.page?.totalElements ?? items.length)
-      } else {
-        setErrorLichSu(res.message || 'Không thể tải lịch sử rút hồ sơ.')
-        setLichSuList([])
-        setTotalElementsLichSu(0)
-      }
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } }
-      setErrorLichSu(
-        e.response?.data?.message ||
-          'Không thể kết nối đến máy chủ. Vui lòng kiểm tra backend đang chạy ở http://localhost:8081.'
-      )
-      setLichSuList([])
-      setTotalElementsLichSu(0)
-    } finally {
-      setIsLoadingLichSu(false)
-    }
-  }, [searchLichSu, tuNgayLichSu, denNgayLichSu, currentPageLichSu])
-
   useEffect(() => {
-    if (activeTab === 'daRut') {
-      fetchHoSoDaRut()
-    } else {
-      fetchLichSu()
-    }
-  }, [activeTab, fetchHoSoDaRut, fetchLichSu])
+    fetchHoSoDaRut()
+  }, [fetchHoSoDaRut])
 
   // =========================================================================
   // Handle MSSV from URL
@@ -319,17 +251,10 @@ export function TrangRutHoSo() {
   // Handlers
   // =========================================================================
   function handleResetFilters() {
-    if (activeTab === 'daRut') {
-      setSearchDaRut('')
-      setTuNgayDaRut('')
-      setDenNgayDaRut('')
-      setCurrentPageDaRut(0)
-    } else {
-      setSearchLichSu('')
-      setTuNgayLichSu('')
-      setDenNgayLichSu('')
-      setCurrentPageLichSu(0)
-    }
+    setSearchDaRut('')
+    setTuNgayDaRut('')
+    setDenNgayDaRut('')
+    setCurrentPageDaRut(0)
   }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -337,7 +262,7 @@ export function TrangRutHoSo() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  function openModalChiTiet(record: HoSoDaRutItem | LichSuRutItem) {
+  function openModalChiTiet(record: HoSoDaRutItem) {
     setSelectedRecord(record)
     setModalChiTietOpen(true)
   }
@@ -400,7 +325,7 @@ export function TrangRutHoSo() {
     setModalXacNhanOpen(true)
   }
 
-  async function handleSubmitRut() {
+  const handleSubmitRut = async () => {
     if (!sinhVienInfo) return
 
     setIsSubmitting(true)
@@ -426,11 +351,65 @@ export function TrangRutHoSo() {
         })
         setSinhVienInfo(null)
         setMssvError('')
-        // Refresh both tabs
         fetchHoSoDaRut()
-        fetchLichSu()
       } else {
         showToast(res.message || 'Tạo phiếu rút hồ sơ thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  function openModalDuyet(record: HoSoDaRutItem) {
+    setSelectedRecord(record)
+    setModalDuyetOpen(true)
+  }
+
+  function openModalTuChoi(record: HoSoDaRutItem) {
+    setSelectedRecord(record)
+    setTuChoiLyDo('')
+    setModalTuChoiOpen(true)
+  }
+
+  async function handleDuyet() {
+    if (!selectedRecord) return
+    setIsSubmitting(true)
+    try {
+      const res = await phieuMuonApi.duyet(selectedRecord.maPhieu)
+      if (res.success) {
+        showToast('Duyệt phiếu rút hồ sơ thành công!', 'success')
+        setModalDuyetOpen(false)
+        setSelectedRecord(null)
+        fetchHoSoDaRut()
+      } else {
+        showToast(res.message || 'Duyệt phiếu thất bại', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleTuChoi() {
+    if (!selectedRecord) return
+    setIsSubmitting(true)
+    try {
+      const res = await phieuMuonApi.tuChoi(selectedRecord.maPhieu, {
+        lyDoTuChoi: tuChoiLyDo.trim() || undefined,
+      })
+      if (res.success) {
+        showToast('Từ chối phiếu rút hồ sơ thành công!', 'success')
+        setModalTuChoiOpen(false)
+        setSelectedRecord(null)
+        setTuChoiLyDo('')
+        fetchHoSoDaRut()
+      } else {
+        showToast(res.message || 'Từ chối phiếu thất bại', 'error')
       }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } }
@@ -467,7 +446,6 @@ export function TrangRutHoSo() {
   }
 
   const totalPagesDaRut = Math.max(1, Math.ceil(totalElementsDaRut / PAGE_SIZE))
-  const totalPagesLichSu = Math.max(1, Math.ceil(totalElementsLichSu / PAGE_SIZE))
 
   function formatDate(dateStr: string) {
     if (!dateStr) return '—'
@@ -585,14 +563,36 @@ export function TrangRutHoSo() {
                             </span>
                           </td>
                           <td className="col-thaotac">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              icon={<Eye size={16} />}
-                              onClick={() => openModalChiTiet(item)}
-                            >
-                              Xem
-                            </Button>
+                            <div className="trang-rut-ho-so__actions">
+                              {item.trangThai === 'Chờ duyệt' && (
+                                <>
+                                  <Button
+                                    variant="success"
+                                    size="sm"
+                                    icon={<CheckCircle size={16} />}
+                                    onClick={() => openModalDuyet(item)}
+                                  >
+                                    Duyệt
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    icon={<XCircle size={16} />}
+                                    onClick={() => openModalTuChoi(item)}
+                                  >
+                                    Từ chối
+                                  </Button>
+                                </>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                icon={<Eye size={16} />}
+                                onClick={() => openModalChiTiet(item)}
+                              >
+                                Xem
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -659,169 +659,6 @@ export function TrangRutHoSo() {
     )
   }
 
-  function renderTabLichSu() {
-    return (
-      <>
-        <div className="trang-rut-ho-so__toolbar">
-          <div className="trang-rut-ho-so__filters">
-            <SearchInput
-              value={searchLichSu}
-              onChange={(v) => {
-                setSearchLichSu(v)
-                setCurrentPageLichSu(0)
-              }}
-              placeholder="Tìm theo MSSV / mã phiếu / họ tên / lý do..."
-              className="trang-rut-ho-so__search"
-            />
-            <FormInput
-              type="date"
-              value={tuNgayLichSu}
-              onChange={(e) => {
-                setTuNgayLichSu(e.target.value)
-                setCurrentPageLichSu(0)
-              }}
-              placeholder="Từ ngày"
-            />
-            <FormInput
-              type="date"
-              value={denNgayLichSu}
-              onChange={(e) => {
-                setDenNgayLichSu(e.target.value)
-                setCurrentPageLichSu(0)
-              }}
-              placeholder="Đến ngày"
-            />
-            <Button variant="secondary" icon={<RotateCcw size={16} />} onClick={handleResetFilters}>
-              Đặt lại
-            </Button>
-          </div>
-        </div>
-
-        <div className="trang-rut-ho-so__table-card">
-          {isLoadingLichSu ? (
-            <div className="trang-rut-ho-so__loading">
-              <Loader2 className="trang-rut-ho-so__loading-icon" size={32} />
-              <p>Đang tải dữ liệu từ máy chủ...</p>
-            </div>
-          ) : errorLichSu ? (
-            <div className="trang-rut-ho-so__empty">
-              <AlertCircle className="trang-rut-ho-so__empty-icon" size={48} color="#dc2626" />
-              <p className="trang-rut-ho-so__empty-text">{errorLichSu}</p>
-              <Button variant="secondary" onClick={fetchLichSu} style={{ marginTop: 12 }}>
-                Thử lại
-              </Button>
-            </div>
-          ) : lichSuList.length > 0 ? (
-            <>
-              <div className="trang-rut-ho-so__table-wrapper">
-                <table className="trang-rut-ho-so__table">
-                  <thead>
-                    <tr>
-                      <th className="col-stt">STT</th>
-                      <th className="col-mssv">Mã phiếu</th>
-                      <th className="col-mssv">MSSV</th>
-                      <th>Họ và tên</th>
-                      <th className="col-date">Ngày rút</th>
-                      <th className="col-cbpt">Người tạo</th>
-                      <th className="col-trangthai">Trạng thái</th>
-                      <th className="col-thaotac">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lichSuList.map((item, index) => {
-                      const sttNum = currentPageLichSu * PAGE_SIZE + index + 1
-                      const badgeInfo = TRANG_THAI_MAPPING[item.trangThai] || {
-                        label: item.trangThai,
-                        className: '',
-                      }
-                      return (
-                        <tr key={item.maPhieu}>
-                          <td className="col-stt">{sttNum}</td>
-                          <td className="col-mssv">{item.maPhieu}</td>
-                          <td className="col-mssv">{item.mssv}</td>
-                          <td>{item.hoTen || '-'}</td>
-                          <td className="col-date">{formatDate(item.ngayRut)}</td>
-                          <td className="col-cbpt">{item.canBoPhuTrach || '-'}</td>
-                          <td className="col-trangthai">
-                            <span className={`trang-rut-ho-so__badge ${badgeInfo.className}`}>
-                              {badgeInfo.label}
-                            </span>
-                          </td>
-                          <td className="col-thaotac">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              icon={<Eye size={16} />}
-                              onClick={() => openModalChiTiet(item)}
-                            >
-                              Xem
-                            </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {totalPagesLichSu > 1 && (
-                <div className="trang-rut-ho-so__pagination">
-                  <span className="trang-rut-ho-so__pagination-info">
-                    Hiển thị {currentPageLichSu * PAGE_SIZE + 1} -{' '}
-                    {Math.min((currentPageLichSu + 1) * PAGE_SIZE, totalElementsLichSu)} của{' '}
-                    {totalElementsLichSu} kết quả
-                  </span>
-                  <div className="trang-rut-ho-so__pagination-controls">
-                    <button
-                      className="trang-rut-ho-so__page-btn"
-                      onClick={() => setCurrentPageLichSu((p) => Math.max(0, p - 1))}
-                      disabled={currentPageLichSu === 0}
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    {getPageNumbers(totalElementsLichSu, currentPageLichSu).map((page, index) =>
-                      page === '...' ? (
-                        <span key={`ellipsis-${index}`} className="trang-rut-ho-so__page-btn" style={{ cursor: 'default' }}>
-                          ...
-                        </span>
-                      ) : (
-                        <button
-                          key={page}
-                          className={`trang-rut-ho-so__page-btn ${
-                            currentPageLichSu + 1 === page ? 'trang-rut-ho-so__page-btn--active' : ''
-                          }`}
-                          onClick={() => setCurrentPageLichSu(page - 1)}
-                        >
-                          {page}
-                        </button>
-                      )
-                    )}
-                    <button
-                      className="trang-rut-ho-so__page-btn"
-                      onClick={() => setCurrentPageLichSu((p) => Math.min(totalPagesLichSu - 1, p + 1))}
-                      disabled={currentPageLichSu + 1 >= totalPagesLichSu}
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="trang-rut-ho-so__empty">
-              <FileX className="trang-rut-ho-so__empty-icon" size={48} />
-              <p className="trang-rut-ho-so__empty-text">
-                Không có lịch sử rút hồ sơ nào
-                {searchLichSu || tuNgayLichSu || denNgayLichSu ? ' khớp với bộ lọc hiện tại' : ''}
-                .
-              </p>
-            </div>
-          )}
-        </div>
-      </>
-    )
-  }
-
   // =========================================================================
   // Render
   // =========================================================================
@@ -830,11 +667,7 @@ export function TrangRutHoSo() {
       {/* Header */}
       <div className="trang-rut-ho-so__header">
         <h2 className="trang-rut-ho-so__title">Rút hồ sơ</h2>
-        <p className="trang-rut-ho-so__subtitle">
-          {activeTab === 'daRut'
-            ? 'Quản lý danh sách sinh viên đã rút hồ sơ'
-            : 'Theo dõi lịch sử thực hiện rút hồ sơ'}
-        </p>
+        <p className="trang-rut-ho-so__subtitle">Quản lý danh sách sinh viên đã rút hồ sơ</p>
       </div>
 
       {/* Banner bulk mode */}
@@ -876,32 +709,15 @@ export function TrangRutHoSo() {
 
       {/* Tabs */}
       <div className="trang-rut-ho-so__tabs">
-        <button
-          className={`trang-rut-ho-so__tab ${activeTab === 'daRut' ? 'trang-rut-ho-so__tab--active' : ''}`}
-          onClick={() => {
-            setActiveTab('daRut')
-            setCurrentPageDaRut(0)
-          }}
-        >
+        <button className={`trang-rut-ho-so__tab trang-rut-ho-so__tab--active`}>
           <FileX size={18} />
           Hồ sơ đã rút
-        </button>
-        <button
-          className={`trang-rut-ho-so__tab ${activeTab === 'lichSu' ? 'trang-rut-ho-so__tab--active' : ''}`}
-          onClick={() => {
-            setActiveTab('lichSu')
-            setCurrentPageLichSu(0)
-          }}
-        >
-          <History size={18} />
-          Lịch sử rút hồ sơ
         </button>
       </div>
 
       {/* Content */}
       <div className="trang-rut-ho-so__content">
-        {activeTab === 'daRut' && renderTabDaRut()}
-        {activeTab === 'lichSu' && renderTabLichSu()}
+        {renderTabDaRut()}
       </div>
 
       {/* Modal Rút hồ sơ */}
@@ -1017,6 +833,7 @@ export function TrangRutHoSo() {
       >
         {selectedRecord && (
           <div className="trang-rut-ho-so__modal-content">
+            {/* ── Thông tin sinh viên ── */}
             <div className="trang-rut-ho-so__form-section">
               <h3 className="trang-rut-ho-so__form-section-title">Thông tin sinh viên</h3>
               <div className="trang-rut-ho-so__info-card">
@@ -1028,6 +845,53 @@ export function TrangRutHoSo() {
                   <div className="trang-rut-ho-so__info-item">
                     <span className="trang-rut-ho-so__info-label">Họ và tên</span>
                     <span className="trang-rut-ho-so__info-value">{selectedRecord.hoTen || '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Số điện thoại</span>
+                    <span className="trang-rut-ho-so__info-value">{selectedRecord.sdt || '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Lớp hành chính</span>
+                    <span className="trang-rut-ho-so__info-value">{selectedRecord.lop || '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Ngành học</span>
+                    <span className="trang-rut-ho-so__info-value">{'nganh' in selectedRecord && selectedRecord.nganh ? selectedRecord.nganh : '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Khóa học</span>
+                    <span className="trang-rut-ho-so__info-value">{'khoaNamHoc' in selectedRecord && selectedRecord.khoaNamHoc ? selectedRecord.khoaNamHoc : '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Khoa</span>
+                    <span className="trang-rut-ho-so__info-value">{selectedRecord.khoa || '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Ngày sinh</span>
+                    <span className="trang-rut-ho-so__info-value">{'ngaySinh' in selectedRecord && selectedRecord.ngaySinh ? formatDate(selectedRecord.ngaySinh) : '-'}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Giới tính</span>
+                    <span className="trang-rut-ho-so__info-value">{('gioiTinh' in selectedRecord && selectedRecord.gioiTinh) ? selectedRecord.gioiTinh : '-'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Thông tin phiếu ── */}
+            <div className="trang-rut-ho-so__form-section">
+              <h3 className="trang-rut-ho-so__form-section-title">Thông tin phiếu</h3>
+              <div className="trang-rut-ho-so__info-card">
+                <div className="trang-rut-ho-so__info-grid">
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Mã phiếu rút</span>
+                    <span className="trang-rut-ho-so__info-value">{selectedRecord.maPhieu}</span>
+                  </div>
+                  <div className="trang-rut-ho-so__info-item">
+                    <span className="trang-rut-ho-so__info-label">Trạng thái</span>
+                    <span className="trang-rut-ho-so__info-value">
+                      {getTrangThaiBadge(selectedRecord.trangThai)}
+                    </span>
                   </div>
                   <div className="trang-rut-ho-so__info-item">
                     <span className="trang-rut-ho-so__info-label">Ngày rút</span>
@@ -1044,24 +908,6 @@ export function TrangRutHoSo() {
                   <div className="trang-rut-ho-so__info-item trang-rut-ho-so__info-item--full">
                     <span className="trang-rut-ho-so__info-label">Ghi chú</span>
                     <span className="trang-rut-ho-so__info-value">{selectedRecord.ghiChu || '-'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="trang-rut-ho-so__form-section">
-              <h3 className="trang-rut-ho-so__form-section-title">Thông tin phiếu</h3>
-              <div className="trang-rut-ho-so__info-card">
-                <div className="trang-rut-ho-so__info-grid">
-                  <div className="trang-rut-ho-so__info-item">
-                    <span className="trang-rut-ho-so__info-label">Mã phiếu rút</span>
-                    <span className="trang-rut-ho-so__info-value">{selectedRecord.maPhieu}</span>
-                  </div>
-                  <div className="trang-rut-ho-so__info-item">
-                    <span className="trang-rut-ho-so__info-label">Trạng thái</span>
-                    <span className="trang-rut-ho-so__info-value">
-                      {getTrangThaiBadge(selectedRecord.trangThai)}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -1120,6 +966,119 @@ export function TrangRutHoSo() {
                   <span className="trang-rut-ho-so__xac-nhan-value">{rutForm.ghiChu}</span>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Xác nhận Duyệt phiếu rút */}
+      <Modal
+        isOpen={modalDuyetOpen}
+        onClose={() => setModalDuyetOpen(false)}
+        title="Xác nhận duyệt phiếu rút hồ sơ"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalDuyetOpen(false)} disabled={isSubmitting}>
+              Hủy
+            </Button>
+            <Button
+              variant="success"
+              onClick={handleDuyet}
+              disabled={isSubmitting}
+              icon={isSubmitting ? <Loader2 size={16} /> : <CheckCircle size={16} />}
+            >
+              {isSubmitting ? 'Đang xử lý...' : 'Duyệt'}
+            </Button>
+          </>
+        }
+      >
+        {selectedRecord && (
+          <div className="trang-rut-ho-so__xac-nhan-content">
+            <p className="trang-rut-ho-so__xac-nhan-text">
+              Bạn có chắc chắn muốn <strong>duyệt</strong> phiếu rút hồ sơ này?
+            </p>
+            <div className="trang-rut-ho-so__xac-nhan-info">
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Mã phiếu:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">{selectedRecord.maPhieu}</span>
+              </div>
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Sinh viên:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">
+                  {selectedRecord.hoTen || selectedRecord.mssv}
+                </span>
+              </div>
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Ngày rút:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">{formatDate(selectedRecord.ngayRut)}</span>
+              </div>
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Lý do:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">{selectedRecord.lyDo || '-'}</span>
+              </div>
+            </div>
+            <div className="trang-rut-ho-so__xac-nhan-warning">
+              <AlertCircle size={18} />
+              <span>
+                Sau khi duyệt, trạng thái học vụ của sinh viên sẽ chuyển thành "Đã rút hồ sơ".
+                Hành động này không thể hoàn tác.
+              </span>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Xác nhận Từ chối phiếu rút */}
+      <Modal
+        isOpen={modalTuChoiOpen}
+        onClose={() => setModalTuChoiOpen(false)}
+        title="Từ chối phiếu rút hồ sơ"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalTuChoiOpen(false)} disabled={isSubmitting}>
+              Hủy
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleTuChoi}
+              disabled={isSubmitting}
+              icon={isSubmitting ? <Loader2 size={16} /> : <XCircle size={16} />}
+            >
+              {isSubmitting ? 'Đang xử lý...' : 'Từ chối'}
+            </Button>
+          </>
+        }
+      >
+        {selectedRecord && (
+          <div className="trang-rut-ho-so__xac-nhan-content">
+            <p className="trang-rut-ho-so__xac-nhan-text">
+              Bạn có chắc chắn muốn <strong>từ chối</strong> phiếu rút hồ sơ này?
+            </p>
+            <div className="trang-rut-ho-so__xac-nhan-info">
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Mã phiếu:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">{selectedRecord.maPhieu}</span>
+              </div>
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Sinh viên:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">
+                  {selectedRecord.hoTen || selectedRecord.mssv}
+                </span>
+              </div>
+              <div className="trang-rut-ho-so__xac-nhan-row">
+                <span className="trang-rut-ho-so__xac-nhan-label">Lý do rút:</span>
+                <span className="trang-rut-ho-so__xac-nhan-value">{selectedRecord.lyDo || '-'}</span>
+              </div>
+            </div>
+            <div className="trang-rut-ho-so__form-section" style={{ marginTop: 16 }}>
+              <h3 className="trang-rut-ho-so__form-section-title">Lý do từ chối (tùy chọn)</h3>
+              <FormInput
+                value={tuChoiLyDo}
+                onChange={(e) => setTuChoiLyDo(e.target.value)}
+                placeholder="Nhập lý do từ chối..."
+              />
             </div>
           </div>
         )}

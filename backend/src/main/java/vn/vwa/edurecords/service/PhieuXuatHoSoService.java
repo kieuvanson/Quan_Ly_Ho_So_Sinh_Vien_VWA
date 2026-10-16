@@ -19,6 +19,7 @@ import vn.vwa.edurecords.dto.response.PhieuMuonResponse;
 import vn.vwa.edurecords.dto.response.SinhVienBulkResult;
 import vn.vwa.edurecords.entity.ChiTietPhieu;
 import vn.vwa.edurecords.entity.HoSoGiayTo;
+import vn.vwa.edurecords.entity.KhoaHoc;
 import vn.vwa.edurecords.entity.PhieuXuatHoSo;
 import vn.vwa.edurecords.entity.SinhVien;
 import vn.vwa.edurecords.entity.User;
@@ -98,7 +99,12 @@ public class PhieuXuatHoSoService {
         // đang hoạt động (Chờ duyệt + Đang mượn + Quá hạn). Ngược lại → filter
         // theo trangThai client gửi.
         String trangThai = trimToNull(req.getTrangThai());
+        // Mặc định lọc theo 'Mượn tạm thời' — method này chỉ phục vụ trang Mượn/Trả.
+        // Nếu client gửi loaiHoSo cụ thể → dùng giá trị client gửi.
         String loaiHoSo = trimToNull(req.getLoaiHoSo());
+        if (loaiHoSo == null) {
+            loaiHoSo = LOAI_MUON_TAM_THOI;
+        }
         String keyword = trimToNull(req.getKeyword());
 
         int page = Math.max(0, req.getPage());
@@ -131,7 +137,12 @@ public class PhieuXuatHoSoService {
     @Transactional(readOnly = true)
     public Page<PhieuMuonResponse> getLichSuMuonTra(PhieuMuonSearchRequest req) {
         String trangThai = trimToNull(req.getTrangThai());
+        // Mặc định lọc theo 'Mượn tạm thời' — method này chỉ phục vụ trang Mượn/Trả.
+        // Nếu client gửi loaiHoSo cụ thể → dùng giá trị client gửi.
         String loaiHoSo = trimToNull(req.getLoaiHoSo());
+        if (loaiHoSo == null) {
+            loaiHoSo = LOAI_MUON_TAM_THOI;
+        }
         String keyword = trimToNull(req.getKeyword());
         String fromDate = trimToNull(req.getFromDate());
         String toDate = trimToNull(req.getToDate());
@@ -755,8 +766,10 @@ public class PhieuXuatHoSoService {
         Set<String> mssvSet = content.stream()
                 .map(PhieuXuatHoSo::getMssv)
                 .collect(Collectors.toSet());
-        Map<String, String> mssvToHoTen = sinhVienRepository.findAllById(mssvSet).stream()
-                .collect(Collectors.toMap(SinhVien::getMssv, SinhVien::getHoTen, (a, b) -> a));
+
+        // Lookup sinh viên một lần (thay vì N query) — lấy đầy đủ thông tin
+        Map<String, SinhVien> mssvToSv = sinhVienRepository.findAllById(mssvSet).stream()
+                .collect(Collectors.toMap(SinhVien::getMssv, s -> s, (a, b) -> a));
 
         List<String> maPhieuList = content.stream()
                 .map(PhieuXuatHoSo::getMaPhieu)
@@ -769,19 +782,21 @@ public class PhieuXuatHoSoService {
                 ));
 
         return content.stream()
-                .map(p -> toResponse(p, mssvToHoTen, maPhieuToMaHoSo))
+                .map(p -> toResponse(p, mssvToSv, maPhieuToMaHoSo))
                 .toList();
     }
 
     private PhieuMuonResponse toResponse(
             PhieuXuatHoSo p,
-            Map<String, String> mssvToHoTen,
+            Map<String, SinhVien> mssvToSv,
             Map<String, List<String>> maPhieuToMaHoSo) {
+
+        SinhVien sv = mssvToSv.get(p.getMssv());
 
         PhieuMuonResponse r = new PhieuMuonResponse();
         r.setMaPhieu(p.getMaPhieu());
         r.setMssv(p.getMssv());
-        r.setHoTenSinhVien(mssvToHoTen.getOrDefault(p.getMssv(), null));
+        r.setHoTenSinhVien(sv != null ? sv.getHoTen() : null);
         r.setLoaiPhieu(p.getLoaiPhieu());
         r.setTrangThai(p.getTrangThai());
         r.setLyDo(p.getLyDo());
@@ -792,6 +807,25 @@ public class PhieuXuatHoSoService {
         r.setNguoiTao(p.getNguoiTao());
         r.setNgayTao(p.getNgayTao());
         r.setNgayCapNhat(p.getNgayCapNhat());
+
+        if (sv != null) {
+            r.setTenLop(sv.getLop() != null ? sv.getLop().getTenLop() : null);
+            r.setSdt(sv.getSdt());
+            r.setGioiTinh(sv.getGioiTinh());
+            r.setTenNganh(sv.getNganh() != null ? sv.getNganh().getTenNganh() : null);
+            r.setTenKhoa(sv.getKhoa() != null ? sv.getKhoa().getTenKhoa() : null);
+            if (sv.getKhoaHoc() != null) {
+                KhoaHoc kh = sv.getKhoaHoc();
+                if (kh.getNamBatDau() != null && kh.getNamKetThuc() != null) {
+                    r.setKhoaNamHoc(kh.getNamBatDau() + "–" + kh.getNamKetThuc());
+                } else {
+                    r.setKhoaNamHoc(kh.getTenKhoaHoc());
+                }
+            }
+            if (sv.getNgaySinh() != null) {
+                r.setNgaySinh(sv.getNgaySinh().toLocalDate().toString());
+            }
+        }
 
         List<String> maHsList = maPhieuToMaHoSo.getOrDefault(p.getMaPhieu(), Collections.emptyList());
         r.setSoLuongHoSo(maHsList.size());

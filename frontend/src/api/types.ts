@@ -129,6 +129,20 @@ export interface PhieuMuon {
   /** Danh sách mã hồ sơ giấy tờ thuộc phiếu. */
   danhSachMaHoSo?: string[] | null
   soLuongHoSo: number
+  /** Tên lớp hành chính của sinh viên (lấy từ sinhvien.lop.tenLop). */
+  tenLop?: string | null
+  /** Số điện thoại sinh viên. */
+  sdt?: string | null
+  /** Ngày sinh sinh viên (format yyyy-MM-dd). */
+  ngaySinh?: string | null
+  /** Giới tính sinh viên. */
+  gioiTinh?: string | null
+  /** Tên ngành học của sinh viên. */
+  tenNganh?: string | null
+  /** Tên khoa (đơn vị đào tạo) của sinh viên. */
+  tenKhoa?: string | null
+  /** Niên khóa / khóa năm học (VD: "2023–2024"). */
+  khoaNamHoc?: string | null
 }
 
 /**
@@ -141,12 +155,16 @@ export interface SinhVienPagedResponse {
 
 /**
  * HoSoGiayTo data from backend API.
+ * Backend trả về HoSoGiayToResponse đã JOIN LoaiGiayTo.tenGiayTo.
  */
 export interface HoSoGiayTo {
   maHoSo: string
   mssv: string
   maLoai: string
+  /** Tên đầy đủ của loại giấy tờ (JOIN từ LoaiGiayTo.tenGiayTo). */
+  tenGiayTo: string | null
   trangThaiNop: string
+  /** Bản gốc / Bản sao — có thể null nếu chưa được ghi nhận. */
   banGocBanSao: string | null
   fileDinhKem: string | null
   viTriLuuKho: string | null

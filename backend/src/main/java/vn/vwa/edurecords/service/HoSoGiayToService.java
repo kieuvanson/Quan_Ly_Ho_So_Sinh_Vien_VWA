@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.vwa.edurecords.dto.request.HoSoGiayToRequest;
 import vn.vwa.edurecords.dto.response.HoSoGiayToListItem;
+import vn.vwa.edurecords.dto.response.HoSoGiayToResponse;
 import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.entity.HoSoGiayTo;
 import vn.vwa.edurecords.entity.LoaiGiayTo;
@@ -55,8 +56,36 @@ public class HoSoGiayToService {
         return String.format("LSN%s%02d", timestamp, sequenceCounter);
     }
 
+    // ===== BASIC CRUD METHODS =====
+
     public List<HoSoGiayTo> getByMssv(String mssv) {
         return hoSoGiayToRepository.findByMssv(mssv);
+    }
+
+    /**
+     * Tra ve danh sach HoSoGiayToResponse da map them tenGiayTo tu LoaiGiayTo.
+     */
+    public List<HoSoGiayToResponse> getByMssvAsResponse(String mssv) {
+        return hoSoGiayToRepository.findByMssv(mssv).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private HoSoGiayToResponse toResponse(HoSoGiayTo entity) {
+        HoSoGiayToResponse r = new HoSoGiayToResponse();
+        r.setMaHoSo(entity.getMaHoSo());
+        r.setMssv(entity.getMssv());
+        r.setMaLoai(entity.getMaLoai());
+        r.setTrangThaiNop(entity.getTrangThaiNop());
+        r.setBanGocBanSao(entity.getBanGocBanSao());
+        r.setViTriLuuKho(entity.getViTriLuuKho());
+        r.setNgayTao(entity.getNgayTao());
+        // JOIN tenGiayTo tu LoaiGiayTo
+        if (entity.getMaLoai() != null) {
+            loaiGiayToRepository.findById(entity.getMaLoai())
+                    .ifPresent(loai -> r.setTenGiayTo(loai.getTenGiayTo()));
+        }
+        return r;
     }
 
     public Optional<HoSoGiayTo> getByMaHoSo(String maHoSo) {
@@ -71,28 +100,29 @@ public class HoSoGiayToService {
         return hoSoGiayToRepository.countByMssv(mssv);
     }
 
+    // ===== SEARCH & PAGINATION =====
+
     /**
-     * Tìm kiếm hồ sơ giấy tờ phẳng (kèm thông tin sinh viên) cho bảng
-     * "Danh sách hồ sơ giấy tờ" trên frontend.
+     * Tim kiem ho so giay to phang (kem thong tin sinh vien) cho bang
+     * "Danh sach ho so giay to" tren frontend.
      *
-     * <p>Các filter đều là AND; tất cả optional. Filter rỗng → trả tất cả.</p>
+     * <p>Cac filter deu la AND; tat ca optional. Filter rong tra tat ca.</p>
      *
-     * <p>Sắp xếp mặc định: {@code ngay_tao DESC, mssv ASC, ma_loai ASC} —
-     * hồ sơ mới nhất lên đầu; trong cùng 1 SV thì sắp theo mã loại để dễ
-     * đọc (GT01..GT13).</p>
+     * <p>Sap xep mac dinh: ngay_tao DESC, mssv ASC, ma_loai ASC -
+     * ho so moi nhat len dau; trong cung 1 SV sap theo ma loai.</p>
      *
-     * <p>PostgreSQL ENUM ({@code trang_thai_nop}, {@code trang_thai_hoc_vu})
-     * được cast sang text để so sánh với tham số String từ query.</p>
+     * <p>PostgreSQL ENUM (trang_thai_nop, trang_thai_hoc_vu)
+     * duoc cast sang text de so sanh voi tham so String trong query.</p>
      *
-     * @param keyword     chuỗi tìm trên MSSV hoặc họ tên (LIKE, không phân biệt hoa)
-     * @param maLoai      lọc theo mã loại giấy tờ (GT01..GT13)
-     * @param trangThaiNop lọc theo trạng thái nộp (Chưa nộp / Đã nộp / Thiếu / Không hợp lệ)
-     * @param nganhId     lọc theo id ngành của sinh viên
-     * @param lopId       lọc theo id lớp của sinh viên
-     * @param khoaHocId   lọc theo id khóa học của sinh viên
-     * @param trangThaiHocVu lọc theo trạng thái học vụ (Đang học, Bảo lưu, ...)
+     * @param keyword     chuoi tim tren MSSV hoac ho ten (LIKE, khong phan biet hoa)
+     * @param maLoai      loc theo ma loai giay to (GT01..GT13)
+     * @param trangThaiNop loc theo trang thai nop (Chua nop / Da nop / Thieu / Khong hop le)
+     * @param nganhId     loc theo id nganh cua sinh vien
+     * @param lopId       loc theo id lop cua sinh vien
+     * @param khoaHocId   loc theo id khoa hoc cua sinh vien
+     * @param trangThaiHocVu loc theo trang thai hoc vu (Dang hoc, Bao luu, ...)
      * @param page        0-based
-     * @param size        kích thước trang
+     * @param size        kich thuoc trang
      */
     public PagedResponse<List<HoSoGiayToListItem>> searchList(
             String keyword, String maLoai, String trangThaiNop,
@@ -102,7 +132,6 @@ public class HoSoGiayToService {
         // Build WHERE clause + params dynamically.
         StringBuilder where = new StringBuilder(" WHERE 1=1 ");
         List<Object> params = new ArrayList<>();
-        int pIdx = 1; // next ? index (for debugging)
 
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND ( LOWER(hsg.mssv) LIKE LOWER(CONCAT('%', ?, '%')) "
@@ -131,12 +160,8 @@ public class HoSoGiayToService {
             params.add(khoaHocId);
         }
         if (trangThaiHocVu != null && !trangThaiHocVu.isBlank()) {
-            // DB cột là ENUM; trangThaiHocVu từ client có thể là enum literal
-            // ("Đang_học") hoặc UI label ("Đang học") — chấp nhận cả 2.
-            // Mapping dựa trên schema: Đang_học, Bảo_lưu, Đình_chỉ, Tốt_nghiệp, Đã_rút_hồ_sơ
-            String enumVal = trangThaiHocVu.trim();
             where.append(" AND sv.trang_thai_hoc_vu = CAST(? AS trangthaihocvu) ");
-            params.add(enumVal);
+            params.add(trangThaiHocVu.trim());
         }
 
         // 1) Count total
@@ -192,7 +217,7 @@ public class HoSoGiayToService {
             item.setTenLop((String) r[11]);
             item.setTenKhoa((String) r[12]);
             item.setTrangThaiHocVu((String) r[13]);
-            // pg timestamp → java.sql.Timestamp → LocalDateTime
+            // pg timestamp to java.sql.Timestamp to LocalDateTime
             if (r[14] != null) {
                 item.setNgayTao(r[14] instanceof java.sql.Timestamp ts
                         ? ts.toLocalDateTime() : (LocalDateTime) r[14]);
@@ -209,20 +234,22 @@ public class HoSoGiayToService {
         return new PagedResponse<>(items, meta);
     }
 
+    // ===== CRUD OPERATIONS =====
+
     @Transactional
     public HoSoGiayTo create(String mssv, String maLoai, HoSoGiayToRequest request, String nguoiThucHien) {
         LoaiGiayTo loaiGiayTo = loaiGiayToRepository.findById(maLoai)
-                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Loại giấy tờ không tồn tại: " + maLoai));
+                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Loai giay to khong ton tai: " + maLoai));
 
         if (hoSoGiayToRepository.findByMssvAndMaLoai(mssv, maLoai).isPresent()) {
-            throw new BadRequestException("EXISTS", "Hồ sơ giấy tờ đã tồn tại cho sinh viên này");
+            throw new BadRequestException("EXISTS", "Ho so giay to da ton tai cho sinh vien nay");
         }
 
         HoSoGiayTo hoSo = new HoSoGiayTo();
         hoSo.setMaHoSo(generateMaHoSo());
         hoSo.setMssv(mssv);
         hoSo.setMaLoai(maLoai);
-        hoSo.setTrangThaiNop(request.getTrangThaiNop() != null ? request.getTrangThaiNop() : "Chưa nộp");
+        hoSo.setTrangThaiNop(request.getTrangThaiNop() != null ? request.getTrangThaiNop() : "Chua nop");
         hoSo.setBanGocBanSao(request.getBanGocBanSao());
         hoSo.setFileDinhKem(request.getFileDinhKem());
         hoSo.setViTriLuuKho(request.getViTriLuuKho());
@@ -231,7 +258,7 @@ public class HoSoGiayToService {
 
         HoSoGiayTo saved = hoSoGiayToRepository.save(hoSo);
 
-        ghiLichSuNop(saved, null, saved.getTrangThaiNop(), "Tạo hồ sơ", request.getGhiChu(), nguoiThucHien);
+        ghiLichSuNop(saved, null, saved.getTrangThaiNop(), "Tao ho so", request.getGhiChu(), nguoiThucHien);
 
         return saved;
     }
@@ -239,7 +266,7 @@ public class HoSoGiayToService {
     @Transactional
     public HoSoGiayTo update(String maHoSo, HoSoGiayToRequest request, String nguoiThucHien) {
         HoSoGiayTo hoSo = hoSoGiayToRepository.findById(maHoSo)
-                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Hồ sơ giấy tờ không tồn tại: " + maHoSo));
+                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Ho so giay to khong ton tai: " + maHoSo));
 
         String trangThaiCu = hoSo.getTrangThaiNop();
         boolean daThayDoiTrangThai = false;
@@ -273,7 +300,7 @@ public class HoSoGiayToService {
     @Transactional
     public HoSoGiayTo capNhatTrangThaiNop(String maHoSo, String trangThaiMoi, String ghiChu, String nguoiThucHien) {
         HoSoGiayTo hoSo = hoSoGiayToRepository.findById(maHoSo)
-                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Hồ sơ giấy tờ không tồn tại: " + maHoSo));
+                .orElseThrow(() -> new ResourceNotFoundException("NOT_FOUND", "Ho so giay to khong ton tai: " + maHoSo));
 
         String trangThaiCu = hoSo.getTrangThaiNop();
 
@@ -294,10 +321,12 @@ public class HoSoGiayToService {
     @Transactional
     public void delete(String maHoSo) {
         if (!hoSoGiayToRepository.existsById(maHoSo)) {
-            throw new ResourceNotFoundException("NOT_FOUND", "Hồ sơ giấy tờ không tồn tại: " + maHoSo);
+            throw new ResourceNotFoundException("NOT_FOUND", "Ho so giay to khong ton tai: " + maHoSo);
         }
         hoSoGiayToRepository.deleteById(maHoSo);
     }
+
+    // ===== HELPER METHODS =====
 
     private void ghiLichSuNop(HoSoGiayTo hoSo, String trangThaiCu, String trangThaiMoi,
                               String hanhDong, String ghiChu, String nguoiThucHien) {
@@ -316,19 +345,19 @@ public class HoSoGiayToService {
     }
 
     private String xacDinhHanhDong(String trangThaiCu, String trangThaiMoi) {
-        if ("Chưa nộp".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
-            return "Nộp giấy tờ";
-        } else if ("Đã nộp".equals(trangThaiCu) && "Chưa nộp".equals(trangThaiMoi)) {
-            return "Hủy nộp";
-        } else if ("Đã nộp".equals(trangThaiCu) && "Thiếu".equals(trangThaiMoi)) {
-            return "Đánh dấu thiếu";
-        } else if ("Thiếu".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
-            return "Bổ sung đủ";
-        } else if ("Đã nộp".equals(trangThaiCu) && "Không hợp lệ".equals(trangThaiMoi)) {
-            return "Đánh dấu không hợp lệ";
-        } else if ("Không hợp lệ".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
-            return "Hợp lệ trở lại";
+        if ("Chua nop".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
+            return "Nop giay to";
+        } else if ("Da nop".equals(trangThaiCu) && "Chua nop".equals(trangThaiMoi)) {
+            return "Huy nop";
+        } else if ("Da nop".equals(trangThaiCu) && "Thieu".equals(trangThaiMoi)) {
+            return "Danh dau thieu";
+        } else if ("Thieu".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
+            return "Bo sung day du";
+        } else if ("Da nop".equals(trangThaiCu) && "Khong hop le".equals(trangThaiMoi)) {
+            return "Danh dau khong hop le";
+        } else if ("Khong hop le".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
+            return "Hop le tro lai";
         }
-        return "Cập nhật trạng thái";
+        return "Cap nhat trang thai";
     }
 }

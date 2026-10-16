@@ -90,6 +90,18 @@
   background-color: var(--color-surface-hover);
 }
 
+.btn--success {
+  background-color: #16a34a;
+  color: white;
+  border-color: #16a34a;
+}
+
+.btn--success:hover:not(:disabled) {
+  background-color: #15803d;
+  border-color: #15803d;
+  box-shadow: var(--shadow-md);
+}
+
 /* Full width */
 .btn--full {
   width: 100%;

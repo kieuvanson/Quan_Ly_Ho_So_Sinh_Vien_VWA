@@ -644,3 +644,129 @@
     flex: 1;
   }
 }
+
+/* ========================================
+   Loading & Error States
+   ======================================== */
+
+.bao-cao__stat-value--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.bao-cao__stat-value--error {
+  color: var(--color-danger);
+}
+
+/* Spinner animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Note/Warning text */
+.bao-cao__note {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background-color: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  color: #92400e;
+}
+
+.bao-cao__note--info {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+  color: #1e40af;
+}
+
+/* Empty state */
+.bao-cao__empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.bao-cao__empty-state svg {
+  opacity: 0.5;
+}
+
+.bao-cao__empty-state span {
+  font-size: var(--font-size-sm);
+}
+
+/* Loading state */
+.bao-cao__loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.bao-cao__loading-state span {
+  font-size: var(--font-size-sm);
+}
+
+/* Error state */
+.bao-cao__error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background-color: #fee2e2;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+  color: #dc2626;
+  font-size: var(--font-size-sm);
+}
+
+/* Donut loading/error */
+.bao-cao__donut-loading,
+.bao-cao__donut-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg);
+  border-radius: 50%;
+}
+
+.bao-cao__donut-error {
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+}
+
+/* Ngành footer */
+.bao-cao__nganh-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4);
+  background-color: #f1f5f9;
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+/* Ho so sub label */
+.bao-cao__ho-so-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
