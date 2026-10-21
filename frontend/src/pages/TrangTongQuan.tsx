@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
+import { thongKeApi, type SinhVienStatsResponse, type ThongKeNganhResponse, type ThongKeHoSoResponse, type ThongKeMuonTraResponse } from '../api/thongKe'
 import './TrangTongQuan.css'
 
-// Types
+// Types for local state
 interface SinhVienStats {
   tongSo: number
   dangHoc: number
@@ -27,84 +29,29 @@ interface MuonTraStats {
   quaHan: number
 }
 
-interface HoatDong {
-  id: number
-  thoiGian: string
-  nguoiThucHien: string
-  noiDung: string
-  icon: 'file' | 'download' | 'upload' | 'plus' | 'user'
+// Default empty states
+const DEFAULT_SINH_VIEN_STATS: SinhVienStats = {
+  tongSo: 0,
+  dangHoc: 0,
+  baoLuu: 0,
+  dinhChi: 0,
+  totNghiep: 0,
+  daRutHoSo: 0,
 }
 
-// Mock Data
-const MOCK_SINH_VIEN_STATS: SinhVienStats = {
-  tongSo: 2486,
-  dangHoc: 2312,
-  baoLuu: 48,
-  dinhChi: 12,
-  totNghiep: 96,
-  daRutHoSo: 18,
+const DEFAULT_HO_SO_STATS: HoSoStats = {
+  tongHoSo: 0,
+  hoSoDayDu: 0,
+  hoSoThieu: 0,
 }
 
-const MOCK_HO_SO_STATS: HoSoStats = {
-  tongHoSo: 2486,
-  hoSoDayDu: 2156,
-  hoSoThieu: 330,
+const DEFAULT_NGANH: NganhData[] = []
+
+const DEFAULT_MUON_TRA_STATS: MuonTraStats = {
+  dangMuon: 0,
+  daTra: 0,
+  quaHan: 0,
 }
-
-const MOCK_NGANH: NganhData[] = [
-  { tenNganh: 'Quản trị kinh doanh', soLuong: 386 },
-  { tenNganh: 'Công nghệ thông tin', soLuong: 324 },
-  { tenNganh: 'Luật', soLuong: 298 },
-  { tenNganh: 'Luật kinh tế', soLuong: 276 },
-  { tenNganh: 'Công tác xã hội', soLuong: 245 },
-  { tenNganh: 'Kinh tế quốc tế', soLuong: 218 },
-  { tenNganh: 'Truyền thông đa phương tiện', soLuong: 196 },
-  { tenNganh: 'Các ngành khác', soLuong: 543 },
-]
-
-const MOCK_MUON_TRA_STATS: MuonTraStats = {
-  dangMuon: 42,
-  daTra: 71,
-  quaHan: 15,
-}
-
-const MOCK_HOAT_DONG: HoatDong[] = [
-  {
-    id: 1,
-    thoiGian: '14:32',
-    nguoiThucHien: 'Nguyễn Văn A',
-    noiDung: 'Cập nhật trạng thái giấy tờ của SV 24D10001',
-    icon: 'file',
-  },
-  {
-    id: 2,
-    thoiGian: '14:18',
-    nguoiThucHien: 'Trần Thị B',
-    noiDung: 'Mượn hồ sơ SV 24D10025',
-    icon: 'download',
-  },
-  {
-    id: 3,
-    thoiGian: '13:56',
-    nguoiThucHien: 'Nguyễn Văn A',
-    noiDung: 'Bổ sung giấy tờ cho SV 24D10018',
-    icon: 'plus',
-  },
-  {
-    id: 4,
-    thoiGian: '13:21',
-    nguoiThucHien: 'Lê Thị C',
-    noiDung: 'Trả hồ sơ SV 24D10007',
-    icon: 'upload',
-  },
-  {
-    id: 5,
-    thoiGian: '12:45',
-    nguoiThucHien: 'Phạm Văn D',
-    noiDung: 'Cập nhật thông tin sinh viên SV 24D10012',
-    icon: 'user',
-  },
-]
 
 // Icons
 const Icons = {
@@ -154,35 +101,22 @@ const Icons = {
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   ),
-  file: (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-      <polyline points="14 2 14 8 20 8"/>
-    </svg>
-  ),
-  upload: (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="17 8 12 3 7 8"/>
-      <line x1="12" y1="3" x2="12" y2="15"/>
-    </svg>
-  ),
-  plus: (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14"/>
-      <path d="M12 5v14"/>
-    </svg>
-  ),
-  user: (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-      <circle cx="12" cy="7" r="4"/>
-    </svg>
-  ),
   arrowRight: (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14"/>
       <path d="m12 5 7 7-7 7"/>
+    </svg>
+  ),
+  loading: (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="tq-spin">
+      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+    </svg>
+  ),
+  error: (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
     </svg>
   ),
 }
@@ -198,6 +132,38 @@ function DonutChart({ data, centerText, centerSubtext }: {
   const strokeWidth = 20
   const circumference = 2 * Math.PI * radius
   let offset = 0
+
+  if (total === 0) {
+    return (
+      <div className="tq-donut tq-donut--empty">
+        <svg viewBox="0 0 200 200" className="tq-donut__chart">
+          <circle
+            cx="100"
+            cy="100"
+            r={radius}
+            fill="none"
+            stroke="var(--color-border)"
+            strokeWidth={strokeWidth}
+          />
+          <text x="100" y="90" textAnchor="middle" className="tq-donut__center-text">
+            0
+          </text>
+          <text x="100" y="115" textAnchor="middle" className="tq-donut__center-subtext">
+            Không có dữ liệu
+          </text>
+        </svg>
+        <div className="tq-donut__legend">
+          {data.map((item, index) => (
+            <div key={index} className="tq-donut__legend-item">
+              <span className="tq-donut__legend-color" style={{ backgroundColor: item.color }}></span>
+              <span className="tq-donut__legend-label">{item.label}</span>
+              <span className="tq-donut__legend-value">0</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="tq-donut">
@@ -245,14 +211,22 @@ function DonutChart({ data, centerText, centerSubtext }: {
 }
 
 // Stat Card Component
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
+function StatCard({ icon, label, value, color, loading }: { 
+  icon: React.ReactNode; 
+  label: string; 
+  value: number; 
+  color: string;
+  loading?: boolean;
+}) {
   return (
     <div className="tq-stat-card">
       <div className="tq-stat-card__icon" style={{ color }}>
-        {icon}
+        {loading ? Icons.loading : icon}
       </div>
       <div className="tq-stat-card__content">
-        <span className="tq-stat-card__value">{value.toLocaleString()}</span>
+        <span className="tq-stat-card__value">
+          {loading ? '—' : value.toLocaleString()}
+        </span>
         <span className="tq-stat-card__label">{label}</span>
       </div>
     </div>
@@ -261,7 +235,7 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
 
 // Progress Bar Component
 function ProgressBar({ value, maxValue, label }: { value: number; maxValue: number; label: string }) {
-  const percentage = (value / maxValue) * 100
+  const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0
   
   return (
     <div className="tq-progress">
@@ -281,7 +255,7 @@ function ProgressBar({ value, maxValue, label }: { value: number; maxValue: numb
 
 // Nganh Item Component
 function NganhItem({ tenNganh, soLuong, maxSoLuong }: { tenNganh: string; soLuong: number; maxSoLuong: number }) {
-  const percentage = (soLuong / maxSoLuong) * 100
+  const percentage = maxSoLuong > 0 ? (soLuong / maxSoLuong) * 100 : 0
   
   return (
     <div className="tq-nganh-item">
@@ -299,44 +273,168 @@ function NganhItem({ tenNganh, soLuong, maxSoLuong }: { tenNganh: string; soLuon
   )
 }
 
-// Hoat Dong Item Component
-function HoatDongItem({ hoatDong }: { hoatDong: HoatDong }) {
-  const getIcon = (iconType: string) => {
-    switch (iconType) {
-      case 'file': return Icons.file
-      case 'download': return Icons.download
-      case 'upload': return Icons.upload
-      case 'plus': return Icons.plus
-      case 'user': return Icons.user
-      default: return Icons.file
-    }
-  }
-
+// Loading Skeleton for Nganh List
+function NganhListSkeleton() {
   return (
-    <div className="tq-activity-item">
-      <div className="tq-activity-item__icon">
-        {getIcon(hoatDong.icon)}
-      </div>
-      <div className="tq-activity-item__content">
-        <div className="tq-activity-item__header">
-          <span className="tq-activity-item__time">{hoatDong.thoiGian}</span>
-          <span className="tq-activity-item__user">{hoatDong.nguoiThucHien}</span>
+    <div className="tq-nganh-list">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="tq-nganh-item tq-nganh-item--skeleton">
+          <div className="tq-nganh-item__header">
+            <span className="tq-skeleton" style={{ width: '60%' }}></span>
+            <span className="tq-skeleton" style={{ width: '15%' }}></span>
+          </div>
+          <div className="tq-nganh-item__bar">
+            <div className="tq-skeleton" style={{ width: `${30 + Math.random() * 50}%` }}></div>
+          </div>
         </div>
-        <p className="tq-activity-item__desc">{hoatDong.noiDung}</p>
-      </div>
+      ))}
+    </div>
+  )
+}
+
+// Error State Component
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="tq-error-state">
+      <div className="tq-error-state__icon">{Icons.error}</div>
+      <p className="tq-error-state__message">{message}</p>
+      <button className="tq-error-state__retry" onClick={onRetry}>
+        Thử lại
+      </button>
     </div>
   )
 }
 
 export function TrangTongQuan() {
-  const maxSoLuongNganh = Math.max(...MOCK_NGANH.map(n => n.soLuong))
-  const hoSoDayDuPercent = (MOCK_HO_SO_STATS.hoSoDayDu / MOCK_HO_SO_STATS.tongHoSo) * 100
-  const totalMuonTra = MOCK_MUON_TRA_STATS.dangMuon + MOCK_MUON_TRA_STATS.daTra + MOCK_MUON_TRA_STATS.quaHan
+  // State cho dữ liệu thống kê
+  const [sinhVienStats, setSinhVienStats] = useState<SinhVienStats>(DEFAULT_SINH_VIEN_STATS)
+  const [hoSoStats, setHoSoStats] = useState<HoSoStats>(DEFAULT_HO_SO_STATS)
+  const [nganhList, setNganhList] = useState<NganhData[]>(DEFAULT_NGANH)
+  const [muonTraStats, setMuonTraStats] = useState<MuonTraStats>(DEFAULT_MUON_TRA_STATS)
+
+  // State cho loading/error
+  const [loadingSV, setLoadingSV] = useState(true)
+  const [loadingHS, setLoadingHS] = useState(true)
+  const [loadingNganh, setLoadingNganh] = useState(true)
+  const [loadingMT, setLoadingMT] = useState(true)
+
+  const [errorSV, setErrorSV] = useState<string | null>(null)
+  const [errorHS, setErrorHS] = useState<string | null>(null)
+  const [errorNganh, setErrorNganh] = useState<string | null>(null)
+  const [errorMT, setErrorMT] = useState<string | null>(null)
+
+  // Fetch thống kê sinh viên
+  const fetchSinhVienStats = async () => {
+    try {
+      setLoadingSV(true)
+      setErrorSV(null)
+      const response = await thongKeApi.getSinhVienStats()
+      if (response.success && response.data) {
+        // Dữ liệu đã được normalize trong API
+        const data: SinhVienStatsResponse = response.data
+        setSinhVienStats({
+          tongSo: data.tongSoSinhVien || 0,
+          dangHoc: data.dangHoc || 0,
+          baoLuu: data.baoLuu || 0,
+          dinhChi: data.dinhChi || 0,
+          totNghiep: data.totNghiep || 0,
+          daRutHoSo: data.daRutHoSo || 0,
+        })
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải thống kê sinh viên:', err)
+      setErrorSV('Không thể tải dữ liệu sinh viên')
+    } finally {
+      setLoadingSV(false)
+    }
+  }
+
+  // Fetch thống kê hồ sơ
+  const fetchHoSoStats = async () => {
+    try {
+      setLoadingHS(true)
+      setErrorHS(null)
+      const response = await thongKeApi.getThongKeHoSo()
+      if (response.success && response.data) {
+        const data = response.data as unknown as ThongKeHoSoResponse
+        setHoSoStats({
+          tongHoSo: data.tongSoSinhVien || 0,
+          hoSoDayDu: data.hoSoDayDu || 0,
+          hoSoThieu: data.hoSoConThieu || 0,
+        })
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải thống kê hồ sơ:', err)
+      setErrorHS('Không thể tải dữ liệu hồ sơ')
+    } finally {
+      setLoadingHS(false)
+    }
+  }
+
+  // Fetch thống kê theo ngành
+  const fetchNganhStats = async () => {
+    try {
+      setLoadingNganh(true)
+      setErrorNganh(null)
+      const response = await thongKeApi.getSinhVienTheoNganh()
+      if (response.success && response.data) {
+        const data = response.data as unknown as ThongKeNganhResponse
+        // Map từ response backend sang định dạng UI cần
+        const mapped = (data.nganhList || []).map((item) => ({
+          tenNganh: item.tenNganh || item.nganh || 'Không xác định',
+          soLuong: item.soLuong || 0,
+        }))
+        setNganhList(mapped)
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải thống kê ngành:', err)
+      setErrorNganh('Không thể tải dữ liệu ngành')
+    } finally {
+      setLoadingNganh(false)
+    }
+  }
+
+  // Fetch thống kê mượn/trả
+  const fetchMuonTraStats = async () => {
+    try {
+      setLoadingMT(true)
+      setErrorMT(null)
+      const response = await thongKeApi.getThongKeMuonTra()
+      if (response.success && response.data) {
+        const data = response.data as unknown as ThongKeMuonTraResponse
+        setMuonTraStats({
+          dangMuon: data.dangMuon || 0,
+          daTra: data.daTra || 0,
+          quaHan: data.quaHan || 0,
+        })
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải thống kê mượn/trả:', err)
+      setErrorMT('Không thể tải dữ liệu mượn/trả')
+    } finally {
+      setLoadingMT(false)
+    }
+  }
+
+  // Load all data on mount
+  useEffect(() => {
+    fetchSinhVienStats()
+    fetchHoSoStats()
+    fetchNganhStats()
+    fetchMuonTraStats()
+  }, [])
+
+  // Tính toán giá trị cho biểu đồ
+  const maxSoLuongNganh = nganhList.length > 0 ? Math.max(...nganhList.map(n => n.soLuong)) : 0
+  const hoSoDayDuPercent = hoSoStats.tongHoSo > 0 
+    ? (hoSoStats.hoSoDayDu / hoSoStats.tongHoSo) * 100 
+    : 0
+  const totalMuonTra = muonTraStats.dangMuon + muonTraStats.daTra + muonTraStats.quaHan
 
   const donutData = [
-    { label: 'Đang mượn', value: MOCK_MUON_TRA_STATS.dangMuon, color: 'var(--color-primary)' },
-    { label: 'Đã trả', value: MOCK_MUON_TRA_STATS.daTra, color: 'var(--color-success)' },
-    { label: 'Quá hạn', value: MOCK_MUON_TRA_STATS.quaHan, color: 'var(--color-danger)' },
+    { label: 'Đang mượn', value: muonTraStats.dangMuon, color: 'var(--color-primary)' },
+    { label: 'Đã trả', value: muonTraStats.daTra, color: 'var(--color-success)' },
+    { label: 'Quá hạn', value: muonTraStats.quaHan, color: 'var(--color-danger)' },
   ]
 
   return (
@@ -351,43 +449,91 @@ export function TrangTongQuan() {
 
       {/* Summary Cards - Sinh viên */}
       <div className="tq-stats-grid">
-        <StatCard icon={Icons.users} label="Tổng sinh viên" value={MOCK_SINH_VIEN_STATS.tongSo} color="var(--color-primary)" />
-        <StatCard icon={Icons.book} label="Đang học" value={MOCK_SINH_VIEN_STATS.dangHoc} color="var(--color-success)" />
-        <StatCard icon={Icons.alert} label="Bảo lưu" value={MOCK_SINH_VIEN_STATS.baoLuu} color="var(--color-warning)" />
-        <StatCard icon={Icons.alertTriangle} label="Đình chỉ" value={MOCK_SINH_VIEN_STATS.dinhChi} color="var(--color-danger)" />
-        <StatCard icon={Icons.award} label="Tốt nghiệp" value={MOCK_SINH_VIEN_STATS.totNghiep} color="#8b5cf6" />
-        <StatCard icon={Icons.download} label="Đã rút hồ sơ" value={MOCK_SINH_VIEN_STATS.daRutHoSo} color="#6b7280" />
+        <StatCard 
+          icon={Icons.users} 
+          label="Tổng sinh viên" 
+          value={sinhVienStats.tongSo} 
+          color="var(--color-primary)"
+          loading={loadingSV}
+        />
+        <StatCard 
+          icon={Icons.book} 
+          label="Đang học" 
+          value={sinhVienStats.dangHoc} 
+          color="var(--color-success)"
+          loading={loadingSV}
+        />
+        <StatCard 
+          icon={Icons.alert} 
+          label="Bảo lưu" 
+          value={sinhVienStats.baoLuu} 
+          color="var(--color-warning)"
+          loading={loadingSV}
+        />
+        <StatCard 
+          icon={Icons.alertTriangle} 
+          label="Đình chỉ" 
+          value={sinhVienStats.dinhChi} 
+          color="var(--color-danger)"
+          loading={loadingSV}
+        />
+        <StatCard 
+          icon={Icons.award} 
+          label="Tốt nghiệp" 
+          value={sinhVienStats.totNghiep} 
+          color="#8b5cf6"
+          loading={loadingSV}
+        />
+        <StatCard 
+          icon={Icons.download} 
+          label="Đã rút hồ sơ" 
+          value={sinhVienStats.daRutHoSo} 
+          color="#6b7280"
+          loading={loadingSV}
+        />
       </div>
 
       {/* Ho so section */}
       <div className="tq-section">
         <h2 className="tq-section__title">Tổng quan hồ sơ</h2>
         
-        <div className="tq-ho-so-cards">
-          <div className="tq-ho-so-card">
-            <span className="tq-ho-so-card__value">{MOCK_HO_SO_STATS.tongHoSo.toLocaleString()}</span>
-            <span className="tq-ho-so-card__label">Tổng hồ sơ</span>
-          </div>
-          <div className="tq-ho-so-card tq-ho-so-card--success">
-            <span className="tq-ho-so-card__value">{MOCK_HO_SO_STATS.hoSoDayDu.toLocaleString()}</span>
-            <span className="tq-ho-so-card__label">Hồ sơ đầy đủ</span>
-          </div>
-          <div className="tq-ho-so-card tq-ho-so-card--warning">
-            <span className="tq-ho-so-card__value">{MOCK_HO_SO_STATS.hoSoThieu.toLocaleString()}</span>
-            <span className="tq-ho-so-card__label">Hồ sơ thiếu</span>
-          </div>
-        </div>
+        {errorHS ? (
+          <ErrorState message={errorHS} onRetry={fetchHoSoStats} />
+        ) : (
+          <>
+            <div className="tq-ho-so-cards">
+              <div className="tq-ho-so-card">
+                <span className="tq-ho-so-card__value">
+                  {loadingHS ? '—' : hoSoStats.tongHoSo.toLocaleString()}
+                </span>
+                <span className="tq-ho-so-card__label">Tổng hồ sơ</span>
+              </div>
+              <div className="tq-ho-so-card tq-ho-so-card--success">
+                <span className="tq-ho-so-card__value">
+                  {loadingHS ? '—' : hoSoStats.hoSoDayDu.toLocaleString()}
+                </span>
+                <span className="tq-ho-so-card__label">Hồ sơ đầy đủ</span>
+              </div>
+              <div className="tq-ho-so-card tq-ho-so-card--warning">
+                <span className="tq-ho-so-card__value">
+                  {loadingHS ? '—' : hoSoStats.hoSoThieu.toLocaleString()}
+                </span>
+                <span className="tq-ho-so-card__label">Hồ sơ thiếu</span>
+              </div>
+            </div>
 
-        <div className="tq-ho-so-progress">
-          <ProgressBar 
-            value={MOCK_HO_SO_STATS.hoSoDayDu} 
-            maxValue={MOCK_HO_SO_STATS.tongHoSo}
-            label="Hồ sơ đầy đủ"
-          />
-          <span className="tq-ho-so-progress__text">
-            {hoSoDayDuPercent.toFixed(1)}% hồ sơ đầy đủ
-          </span>
-        </div>
+            <div className="tq-ho-so-progress">
+              <ProgressBar 
+                value={hoSoStats.hoSoDayDu} 
+                maxValue={hoSoStats.tongHoSo}
+                label="Hồ sơ đầy đủ"
+              />
+              <span className="tq-ho-so-progress__text">
+                {hoSoDayDuPercent.toFixed(1)}% hồ sơ đầy đủ
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Two columns: Nganh + Muon Tra */}
@@ -396,17 +542,30 @@ export function TrangTongQuan() {
         <div className="tq-card">
           <div className="tq-card__header">
             <h2 className="tq-card__title">Sinh viên theo ngành</h2>
+            {loadingNganh && <span className="tq-loading-indicator">{Icons.loading}</span>}
           </div>
-          <div className="tq-nganh-list">
-            {MOCK_NGANH.map((nganh, index) => (
-              <NganhItem 
-                key={index} 
-                tenNganh={nganh.tenNganh} 
-                soLuong={nganh.soLuong} 
-                maxSoLuong={maxSoLuongNganh}
-              />
-            ))}
-          </div>
+          
+          {errorNganh ? (
+            <ErrorState message={errorNganh} onRetry={fetchNganhStats} />
+          ) : loadingNganh ? (
+            <NganhListSkeleton />
+          ) : nganhList.length === 0 ? (
+            <div className="tq-empty-state">
+              <p>Chưa có dữ liệu sinh viên theo ngành</p>
+            </div>
+          ) : (
+            <div className="tq-nganh-list">
+              {nganhList.slice(0, 8).map((nganh, index) => (
+                <NganhItem 
+                  key={index} 
+                  tenNganh={nganh.tenNganh} 
+                  soLuong={nganh.soLuong} 
+                  maxSoLuong={maxSoLuongNganh}
+                />
+              ))}
+            </div>
+          )}
+          
           <button className="tq-card__link">
             Xem tất cả {Icons.arrowRight}
           </button>
@@ -416,12 +575,18 @@ export function TrangTongQuan() {
         <div className="tq-card">
           <div className="tq-card__header">
             <h2 className="tq-card__title">Tình trạng mượn / trả hồ sơ</h2>
+            {loadingMT && <span className="tq-loading-indicator">{Icons.loading}</span>}
           </div>
-          <DonutChart 
-            data={donutData}
-            centerText={totalMuonTra.toString()}
-            centerSubtext="Phiếu mượn"
-          />
+          
+          {errorMT ? (
+            <ErrorState message={errorMT} onRetry={fetchMuonTraStats} />
+          ) : (
+            <DonutChart 
+              data={donutData}
+              centerText={totalMuonTra.toString()}
+              centerSubtext="Phiếu mượn"
+            />
+          )}
         </div>
       </div>
 
@@ -435,9 +600,9 @@ export function TrangTongQuan() {
         </div>
         
         <div className="tq-activity-list">
-          {MOCK_HOAT_DONG.map((hoatDong) => (
-            <HoatDongItem key={hoatDong.id} hoatDong={hoatDong} />
-          ))}
+          <div className="tq-empty-state">
+            <p>Tính năng đang được phát triển</p>
+          </div>
         </div>
       </div>
     </div>

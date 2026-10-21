@@ -4,8 +4,28 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.Type;
 import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
 import vn.vwa.edurecords.hibernate.type.TrangThaiHocVuUserType;
+
 import java.time.LocalDateTime;
 
+/**
+ * SinhVien aggregate root.
+ *
+ * <h3>Quan hệ danh mục (sau V4)</h3>
+ * <ul>
+ *   <li>{@link #khoa}     → {@code khoa(id)}    — đơn vị hành chính cấp cao</li>
+ *   <li>{@link #nganh}    → {@code nganh(id)}   — thuộc về đúng 1 khoa</li>
+ *   <li>{@link #lop}      → {@code lop(id)}     — thuộc về đúng 1 ngành + 1 khóa học</li>
+ *   <li>{@link #khoaHoc}  → {@code khoa_hoc(id)}— niên khóa</li>
+ * </ul>
+ *
+ * Trước V4 các trường này là VARCHAR (so sánh text). Sau V4, JPA mapping dùng
+ * ManyToOne để tận dụng FK, index và lookup danh mục chuẩn hóa.
+ *
+ * <h3>Trạng thái học vụ</h3>
+ * Vẫn dùng {@link TrangThaiHocVuUserType} để map PostgreSQL ENUM
+ * {@code trangthaihocvu} ↔ Java enum. Tránh dùng {@code @Enumerated(EnumType.STRING)}
+ * vì cột DB là ENUM literal chứ không phải varchar.
+ */
 @Entity
 @Table(name = "sinhvien")
 public class SinhVien {
@@ -35,17 +55,21 @@ public class SinhVien {
     @Column(name = "que_quan", length = 255)
     private String queQuan;
 
-    @Column(name = "nganh", length = 100)
-    private String nganh;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "khoa_id", nullable = false)
+    private Khoa khoa;
 
-    @Column(name = "lop", length = 20)
-    private String lop;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "nganh_id", nullable = false)
+    private Nganh nganh;
 
-    @Column(name = "khoa", length = 50)
-    private String khoa;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "lop_id", nullable = false)
+    private Lop lop;
 
-    @Column(name = "khoa_nam_nhap_hoc", length = 50)
-    private String khoaNamNhapHoc;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "khoa_hoc_id", nullable = false)
+    private KhoaHoc khoaHoc;
 
     @Column(name = "he_dao_tao", length = 50)
     private String heDaoTao;
@@ -85,17 +109,17 @@ public class SinhVien {
     public String getQueQuan() { return queQuan; }
     public void setQueQuan(String queQuan) { this.queQuan = queQuan; }
 
-    public String getNganh() { return nganh; }
-    public void setNganh(String nganh) { this.nganh = nganh; }
+    public Khoa getKhoa() { return khoa; }
+    public void setKhoa(Khoa khoa) { this.khoa = khoa; }
 
-    public String getLop() { return lop; }
-    public void setLop(String lop) { this.lop = lop; }
+    public Nganh getNganh() { return nganh; }
+    public void setNganh(Nganh nganh) { this.nganh = nganh; }
 
-    public String getKhoa() { return khoa; }
-    public void setKhoa(String khoa) { this.khoa = khoa; }
+    public Lop getLop() { return lop; }
+    public void setLop(Lop lop) { this.lop = lop; }
 
-    public String getKhoaNamNhapHoc() { return khoaNamNhapHoc; }
-    public void setKhoaNamNhapHoc(String khoaNamNhapHoc) { this.khoaNamNhapHoc = khoaNamNhapHoc; }
+    public KhoaHoc getKhoaHoc() { return khoaHoc; }
+    public void setKhoaHoc(KhoaHoc khoaHoc) { this.khoaHoc = khoaHoc; }
 
     public String getHeDaoTao() { return heDaoTao; }
     public void setHeDaoTao(String heDaoTao) { this.heDaoTao = heDaoTao; }

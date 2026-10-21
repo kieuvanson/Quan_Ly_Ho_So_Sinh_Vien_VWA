@@ -1,0 +1,60 @@
+/* TrangDanhSachHoSoGiayTo — danh sách hồ sơ giấy tờ (tab thứ 2) */
+
+.trang-danh-sach-giay-to {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+/* Tận dụng các class từ TrangDanhSachHoSo.css:
+   .trang-danh-sach__toolbar, .trang-danh-sach__filters,
+   .trang-danh-sach__search, .trang-danh-sach__select-wrapper,
+   .trang-danh-sach__actions, .trang-danh-sach__toolbar-banner,
+   .trang-danh-sach__table-card, .trang-danh-sach__loading,
+   .trang-danh-sach__loading-icon, .trang-danh-sach__error,
+   .trang-danh-sach__error-text, .trang-danh-sach__table-wrapper,
+   .trang-danh-sach__table, .trang-danh-sach__empty,
+   .trang-danh-sach__empty-icon, .trang-danh-sach__empty-text,
+   .trang-danh-sach__pagination, .trang-danh-sach__pagination-info,
+   .trang-danh-sach__pagination-controls, .trang-danh-sach__page-size-select,
+   .trang-danh-sach__page-btn, .trang-danh-sach__page-btn--active,
+   .trang-danh-sach__badge, .trang-danh-sach__checkbox,
+   .trang-danh-sach__checkbox-btn, .trang-danh-sach__checkbox--checked.
+*/
+
+/* Cell 2 dòng cho loại giấy tờ: GT01 + tên đầy đủ */
+.hs-loai-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hs-loai-cell__ma {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+}
+.hs-loai-cell__ten {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+/* Bảng HS có nhiều cột hơn → cho phép cuộn ngang trên màn hẹp */
+.trang-danh-sach__table--hs {
+  min-width: 1200px;
+}
+
+/* Cột cố định width cho bảng HS */
+.trang-danh-sach__table--hs .col-stt        { width: 48px; }
+.trang-danh-sach__table--hs .col-mssv       { width: 110px; }
+.trang-danh-sach__table--hs .col-hoten      { min-width: 160px; }
+.trang-danh-sach__table--hs .col-nganh      { width: 160px; }
+.trang-danh-sach__table--hs .col-lop        { width: 100px; }
+.trang-danh-sach__table--hs .col-khoa       { width: 80px; }
+.trang-danh-sach__table--hs .col-loai-giay-to { min-width: 200px; }
+.trang-danh-sach__table--hs .col-trang-thai-nop { width: 130px; }
+.trang-danh-sach__table--hs .col-ban-goc    { width: 110px; }
+.trang-danh-sach__table--hs .col-vi-tri     { min-width: 130px; }
+.trang-danh-sach__table--hs .col-ngay-tao   { width: 100px; }
+.trang-danh-sach__table--hs .col-thao-tac   { width: 100px; }

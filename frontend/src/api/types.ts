@@ -52,7 +52,15 @@ export interface ApiError {
 }
 
 /**
- * SinhVien data from backend API.
+ * SinhVien data from backend API (GET /api/sinh-vien/{mssv}).
+ * 
+ * Backend trả về các trường đã được map đúng nghĩa:
+ * - nganh: tên ngành từ danh mục (VD: "Công nghệ thông tin")
+ * - lop: tên lớp từ danh mục (VD: "K14CTXHB")
+ * - khoa: số khóa (VD: "Khóa 14")
+ * - khoaNamHoc: năm học (VD: "2026–2029")
+ * - heDaoTao: hệ đào tạo (VD: "Chính quy")
+ * - trangThaiHocVu: trạng thái học vụ (enum name, VD: "ĐANG_HỌC")
  */
 export interface SinhVien {
   mssv: string
@@ -63,11 +71,17 @@ export interface SinhVien {
   sdt: string | null
   email: string | null
   queQuan: string | null
+  /** Tên ngành từ danh mục. VD: "Công nghệ thông tin" */
   nganh: string | null
+  /** Tên lớp từ danh mục. VD: "K14CTXHB" */
   lop: string | null
+  /** Số khóa. VD: "Khóa 14" */
   khoa: string | null
-  khoaNamNhapHoc: string | null
+  /** Năm học. VD: "2026–2029" */
+  khoaNamHoc: string | null
+  /** Hệ đào tạo. VD: "Chính quy" */
   heDaoTao: string | null
+  /** Trạng thái học vụ (enum name). VD: "ĐANG_HỌC", "BẢO_LƯU" */
   trangThaiHocVu: string
   ngayTao: string
   ngayCapNhat: string | null
@@ -115,6 +129,20 @@ export interface PhieuMuon {
   /** Danh sách mã hồ sơ giấy tờ thuộc phiếu. */
   danhSachMaHoSo?: string[] | null
   soLuongHoSo: number
+  /** Tên lớp hành chính của sinh viên (lấy từ sinhvien.lop.tenLop). */
+  tenLop?: string | null
+  /** Số điện thoại sinh viên. */
+  sdt?: string | null
+  /** Ngày sinh sinh viên (format yyyy-MM-dd). */
+  ngaySinh?: string | null
+  /** Giới tính sinh viên. */
+  gioiTinh?: string | null
+  /** Tên ngành học của sinh viên. */
+  tenNganh?: string | null
+  /** Tên khoa (đơn vị đào tạo) của sinh viên. */
+  tenKhoa?: string | null
+  /** Niên khóa / khóa năm học (VD: "2023–2024"). */
+  khoaNamHoc?: string | null
 }
 
 /**
@@ -127,17 +155,59 @@ export interface SinhVienPagedResponse {
 
 /**
  * HoSoGiayTo data from backend API.
+ * Backend trả về HoSoGiayToResponse đã JOIN LoaiGiayTo.tenGiayTo.
  */
 export interface HoSoGiayTo {
   maHoSo: string
   mssv: string
   maLoai: string
+  /** Tên đầy đủ của loại giấy tờ (JOIN từ LoaiGiayTo.tenGiayTo). */
+  tenGiayTo: string | null
   trangThaiNop: string
+  /** Bản gốc / Bản sao — có thể null nếu chưa được ghi nhận. */
   banGocBanSao: string | null
   fileDinhKem: string | null
   viTriLuuKho: string | null
   ngayTao: string
   ngayCapNhat: string | null
+}
+
+/**
+ * Row phẳng cho bảng "Danh sách hồ sơ giấy tờ" trên frontend.
+ * Trả về từ {@code GET /api/ho-so-giay-to/all}.
+ *
+ * Projection từ {@code ho_so_giay_to JOIN sinhvien JOIN loai_giay_to}.
+ */
+export interface HoSoGiayToListItem {
+  maHoSo: string
+  mssv: string
+  maLoai: string
+  tenLoai: string
+  loaiBatBuoc: boolean | null
+  trangThaiNop: string
+  banGocBanSao: string | null
+  fileDinhKem: string | null
+  viTriLuuKho: string | null
+  hoTen: string
+  tenNganh: string
+  tenLop: string
+  tenKhoa: string
+  trangThaiHocVu: string
+  ngayTao: string
+  ngayCapNhat: string | null
+}
+
+/** Filter cho {@code hoSoGiayToApi.searchList}. */
+export interface HoSoGiayToSearchParams {
+  keyword?: string
+  maLoai?: string
+  trangThaiNop?: string
+  nganhId?: number
+  lopId?: number
+  khoaHocId?: number
+  trangThaiHocVu?: string
+  page?: number
+  size?: number
 }
 
 /**
@@ -153,17 +223,154 @@ export interface LoaiGiayTo {
   ngayTao: string
 }
 
+export interface LoaiGiayToRequest {
+  tenGiayTo: string
+  moTa?: string | null
+  batBuoc?: boolean
+  dangSuDung?: boolean
+  thuTuHienThi?: number | null
+}
+
+export interface Khoa {
+  id: number
+  maKhoa: string
+  tenKhoa: string
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface Nganh {
+  id: number
+  maNganh: string
+  tenNganh: string
+  khoa: { id: number; tenKhoa: string } | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface KhoaHoc {
+  id: number
+  maKhoaHoc: string
+  tenKhoaHoc: string
+  namBatDau: number | null
+  namKetThuc: number | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+export interface Lop {
+  id: number
+  maLop: string
+  tenLop: string
+  nganh: { id: number; tenNganh: string; khoa?: { id: number; tenKhoa: string } | null } | null
+  /** Khoa suy ra từ nganh.khoa (Lớp không có khoa trực tiếp). */
+  khoa: { id: number; tenKhoa: string } | null
+  khoaHoc: {
+    id: number
+    tenKhoaHoc: string
+    namBatDau: number | null
+    namKetThuc: number | null
+  } | null
+  moTa: string | null
+  dangSuDung: boolean
+}
+
+// ============ Request DTOs (backend CRUD) ============
+
+export interface KhoaRequest {
+  tenKhoa: string
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface NganhRequest {
+  // KhoaId là bắt buộc - Ngành phải thuộc một Khoa chuyên môn
+  khoaId: number
+  tenNganh: string
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface KhoaHocRequest {
+  tenKhoaHoc: string
+  namBatDau?: number | null
+  namKetThuc?: number | null
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+export interface LopRequest {
+  tenLop: string
+  nganhId: number
+  khoaHocId: number
+  moTa?: string | null
+  dangSuDung?: boolean
+}
+
+/**
+ * Trạng thái học vụ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiHocVuItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
+/**
+ * Trạng thái nộp giấy tờ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiNopItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
+/**
+ * Trạng thái phiếu xuất hồ sơ — ENUM cố định từ backend, chỉ đọc.
+ */
+export interface TrangThaiPhieuItem {
+  ma: string
+  ten: string
+  moTa: string
+  mauHienThi: string
+}
+
 /**
  * Search/filter params for sinh-vien API.
+ *
+ * <p>UI giữ nhãn tiếng Việt cho dropdown, nhưng khi gọi API ưu tiên truyền
+ * {@code *_id} (Integer) để backend truy vấn theo đúng khóa ngoại. Các field
+ * String cũ vẫn được giữ để tương thích ngược; backend sẽ tự resolve.</p>
  */
 export interface SinhVienSearchParams {
+  /** Từ khóa tìm theo họ tên, MSSV, CCCD. */
   keyword?: string
+  /** Tên/giá trị trạng thái học vụ (UI label, vd: "Đang học" → backend enum). */
   trangThaiHocVu?: string
+
+  /** Tên ngành — fallback nếu chưa có {@link nganhId}. */
   nganh?: string
+  /** Tên lớp — fallback nếu chưa có {@link lopId}. */
   lop?: string
+  /** Tên khóa học (niên khóa) — fallback nếu chưa có {@link khoaHocId}. */
   khoaNamNhapHoc?: string
+  /** Tên khoa chuyên môn — fallback nếu chưa có {@link khoaId}. */
   khoa?: string
+
+  /** Hệ đào tạo. */
   heDaoTao?: string
+
+  /** ID ngành (ưu tiên hơn {@link nganh}). Backend filter theo {@code sinhvien.nganh_id}. */
+  nganhId?: number
+  /** ID lớp (ưu tiên hơn {@link lop}). Backend filter theo {@code sinhvien.lop_id}. */
+  lopId?: number
+  /** ID khóa học/niên khóa (ưu tiên hơn {@link khoaNamNhapHoc}). Backend filter theo {@code sinhvien.khoa_hoc_id}. */
+  khoaHocId?: number
+  /** ID khoa chuyên môn (ưu tiên hơn {@link khoa}). Backend filter theo {@code sinhvien.khoa_id}. */
+  khoaId?: number
+
   page?: number
   size?: number
   sortDirection?: number

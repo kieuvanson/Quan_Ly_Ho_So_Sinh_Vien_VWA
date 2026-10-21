@@ -34,6 +34,34 @@ public class PhieuMuonResponse {
     /** Số lượng giấy tờ trong phiếu (cho UI hiển thị badge). */
     private int soLuongHoSo;
 
+    /** Tên lớp hành chính của sinh viên (lấy từ sinhvien.lop.tenLop). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String tenLop;
+
+    /** Số điện thoại sinh viên. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String sdt;
+
+    /** Ngày sinh sinh viên (format yyyy-MM-dd). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String ngaySinh;
+
+    /** Giới tính sinh viên. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String gioiTinh;
+
+    /** Tên ngành học của sinh viên. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String tenNganh;
+
+    /** Tên khoa (đơn vị đào tạo) của sinh viên. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String tenKhoa;
+
+    /** Niên khóa / khóa năm học (VD: "2023–2024"). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String khoaNamHoc;
+
     public PhieuMuonResponse() {}
 
     public String getMaPhieu() { return maPhieu; }
@@ -80,4 +108,25 @@ public class PhieuMuonResponse {
 
     public int getSoLuongHoSo() { return soLuongHoSo; }
     public void setSoLuongHoSo(int soLuongHoSo) { this.soLuongHoSo = soLuongHoSo; }
+
+    public String getTenLop() { return tenLop; }
+    public void setTenLop(String tenLop) { this.tenLop = tenLop; }
+
+    public String getSdt() { return sdt; }
+    public void setSdt(String sdt) { this.sdt = sdt; }
+
+    public String getNgaySinh() { return ngaySinh; }
+    public void setNgaySinh(String ngaySinh) { this.ngaySinh = ngaySinh; }
+
+    public String getGioiTinh() { return gioiTinh; }
+    public void setGioiTinh(String gioiTinh) { this.gioiTinh = gioiTinh; }
+
+    public String getTenNganh() { return tenNganh; }
+    public void setTenNganh(String tenNganh) { this.tenNganh = tenNganh; }
+
+    public String getTenKhoa() { return tenKhoa; }
+    public void setTenKhoa(String tenKhoa) { this.tenKhoa = tenKhoa; }
+
+    public String getKhoaNamHoc() { return khoaNamHoc; }
+    public void setKhoaNamHoc(String khoaNamHoc) { this.khoaNamHoc = khoaNamHoc; }
 }

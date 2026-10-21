@@ -1,0 +1,755 @@
+package vn.vwa.edurecords.service;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import vn.vwa.edurecords.dto.response.ImportPreviewResult;
+import vn.vwa.edurecords.dto.response.ImportPreviewResult.DanhMucInfo;
+import vn.vwa.edurecords.dto.response.ImportPreviewResult.ImportRowPreview;
+import vn.vwa.edurecords.dto.response.ImportPreviewResult.RowStatus;
+import vn.vwa.edurecords.entity.Khoa;
+import vn.vwa.edurecords.entity.KhoaHoc;
+import vn.vwa.edurecords.entity.Lop;
+import vn.vwa.edurecords.entity.Nganh;
+import vn.vwa.edurecords.entity.SinhVien;
+import vn.vwa.edurecords.entity.enums.TrangThaiHocVu;
+import vn.vwa.edurecords.repository.KhoaHocRepository;
+import vn.vwa.edurecords.repository.KhoaRepository;
+import vn.vwa.edurecords.repository.LopRepository;
+import vn.vwa.edurecords.repository.NganhRepository;
+import vn.vwa.edurecords.repository.SinhVienRepository;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.poi.ss.usermodel.*;
+
+/**
+ * Service đọc &amp; import Excel sinh viên theo luồng 2 bước:
+ * <ol>
+ *   <li>{@link #preview(MultipartFile)} — kiểm tra &amp; xem trước, CHƯA ghi.</li>
+ *   <li>{@link #confirmImport(List)} — ghi các MSSV đã xác nhận.</li>
+ * </ol>
+ *
+ * <h3>Quy tắc an toàn</h3>
+ * <ul>
+ *   <li>KHÔNG tự tạo danh mục (Khoa/Ngành/Lớp/Khóa học). Nếu không tìm thấy
+ *       → báo lỗi dòng cụ thể.</li>
+ *   <li>Chỉ thêm mới. MSSV đã tồn tại → báo trùng, không ghi đè.</li>
+ *   <li>Preview parse Excel → trả kết quả để frontend hiển thị.
+ *       Confirm ghi thực sự vào DB.</li>
+ *   <li>Transaction trên confirm, không trên preview.</li>
+ * </ul>
+ *
+ * <h3>Đối chiếu danh mục</h3>
+ * Excel chứa TÊN (text). Service tra theo thứ tự:
+ * <ol>
+ *   <li>Khoa: theo {@code tenKhoa} (ignore case).</li>
+ *   <li>KhoaHoc: theo {@code tenKhoaHoc} (ignore case).</li>
+ *   <li>Nganh: theo {@code tenNganh} — sau V6 ngành độc lập, không cần khoa.</li>
+ *   <li>Lop: theo {@code (tenLop, nganh.id, khoaHoc.id)} — cần đủ 3 để
+ *       disambiguate khi cùng tên lớp ở hai ngành/khóa.</li>
+ * </ol>
+ */
+@Service
+public class SinhVienImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(SinhVienImportService.class);
+
+    /** Số dòng tối đa trả về trong preview. */
+    private static final int MAX_PREVIEW_ROWS = 500;
+
+    /** Cache parsed data giữa preview và confirm.
+     * Key = MSSV, Value = parsed SinhVien entity. */
+    private final Map<String, SinhVien> importCache = new ConcurrentHashMap<>();
+
+    private final KhoaRepository khoaRepository;
+    private final NganhRepository nganhRepository;
+    private final KhoaHocRepository khoaHocRepository;
+    private final LopRepository lopRepository;
+    private final SinhVienRepository sinhVienRepository;
+
+    public SinhVienImportService(
+            KhoaRepository khoaRepository,
+            NganhRepository nganhRepository,
+            KhoaHocRepository khoaHocRepository,
+            LopRepository lopRepository,
+            SinhVienRepository sinhVienRepository) {
+        this.khoaRepository = khoaRepository;
+        this.nganhRepository = nganhRepository;
+        this.khoaHocRepository = khoaHocRepository;
+        this.lopRepository = lopRepository;
+        this.sinhVienRepository = sinhVienRepository;
+    }
+
+    // ================================================================
+    // BƯỚC 1: PREVIEW
+    // ================================================================
+
+    /**
+     * Đọc file Excel, parse từng dòng và kiểm tra đầy đủ.
+     * KHÔNG ghi vào database. Kết quả trả về cho frontend hiển thị preview.
+     *
+     * <h3>Fail-fast mode (sau V7)</h3>
+     * <p>Khi gặp dòng lỗi đầu tiên (status != VALID), dừng quét ngay và trả về
+     * {@link ImportPreviewResult#failFastResult}. Frontend hiển thị dòng lỗi
+     * và yêu cầu user sửa file Excel trước khi upload lại.</p>
+     *
+     * <p>Trước đây (V6 và cũ hơn) hệ thống quét hết file rồi trả tất cả lỗi.
+     * Hành vi này gây nhầm lẫn vì user phải đọc qua hàng chục dòng lỗi trong
+     * khi chỉ cần sửa 1 dòng trong file.</p>
+     *
+     * @param file File Excel (.xlsx / .xls) do người dùng upload.
+     * @return Kết quả preview gồm trạng thái + lỗi từng dòng (hoặc firstError nếu fail-fast).
+     */
+    @Transactional(readOnly = true)
+    public ImportPreviewResult preview(org.springframework.web.multipart.MultipartFile file) {
+        importCache.clear();
+
+        List<ImportRowPreview> rowPreviews = new ArrayList<>();
+        Set<String> seenMssvInFile = new HashSet<>();
+        Set<String> seenCccdInFile = new HashSet<>();
+
+        int validRows = 0;
+        int processedRows = 0;
+
+        try (InputStream is = file.getInputStream();
+             Workbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(is)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) {
+                return new ImportPreviewResult(0, 0, 0, 0, Collections.emptyList(), 0, 0);
+            }
+
+            int startDataRowIdx = detectDataStartRow(sheet);
+            int physicalRows = workbook.getSheetAt(0).getPhysicalNumberOfRows();
+
+            for (int r = startDataRowIdx; r < physicalRows && processedRows < MAX_PREVIEW_ROWS; r++) {
+                Row row = sheet.getRow(r);
+                if (row == null || isRowEmpty(row)) continue;
+
+                int excelRow = r + 1; // 1-based
+                processedRows++;
+
+                ImportRowPreview rowPreview = parseAndValidateRow(
+                        row, excelRow, seenMssvInFile, seenCccdInFile);
+
+                // ===== FAIL-FAST: dừng quét khi gặp dòng lỗi đầu tiên =====
+                // Lý do: người dùng chỉ cần sửa 1 dòng, không cần đọc cả
+                // danh sách lỗi. Frontend sẽ highlight dòng lỗi và yêu cầu
+                // upload lại file sau khi sửa.
+                if (rowPreview.getStatus() != RowStatus.VALID) {
+                    String summary = String.format(
+                            "Phát hiện lỗi ở dòng %d (MSSV: %s). "
+                                    + "Vui lòng sửa file Excel và upload lại. "
+                                    + "Không có dòng nào được ghi vào database.",
+                            excelRow,
+                            rowPreview.getMssv() != null ? rowPreview.getMssv() : "(trống)");
+                    log.warn("Fail-fast import tại dòng {}: {}", excelRow, rowPreview.getErrors());
+                    return ImportPreviewResult.failFastResult(
+                            processedRows, validRows, rowPreview, summary);
+                }
+
+                // Dòng hợp lệ → cache để confirm dùng
+                validRows++;
+                rowPreviews.add(rowPreview);
+                importCache.put(rowPreview.getMssv(), buildSinhVienFromPreview(rowPreview));
+            }
+
+        } catch (IOException e) {
+            log.error("Không đọc được file Excel preview", e);
+            throw new RuntimeException("Không đọc được file Excel. Hãy đảm bảo file đúng định dạng.", e);
+        }
+
+        // Tất cả dòng đều VALID → cho phép confirm
+        return new ImportPreviewResult(
+                processedRows,
+                validRows,
+                0,                  // invalidRows = 0 (fail-fast đã dừng sớm)
+                0,                  // duplicateInFile = 0
+                rowPreviews,
+                validRows,          // newCount = validRows
+                0                   // duplicateCount = 0
+        );
+    }
+
+    /**
+     * Parse một dòng Excel và kiểm tra đầy đủ.
+     * KHÔNG lookup danh mục bằng findOrCreate — chỉ findRequired.
+     */
+    private ImportRowPreview parseAndValidateRow(
+            Row row, int excelRow,
+            Set<String> seenMssvInFile, Set<String> seenCccdInFile) {
+
+        List<String> errors = new ArrayList<>();
+
+        // --- 1. Đọc các trường cơ bản ---
+        String mssv = trimToNull(readCellAsString(row.getCell(0)));
+        String hoTen = trimToNull(readCellAsString(row.getCell(1)));
+
+        // Ngày sinh
+        LocalDateTime ngaySinh = null;
+        Cell ngaySinhCell = row.getCell(2);
+        if (ngaySinhCell != null) {
+            ngaySinh = parseNgaySinh(ngaySinhCell);
+        }
+
+        String gioiTinh = trimToNull(readCellAsString(row.getCell(3)));
+        String cccd = trimToNull(readCellAsString(row.getCell(4)));
+        String sdt = trimToNull(readCellAsString(row.getCell(5)));
+        String email = trimToNull(readCellAsString(row.getCell(6)));
+        String queQuan = trimToNull(readCellAsString(row.getCell(7)));
+        String heDaoTao = trimToNull(readCellAsString(row.getCell(12)));
+
+        // Cột danh mục (đọc text, chưa resolve)
+        // Thứ tự trong file Excel: 8=Tên khoa, 9=Tên ngành, 10=Tên lớp, 11=Tên khóa học
+        String tenKhoa    = trimToNull(readCellAsString(row.getCell(8)));
+        String tenNganh   = trimToNull(readCellAsString(row.getCell(9)));
+        String tenLop     = trimToNull(readCellAsString(row.getCell(10)));
+        String tenKhoaHoc = trimToNull(readCellAsString(row.getCell(11)));
+
+        // Trạng thái học vụ
+        TrangThaiHocVu trangThaiHocVu = TrangThaiHocVu.ĐANG_HỌC;
+        String trangThaiStr = trimToNull(readCellAsString(row.getCell(13)));
+        if (trangThaiStr != null) {
+            try {
+                trangThaiHocVu = TrangThaiHocVu.fromDisplayName(trangThaiStr);
+            } catch (IllegalArgumentException ignored) {
+                // Không hợp lệ → dùng mặc định
+            }
+        }
+
+        // --- 2. Validate bắt buộc ---
+        if (mssv == null || mssv.isBlank()) {
+            errors.add("Thiếu MSSV.");
+        }
+        if (hoTen == null || hoTen.isBlank()) {
+            errors.add("Thiếu họ tên.");
+        }
+
+        // --- 3. Kiểm tra trùng trong file ---
+        if (mssv != null && !mssv.isBlank()) {
+            if (!seenMssvInFile.add(mssv)) {
+                errors.add("MSSV '" + mssv + "' bị trùng trong cùng file Excel.");
+            }
+        }
+        if (cccd != null && !cccd.isBlank()) {
+            if (!seenCccdInFile.add(cccd)) {
+                errors.add("CCCD '" + cccd + "' bị trùng trong cùng file Excel.");
+            }
+        }
+
+        // --- 4. Validate danh mục (chỉ lookup, không tạo) ---
+        DanhMucLookupResult lookup = lookupDanhMuc(tenKhoa, tenNganh, tenLop, tenKhoaHoc);
+
+        if (lookup.hasErrors()) {
+            errors.addAll(lookup.errors);
+        }
+
+        // --- 5. Kiểm tra trùng MSSV trong DB ---
+        if (mssv != null && !mssv.isBlank() && errors.isEmpty()) {
+            if (sinhVienRepository.existsById(mssv)) {
+                errors.add("MSSV '" + mssv + "' đã tồn tại trong hệ thống. Không thể tạo trùng.");
+            }
+        }
+
+        // --- 6. Kiểm tra CCCD trùng trong DB ---
+        if (cccd != null && !cccd.isBlank() && errors.isEmpty()) {
+            if (sinhVienRepository.existsByCccdAndMssvNot(cccd, mssv)) {
+                errors.add("CCCD '" + cccd + "' đã thuộc sinh viên khác trong hệ thống.");
+            }
+        }
+
+        // --- 7. Xác định trạng thái ---
+        RowStatus status;
+        if (!errors.isEmpty()) {
+            if (mssv != null && seenMssvInFile.contains(mssv)
+                    && errors.stream().anyMatch(e -> e.contains("trùng trong cùng file"))) {
+                status = RowStatus.DUPLICATE_IN_FILE;
+            } else if (errors.stream().anyMatch(e -> e.contains("đã tồn tại") || e.contains("đã thuộc"))) {
+                status = RowStatus.DUPLICATE;
+            } else {
+                status = RowStatus.INVALID;
+            }
+        } else {
+            status = RowStatus.VALID;
+        }
+
+        // --- 8. Build DanhMucInfo ---
+        DanhMucInfo dmInfo = null;
+        if (lookup.khoa != null) {
+            dmInfo = new DanhMucInfo(
+                    lookup.khoa.getTenKhoa(), String.valueOf(lookup.khoa.getId()),
+                    lookup.nganh != null ? lookup.nganh.getTenNganh() : null,
+                    lookup.nganh != null ? String.valueOf(lookup.nganh.getId()) : null,
+                    lookup.lop != null ? lookup.lop.getTenLop() : null,
+                    lookup.lop != null ? String.valueOf(lookup.lop.getId()) : null,
+                    lookup.khoaHoc != null ? lookup.khoaHoc.getTenKhoaHoc() : null,
+                    lookup.khoaHoc != null ? String.valueOf(lookup.khoaHoc.getId()) : null
+            );
+        }
+
+        // --- 9. Build ImportRowPreview với đầy đủ thông tin cá nhân ---
+        ImportRowPreview preview = new ImportRowPreview(excelRow, mssv, hoTen, status, errors, dmInfo);
+        // Lưu các trường cá nhân để sử dụng khi confirm
+        preview.setNgaySinh(ngaySinh != null ? ngaySinh.toLocalDate().toString() : null);
+        preview.setGioiTinh(gioiTinh);
+        preview.setCccd(cccd);
+        preview.setSdt(sdt);
+        preview.setEmail(email);
+        preview.setQueQuan(queQuan);
+        preview.setHeDaoTao(heDaoTao);
+        return preview;
+    }
+
+    // ================================================================
+    // BƯỚC 2: CONFIRM
+    // ================================================================
+
+    /**
+     * Ghi các sinh viên đã xác nhận vào database.
+     * Đây là bước DUY NHẤT ghi dữ liệu.
+     *
+     * <p>Backend kiểm tra lại từng MSSV trước khi ghi:
+     * <ul>
+     *   <li>MSSV đã bị xóa khỏi cache (do timeout) → báo lỗi.</li>
+     *   <li>MSSV đã tồn tại trong DB → báo lỗi (an toàn cho dữ liệu cũ).</li>
+     *   <li>Danh mục không tìm thấy → báo lỗi.</li>
+     * </ul>
+     *
+     * @param mssvList Danh sách MSSV cần ghi (đã xác nhận từ preview).
+     * @return Kết quả import (successCount, failureCount, errors...).
+     */
+    @Transactional
+    public SinhVienService.ImportResult confirmImport(List<String> mssvList) {
+        // ===== FAIL-FAST CHECK (sau V7) =====
+        // Đảm bảo rằng user đã preview thành công (không fail-fast) trước khi confirm.
+        // Nếu importCache rỗng → có thể:
+        //   1. User chưa gọi /preview (gọi thẳng /confirm)
+        //   2. /preview trả về fail-fast (không cache gì cả vì dừng giữa chừng)
+        // Trong cả 2 trường hợp → từ chối, yêu cầu preview lại.
+        if (importCache.isEmpty()) {
+            log.warn("confirmImport được gọi nhưng importCache rỗng. Có thể user gọi thẳng /confirm "
+                    + "hoặc /preview trả về fail-fast trước đó.");
+            return new SinhVienService.ImportResult(
+                    0,
+                    mssvList.size(),
+                    0,
+                    0,
+                    mssvList.stream()
+                            .map(mssv -> new SinhVienExcelService.RowError(0,
+                                    "MSSV '" + mssv + "': Bạn cần preview file trước khi confirm. "
+                                            + "Có thể file Excel có lỗi ở dòng nào đó. "
+                                            + "Vui lòng upload lại file đã sửa."))
+                            .toList()
+            );
+        }
+
+        // Kiểm tra tất cả MSSV trong mssvList đều có trong cache
+        // (nếu user sửa MSSV trong payload mà không qua preview → từ chối)
+        List<String> missingInCache = mssvList.stream()
+                .filter(mssv -> !importCache.containsKey(mssv))
+                .toList();
+        if (!missingInCache.isEmpty()) {
+            log.warn("confirmImport: {} MSSV không có trong cache: {}",
+                    missingInCache.size(), missingInCache);
+            List<SinhVienExcelService.RowError> errs = missingInCache.stream()
+                    .map(mssv -> new SinhVienExcelService.RowError(0,
+                            "MSSV '" + mssv + "' không khớp với kết quả preview. "
+                                    + "Vui lòng thực hiện lại từ bước kiểm tra."))
+                    .toList();
+            return new SinhVienService.ImportResult(0, errs.size(), 0, 0, errs);
+        }
+
+        List<SinhVien> toInsert = new ArrayList<>();
+        List<SinhVienExcelService.RowError> errors = new ArrayList<>();
+
+        for (String mssv : mssvList) {
+            SinhVien sv = importCache.get(mssv);
+            if (sv == null) {
+                errors.add(new SinhVienExcelService.RowError(0,
+                        "MSSV '" + mssv + "' không có trong danh sách đã preview. Vui lòng thực hiện lại từ bước kiểm tra."));
+                continue;
+            }
+
+            // Kiểm tra lại lần cuối: MSSV đã tồn tại chưa?
+            if (sinhVienRepository.existsById(mssv)) {
+                errors.add(new SinhVienExcelService.RowError(0,
+                        "MSSV '" + mssv + "' đã tồn tại trong hệ thống. Không ghi đè dữ liệu cũ."));
+                continue;
+            }
+
+            // Kiểm tra lại CCCD
+            if (sv.getCccd() != null && !sv.getCccd().isBlank()) {
+                if (sinhVienRepository.existsByCccdAndMssvNot(sv.getCccd(), mssv)) {
+                    errors.add(new SinhVienExcelService.RowError(0,
+                            "CCCD '" + sv.getCccd() + "' của MSSV '" + mssv
+                                    + "' đã thuộc sinh viên khác."));
+                    continue;
+                }
+            }
+
+            // Kiểm tra lại danh mục còn tồn tại không (phòng trường hợp bị xóa giữa preview và confirm)
+            DanhMucLookupResult lookup = lookupDanhMucRequired(sv);
+            if (lookup.hasErrors()) {
+                errors.addAll(lookup.errors.stream()
+                        .map(e -> new SinhVienExcelService.RowError(0, "MSSV '" + mssv + "': " + e))
+                        .toList());
+                continue;
+            }
+
+            sv.setNgayTao(LocalDateTime.now());
+            toInsert.add(sv);
+        }
+
+        if (!toInsert.isEmpty()) {
+            sinhVienRepository.saveAll(toInsert);
+        }
+
+        // Xóa cache sau khi ghi xong
+        for (String mssv : mssvList) {
+            importCache.remove(mssv);
+        }
+
+        return new SinhVienService.ImportResult(
+                toInsert.size(),
+                errors.size(),
+                toInsert.size(),
+                0,
+                errors
+        );
+    }
+
+    // ================================================================
+    // DANH MỤC: LOOKUP (KHÔNG TẠO MỚI)
+    // ================================================================
+
+    /**
+     * Lookup danh mục theo tên. Nếu không tìm thấy → báo lỗi, KHÔNG tạo mới.
+     */
+    private DanhMucLookupResult lookupDanhMuc(
+            String tenKhoa, String tenNganh, String tenLop, String tenKhoaHoc) {
+
+        DanhMucLookupResult result = new DanhMucLookupResult();
+
+        // 1. Lookup Khoa
+        if (tenKhoa != null) {
+            khoaRepository.findByTenKhoaIgnoreCase(tenKhoa)
+                    .ifPresentOrElse(
+                            k -> result.khoa = k,
+                            () -> result.errors.add("Khoa '" + tenKhoa + "' không tồn tại trong hệ thống.")
+                    );
+        } else {
+            result.errors.add("Thiếu thông tin Khoa.");
+        }
+
+        // 2. Lookup KhoaHoc
+        if (tenKhoaHoc != null) {
+            khoaHocRepository.findByTenKhoaHocIgnoreCase(tenKhoaHoc)
+                    .ifPresentOrElse(
+                            kh -> result.khoaHoc = kh,
+                            () -> result.errors.add("Khóa học '" + tenKhoaHoc + "' không tồn tại trong hệ thống.")
+                    );
+        } else {
+            result.errors.add("Thiếu thông tin Khóa nhập học.");
+        }
+
+        // 3. Lookup Nganh (sau V6: ngành độc lập, không cần khoa)
+        if (tenNganh != null) {
+            // Thử tìm theo tên ngành trước
+            nganhRepository.findAll().stream()
+                    .filter(n -> n.getTenNganh() != null
+                            && n.getTenNganh().equalsIgnoreCase(tenNganh.trim()))
+                    .findFirst()
+                    .ifPresentOrElse(
+                            n -> result.nganh = n,
+                            () -> result.errors.add("Ngành '" + tenNganh + "' không tồn tại trong hệ thống.")
+                    );
+        } else {
+            result.errors.add("Thiếu thông tin Ngành.");
+        }
+
+        // 4. Lookup Lop (cần nganh + khoaHoc để disambiguate)
+        if (tenLop != null && result.nganh != null && result.khoaHoc != null) {
+            lopRepository.findFirstByTenLopIgnoreCaseAndNganh_IdAndKhoaHoc_Id(
+                            tenLop, result.nganh.getId(), result.khoaHoc.getId())
+                    .ifPresentOrElse(
+                            l -> result.lop = l,
+                            () -> result.errors.add("Lớp '" + tenLop + "' không tồn tại trong ngành '"
+                                    + tenNganh + "' khóa '" + tenKhoaHoc + "'.")
+                    );
+        } else if (tenLop != null) {
+            if (result.nganh == null) {
+                result.errors.add("Thiếu thông tin Ngành để tra lớp '" + tenLop + "'.");
+            }
+            if (result.khoaHoc == null) {
+                result.errors.add("Thiếu thông tin Khóa học để tra lớp '" + tenLop + "'.");
+            }
+        } else {
+            result.errors.add("Thiếu thông tin Lớp.");
+        }
+
+        return result;
+    }
+
+    /**
+     * Lookup danh mục bắt buộc từ entity SinhVien (dùng khi confirm).
+     * Yêu cầu: Khoa, Nganh, Lop, KhoaHoc đều phải resolve được.
+     */
+    private DanhMucLookupResult lookupDanhMucRequired(SinhVien sv) {
+        DanhMucLookupResult result = new DanhMucLookupResult();
+
+        if (sv.getKhoa() != null) {
+            result.khoa = khoaRepository.findById(sv.getKhoa().getId()).orElse(null);
+            if (result.khoa == null) {
+                result.errors.add("Khoa ID " + sv.getKhoa().getId() + " không tồn tại.");
+            }
+        } else {
+            result.errors.add("Thiếu thông tin Khoa.");
+        }
+
+        if (sv.getKhoaHoc() != null) {
+            result.khoaHoc = khoaHocRepository.findById(sv.getKhoaHoc().getId()).orElse(null);
+            if (result.khoaHoc == null) {
+                result.errors.add("Khóa học ID " + sv.getKhoaHoc().getId() + " không tồn tại.");
+            }
+        } else {
+            result.errors.add("Thiếu thông tin Khóa học.");
+        }
+
+        if (sv.getNganh() != null) {
+            result.nganh = nganhRepository.findById(sv.getNganh().getId()).orElse(null);
+            if (result.nganh == null) {
+                result.errors.add("Ngành ID " + sv.getNganh().getId() + " không tồn tại.");
+            }
+        } else {
+            result.errors.add("Thiếu thông tin Ngành.");
+        }
+
+        if (sv.getLop() != null) {
+            result.lop = lopRepository.findById(sv.getLop().getId()).orElse(null);
+            if (result.lop == null) {
+                result.errors.add("Lớp ID " + sv.getLop().getId() + " không tồn tại.");
+            }
+        } else {
+            result.errors.add("Thiếu thông tin Lớp.");
+        }
+
+        return result;
+    }
+
+    /**
+     * Build SinhVien entity từ ImportRowPreview (đã resolve danh mục).
+     */
+    private SinhVien buildSinhVienFromPreview(ImportRowPreview preview) {
+        SinhVien sv = new SinhVien();
+        sv.setMssv(preview.getMssv());
+        sv.setHoTen(preview.getHoTen());
+
+        // Các trường cá nhân từ preview
+        sv.setNgaySinh(parseNgaySinhString(preview.getNgaySinh()));
+        sv.setGioiTinh(preview.getGioiTinh());
+        sv.setCccd(preview.getCccd());
+        sv.setSdt(preview.getSdt());
+        sv.setEmail(preview.getEmail());
+        sv.setQueQuan(preview.getQueQuan());
+        sv.setHeDaoTao(preview.getHeDaoTao());
+        sv.setTrangThaiHocVu(TrangThaiHocVu.ĐANG_HỌC);
+
+        if (preview.getDanhMuc() != null) {
+            DanhMucInfo dm = preview.getDanhMuc();
+            if (dm.getKhoaId() != null) {
+                Khoa k = new Khoa();
+                k.setId(Integer.parseInt(dm.getKhoaId()));
+                sv.setKhoa(k);
+            }
+            if (dm.getNganhId() != null) {
+                Nganh n = new Nganh();
+                n.setId(Integer.parseInt(dm.getNganhId()));
+                sv.setNganh(n);
+            }
+            if (dm.getKhoaHocId() != null) {
+                KhoaHoc kh = new KhoaHoc();
+                kh.setId(Integer.parseInt(dm.getKhoaHocId()));
+                sv.setKhoaHoc(kh);
+            }
+            if (dm.getLopId() != null) {
+                Lop l = new Lop();
+                l.setId(Integer.parseInt(dm.getLopId()));
+                sv.setLop(l);
+            }
+        }
+
+        return sv;
+    }
+
+    // ================================================================
+    // HELPER: PARSE NGÀY SINH
+    // ================================================================
+
+    private LocalDateTime parseNgaySinh(Cell cell) {
+        if (cell == null) return null;
+        if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            return LocalDateTime.ofInstant(
+                    cell.getDateCellValue().toInstant(), ZoneId.systemDefault());
+        }
+        String s = trimToNull(readCellAsString(cell));
+        if (s == null) return null;
+        try {
+            if (s.contains("/")) {
+                String[] parts = s.split("/");
+                if (parts.length == 3) {
+                    int d = Integer.parseInt(parts[0].trim());
+                    int m = Integer.parseInt(parts[1].trim());
+                    int y = Integer.parseInt(parts[2].trim());
+                    return LocalDateTime.of(y, m, d, 0, 0);
+                }
+            }
+            return LocalDateTime.parse(s);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Parse chuỗi ngày sinh theo định dạng "yyyy-MM-dd" hoặc "yyyy/MM/dd".
+     */
+    private LocalDateTime parseNgaySinhString(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return null;
+        try {
+            // Định dạng "yyyy-MM-dd"
+            if (dateStr.contains("-")) {
+                String[] parts = dateStr.split("-");
+                if (parts.length == 3) {
+                    int y = Integer.parseInt(parts[0].trim());
+                    int m = Integer.parseInt(parts[1].trim());
+                    int d = Integer.parseInt(parts[2].trim());
+                    return LocalDateTime.of(y, m, d, 0, 0);
+                }
+            }
+            // Định dạng "yyyy/MM/dd"
+            if (dateStr.contains("/")) {
+                String[] parts = dateStr.split("/");
+                if (parts.length == 3) {
+                    int y = Integer.parseInt(parts[0].trim());
+                    int m = Integer.parseInt(parts[1].trim());
+                    int d = Integer.parseInt(parts[2].trim());
+                    return LocalDateTime.of(y, m, d, 0, 0);
+                }
+            }
+        } catch (Exception ignored) {
+            // Ignore parse errors
+        }
+        return null;
+    }
+
+    // ================================================================
+    // HELPER: EXCEL
+    // ================================================================
+
+    /**
+     * Tự nhận diện dòng bắt đầu chứa dữ liệu thực (bỏ qua header + hướng dẫn).
+     *
+     * <h4>Quy tắc (quét tối đa 5 dòng đầu)</h4>
+     * <ol>
+     *   <li>Dòng trống → bỏ qua.</li>
+     *   <li>Dòng chứa "hướng dẫn" → bỏ qua.</li>
+     *   <li>Dòng chứa từ khóa header (MSSV, Họ tên, Ngày sinh, ...) → bỏ qua.</li>
+     *   <li>Mặc định: dòng đầu tiên còn lại là dữ liệu.</li>
+     * </ol>
+     */
+    private int detectDataStartRow(Sheet sheet) {
+        Set<String> HEADER_KEYWORDS = Set.of(
+                "mssv", "mã sv", "ma sv",
+                "họ tên", "ho ten", "họ và tên", "ho va ten", "tên sinh viên",
+                "ngày sinh", "ngay sinh", "giới tính", "gioi tinh",
+                "mã loại", "ma loai", "mã loại giấy tờ", "ma loai giay to",
+                "tên giấy tờ", "ten giay to",
+                "loại dòng", "loai dong",
+                "trạng thái nộp", "trang thai nop",
+                "bản gốc", "ban goc", "bản gốc/bản sao", "ban goc/ban sao",
+                "file đính kèm", "file dinh kem",
+                "vị trí lưu kho", "vi tri luu kho",
+                "cccd", "cmnd", "sđt", "sdt", "email", "quê quán", "que quan",
+                "khoa", "ngành", "nganh", "lớp", "lop", "khóa học", "khoa hoc",
+                "hệ đào tạo", "he dao tao",
+                "trạng thái học vụ", "trang thai hoc vu",
+                "header", "tiêu đề", "tieu de"
+        );
+
+        int maxScan = Math.min(sheet.getPhysicalNumberOfRows(), 5);
+        for (int r = 0; r < maxScan; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+
+            StringBuilder allText = new StringBuilder();
+            int lastCell = row.getLastCellNum();
+            for (int c = 0; c < lastCell; c++) {
+                String v = trimToNull(readCellAsString(row.getCell(c)));
+                if (v != null) {
+                    allText.append(v.toLowerCase(Locale.ROOT)).append(' ');
+                }
+            }
+            String line = allText.toString().trim();
+            if (line.isEmpty()) continue;
+
+            if (line.contains("hướng dẫn") || line.contains("huong dan")) continue;
+            if (HEADER_KEYWORDS.stream().anyMatch(line::contains)) continue;
+
+            return r;
+        }
+        return 0;
+    }
+
+    private boolean isRowEmpty(Row row) {
+        for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
+            Cell cell = row.getCell(c);
+            if (cell != null && cell.getCellType() != CellType.BLANK) {
+                String val = readCellAsString(cell);
+                if (val != null && !val.isBlank()) return false;
+            }
+        }
+        return true;
+    }
+
+    private String readCellAsString(Cell cell) {
+        if (cell == null) return null;
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue();
+            case NUMERIC -> {
+                double v = cell.getNumericCellValue();
+                long lv = (long) v;
+                yield (v == lv) ? String.valueOf(lv) : String.valueOf(v);
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> cell.getCellFormula();
+            default -> null;
+        };
+    }
+
+    private String trimToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    // ================================================================
+    // INNER CLASS
+    // ================================================================
+
+    /** Kết quả lookup danh mục. */
+    private static class DanhMucLookupResult {
+        Khoa khoa;
+        Nganh nganh;
+        Lop lop;
+        KhoaHoc khoaHoc;
+        List<String> errors = new ArrayList<>();
+
+        boolean hasErrors() { return !errors.isEmpty(); }
+    }
+}

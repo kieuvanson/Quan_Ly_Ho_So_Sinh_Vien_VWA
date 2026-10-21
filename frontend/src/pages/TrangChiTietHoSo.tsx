@@ -7,6 +7,7 @@ import {
   ArrowRightLeft,
   FileX,
   Printer,
+  Eye,
   FileSearch,
   AlertCircle,
   Pencil,
@@ -21,24 +22,12 @@ import {
 } from 'lucide-react'
 import { sinhVienApi } from '../api/sinhVien'
 import { hoSoGiayToApi, loaiGiayToApi } from '../api/hoSoGiayTo'
-import { phieuMuonApi, lookupApi } from '../api/phieuMuon'
+import { phieuMuonApi } from '../api/phieuMuon'
 import { authStore } from '../lib/authStore'
 import { apiClient } from '../api/client'
 import type { SinhVien, HoSoGiayTo, LoaiGiayTo, PhieuMuon } from '../api/types'
 import { Button, Modal, FormInput, FormSelect, Toast } from '../components/ui'
 import './TrangChiTietHoSo.css'
-
-/** Hạn trả mặc định = ngày mượn + 7 ngày. */
-function defaultHanTra(ngayMuon: string): string {
-  if (!ngayMuon) return ''
-  try {
-    const d = new Date(ngayMuon)
-    d.setDate(d.getDate() + 7)
-    return d.toISOString().split('T')[0]
-  } catch {
-    return ''
-  }
-}
 
 type TabType = 'thong-tin' | 'giay-to'
 
@@ -116,6 +105,8 @@ export function TrangChiTietHoSo() {
   } | null>(null)
   /** Loại giấy tờ CHƯA có trong hồ sơ SV (để user chọn khi bổ sung). */
   const [availableLoaiGiayTo, setAvailableLoaiGiayTo] = useState<LoaiGiayTo[]>([])
+  /** Loading khi mở modal bổ sung (fetch dữ liệu nếu chưa load). */
+  const [isLoadingBoSung, setIsLoadingBoSung] = useState(false)
   const [boSungForm, setBoSungForm] = useState({
     maLoai: '',
     trangThaiNop: 'Đã nộp',
@@ -159,20 +150,89 @@ export function TrangChiTietHoSo() {
   }, [])
 
   // ============================================================
-  // Modal Mượn / trả hồ sơ
+  // Modal Chi tiết phiếu mượn / trả
   // ============================================================
-  const [isMuonTraModalOpen, setIsMuonTraModalOpen] = useState(false)
-  const [isSubmittingMuonTra, setIsSubmittingMuonTra] = useState(false)
-  /** Hồ sơ giấy tờ load khi mở modal Mượn/Trả. */
-  const [muonTraHoSoList, setMuonTraHoSoList] = useState<HoSoGiayTo[]>([])
-  const [isLoadingMuonTraHoSo, setIsLoadingMuonTraHoSo] = useState(false)
-  const [selectedMaHoSo, setSelectedMaHoSo] = useState<string[]>([])
-  const [muonTraForm, setMuonTraForm] = useState({
-    loaiPhieu: 'Mượn tạm thời',
-    ngayMuon: new Date().toISOString().split('T')[0],
-    ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
-    lyDo: '',
-  })
+  const [isChiTietPhieuModalOpen, setIsChiTietPhieuModalOpen] = useState(false)
+  const [chiTietPhieu, setChiTietPhieu] = useState<PhieuMuon | null>(null)
+  const [isLoadingChiTietPhieu, setIsLoadingChiTietPhieu] = useState(false)
+  const [isTraPhieu, setIsTraPhieu] = useState(false)
+
+  /** Mở modal chi tiết phiếu — fetch chi tiết từ API. */
+  const handleXemChiTietPhieu = useCallback(async (pm: PhieuMuon) => {
+    setChiTietPhieu(pm) // Hiển thị ngay dữ liệu có sẵn từ list
+    setIsChiTietPhieuModalOpen(true)
+    setIsTraPhieu(false)
+
+    // Fetch chi tiết đầy đủ từ API để đảm bảo dữ liệu mới nhất
+    setIsLoadingChiTietPhieu(true)
+    try {
+      const res = await phieuMuonApi.getByMaPhieu(pm.maPhieu)
+      if (res.success && res.data) {
+        setChiTietPhieu(res.data)
+        // Kiểm tra trạng thái có cho phép trả không
+        const trangThaiChoPhepTra = ['Đang mượn', 'Đã duyệt']
+        setIsTraPhieu(trangThaiChoPhepTra.includes(res.data.trangThai))
+      }
+    } catch {
+      // Giữ nguyên dữ liệu từ list nếu API lỗi
+    } finally {
+      setIsLoadingChiTietPhieu(false)
+    }
+  }, [])
+
+  function handleCloseChiTietPhieuModal() {
+    setIsChiTietPhieuModalOpen(false)
+    setChiTietPhieu(null)
+    setIsTraPhieu(false)
+  }
+
+  /** Điều hướng đến trang quản lý phiếu với mã phiếu đã chọn. */
+  function handleMoTrangQuanLyPhieu() {
+    if (!chiTietPhieu) return
+    navigate(`/muon-tra-ho-so?maPhieu=${encodeURIComponent(chiTietPhieu.maPhieu)}`)
+  }
+
+  /** Trả hồ sơ — gọi API và cập nhật UI. */
+  const [isSubmittingTra, setIsSubmittingTra] = useState(false)
+
+  const handleTraPhieu = useCallback(async () => {
+    if (!chiTietPhieu || isSubmittingTra) return
+
+    if (!confirm(`Xác nhận trả hồ sơ cho phiếu ${chiTietPhieu.maPhieu}?`)) {
+      return
+    }
+
+    setIsSubmittingTra(true)
+    try {
+      const res = await phieuMuonApi.tra(chiTietPhieu.maPhieu, {})
+      if (res.success && res.data) {
+        showToast('Trả hồ sơ thành công.', 'success')
+        // Cập nhật lại chi tiết phiếu trong modal
+        setChiTietPhieu(res.data)
+        setIsTraPhieu(false) // Không cho trả lần nữa
+
+        // Cập nhật lại danh sách phiếu trong card
+        if (mssv) {
+          fetchActivePhieuMuon(mssv)
+        }
+      } else {
+        showToast(res.message || 'Trả hồ sơ thất bại.', 'error')
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ.', 'error')
+    } finally {
+      setIsSubmittingTra(false)
+    }
+  }, [chiTietPhieu, isSubmittingTra, mssv, fetchActivePhieuMuon])
+
+  // ============================================================
+  // Modal Mượn hồ sơ — điều hướng đến trang mượn/trả
+  // ============================================================
+  function handleMuonHoSo() {
+    if (!mssv) return
+    navigate(`/muon-tra-ho-so?mssv=${encodeURIComponent(mssv)}`)
+  }
 
   // Fetch student data
   useEffect(() => {
@@ -278,24 +338,58 @@ export function TrangChiTietHoSo() {
     setToast({ message, type })
   }
 
-  /** Mở modal Bổ sung giấy tờ — load loại giấy tờ chưa có trong hồ sơ SV. */
-  function handleOpenBoSungModal() {
-    if (!sinhVien) return
+  /** Mở modal Bổ sung giấy tờ — fetch dữ liệu nếu chưa load từ tab. */
+  async function handleOpenBoSungModal() {
+    if (!sinhVien || !mssv) return
 
-    // Lấy loại giấy tờ CHƯA có trong giayToList
-    const existingMaLoai = new Set(giayToList.map((g) => g.maLoai))
-    const available = loaiGiayToList.filter(
-      (lgt) => lgt.dangSuDung && !existingMaLoai.has(lgt.maLoai)
-    )
-    setAvailableLoaiGiayTo(available)
-    setBoSungForm({
-      maLoai: available[0]?.maLoai || '',
-      trangThaiNop: 'Đã nộp',
-      banGocBanSao: 'Bản sao',
-      viTriLuuKho: '',
-      ghiChu: '',
-    })
+    setIsLoadingBoSung(true)
     setIsBoSungModalOpen(true)
+
+    try {
+      // Fetch song song cả danh sách hồ sơ SV và danh mục loại giấy tờ
+      // nếu chưa load (user mở modal từ tab "Thông tin cá nhân" chưa load giấy tờ)
+      const [gtRes, lgtRes] = await Promise.all([
+        giayToList.length === 0 ? hoSoGiayToApi.getByMssv(mssv) : Promise.resolve({ success: true, data: giayToList }),
+        loaiGiayToList.length === 0 ? loaiGiayToApi.getAll() : Promise.resolve({ success: true, data: loaiGiayToList }),
+      ])
+
+      const currentGtList: HoSoGiayTo[] = gtRes.success && Array.isArray(gtRes.data) ? gtRes.data : giayToList
+      const currentLgtList: LoaiGiayTo[] = lgtRes.success && Array.isArray(lgtRes.data) ? lgtRes.data : loaiGiayToList
+
+      // Cập nhật state nếu cần
+      if (gtRes.success && Array.isArray(gtRes.data)) {
+        setGiayToList(gtRes.data)
+      }
+      if (lgtRes.success && Array.isArray(lgtRes.data)) {
+        setLoaiGiayToList(lgtRes.data)
+      }
+
+      // Lọc loại giấy tờ CHƯA có trong hồ sơ SV
+      const existingMaLoai = new Set(currentGtList.map((g) => g.maLoai))
+      const available = currentLgtList.filter(
+        (lgt) => lgt.dangSuDung && !existingMaLoai.has(lgt.maLoai)
+      )
+      setAvailableLoaiGiayTo(available)
+      setBoSungForm({
+        maLoai: available[0]?.maLoai || '',
+        trangThaiNop: 'Đã nộp',
+        banGocBanSao: 'Bản sao',
+        viTriLuuKho: '',
+        ghiChu: '',
+      })
+    } catch {
+      showToast('Lỗi khi tải dữ liệu bổ sung giấy tờ.', 'error')
+      setAvailableLoaiGiayTo([])
+      setBoSungForm({
+        maLoai: '',
+        trangThaiNop: 'Đã nộp',
+        banGocBanSao: 'Bản sao',
+        viTriLuuKho: '',
+        ghiChu: '',
+      })
+    } finally {
+      setIsLoadingBoSung(false)
+    }
   }
 
   function handleCloseBoSungModal() {
@@ -324,8 +418,19 @@ export function TrangChiTietHoSo() {
           'success'
         )
         setIsBoSungModalOpen(false)
-        // Refresh danh sách giấy tờ
-        setGiayToList([])
+        // Cập nhật danh sách giấy tờ: thêm bản ghi mới
+        if (res.data) {
+          setGiayToList((prev) => [...prev, res.data])
+        } else {
+          // Fallback: reset để effect re-fetch
+          setGiayToList([])
+        }
+        // Xóa loại vừa bổ sung khỏi danh sách khả dụng
+        if (boSungForm.maLoai) {
+          setAvailableLoaiGiayTo((prev) => prev.filter((l) => l.maLoai !== boSungForm.maLoai))
+          // Reset form
+          setBoSungForm((prev) => ({ ...prev, maLoai: availableLoaiGiayTo[0]?.maLoai || '' }))
+        }
       } else {
         showToast(res.message || 'Bổ sung giấy tờ thất bại', 'error')
       }
@@ -377,81 +482,6 @@ export function TrangChiTietHoSo() {
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } }
       showToast(e.response?.data?.message || 'Xóa thất bại', 'error')
-    }
-  }
-
-  /** Mở modal Mượn / trả hồ sơ. Auto-load danh sách hồ sơ giấy tờ của SV đang xem. */
-  const handleMuonTra = useCallback(async () => {
-    if (!sinhVien || !mssv) return
-    setIsMuonTraModalOpen(true)
-    setIsLoadingMuonTraHoSo(true)
-    setSelectedMaHoSo([])
-    setMuonTraForm({
-      loaiPhieu: 'Mượn tạm thời',
-      ngayMuon: new Date().toISOString().split('T')[0],
-      ngayTraDuKien: defaultHanTra(new Date().toISOString().split('T')[0]),
-      lyDo: '',
-    })
-    try {
-      const list = await lookupApi.getHoSoGiayTo(mssv)
-      setMuonTraHoSoList(list)
-    } catch {
-      setMuonTraHoSoList([])
-    } finally {
-      setIsLoadingMuonTraHoSo(false)
-    }
-  }, [sinhVien, mssv])
-
-  function handleCloseMuonTraModal() {
-    setIsMuonTraModalOpen(false)
-    setSelectedMaHoSo([])
-    setMuonTraForm((prev) => ({ ...prev, lyDo: '' }))
-  }
-
-  /** Submit tạo phiếu mượn / rút — gọi POST /api/phieu-muon. */
-  async function handleSubmitMuonTra() {
-    if (!sinhVien || !mssv) return
-    if (selectedMaHoSo.length === 0) {
-      showToast('Vui lòng chọn ít nhất 1 hồ sơ giấy tờ', 'error')
-      return
-    }
-    if (!muonTraForm.lyDo.trim()) {
-      showToast('Vui lòng nhập lý do mượn / rút', 'error')
-      return
-    }
-    if (muonTraForm.loaiPhieu === 'Mượn tạm thời' && !muonTraForm.ngayTraDuKien) {
-      showToast('Phiếu mượn tạm thời phải có hạn trả', 'error')
-      return
-    }
-
-    setIsSubmittingMuonTra(true)
-    try {
-      const res = await phieuMuonApi.create({
-        mssv,
-        loaiPhieu: muonTraForm.loaiPhieu,
-        ngayMuon: muonTraForm.ngayMuon,
-        ngayTraDuKien:
-          muonTraForm.loaiPhieu === 'Mượn tạm thời' ? muonTraForm.ngayTraDuKien : undefined,
-        lyDo: muonTraForm.lyDo.trim(),
-        danhSachMaHoSo: selectedMaHoSo,
-      })
-      if (res.success) {
-        showToast(
-          `Tạo phiếu thành công. Mã phiếu: ${res.data?.maPhieu || ''}`,
-          'success'
-        )
-        handleCloseMuonTraModal()
-        // Refresh lại tab giấy tờ + danh sách phiếu đang hoạt động
-        setGiayToList([])
-        if (mssv) fetchActivePhieuMuon(mssv)
-      } else {
-        showToast(res.message || 'Tạo phiếu thất bại', 'error')
-      }
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } }
-      showToast(e.response?.data?.message || 'Lỗi kết nối máy chủ', 'error')
-    } finally {
-      setIsSubmittingMuonTra(false)
     }
   }
 
@@ -616,11 +646,10 @@ export function TrangChiTietHoSo() {
   ]
 
   const khoaOptions = [
-    { value: 'K2022', label: 'K2022' },
-    { value: 'K2021', label: 'K2021' },
-    { value: 'K2020', label: 'K2020' },
-    { value: 'K2019', label: 'K2019' },
-    { value: 'K2018', label: 'K2018' },
+    { value: 'Khóa 12', label: 'Khóa 12' },
+    { value: 'Khóa 13', label: 'Khóa 13' },
+    { value: 'Khóa 14', label: 'Khóa 14' },
+    { value: 'Khóa 15', label: 'Khóa 15' },
   ]
 
   const nganhOptions = [
@@ -630,7 +659,6 @@ export function TrangChiTietHoSo() {
     'Ngôn ngữ Anh',
     'Luật',
     'Tài chính - Ngân hàng',
-    'Quan hệ quốc tế',
   ].map((nganh) => ({ value: nganh, label: nganh }))
 
   if (!isLoadingSv && !sinhVien && errorSv) {
@@ -701,7 +729,7 @@ export function TrangChiTietHoSo() {
         <Button
           variant="secondary"
           icon={<ArrowRightLeft size={18} />}
-          onClick={handleMuonTra}
+          onClick={handleMuonHoSo}
           disabled={sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'}
           title={
             sinhVien?.trangThaiHocVu === 'Đã rút hồ sơ'
@@ -761,6 +789,15 @@ export function TrangChiTietHoSo() {
                       <span className="chi-tiet-ho-so__phieu-muon-loai">
                         {pm.loaiPhieu}
                       </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Eye size={14} />}
+                        onClick={() => handleXemChiTietPhieu(pm)}
+                        title="Xem chi tiết phiếu"
+                      >
+                        Chi tiết
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -836,64 +873,63 @@ export function TrangChiTietHoSo() {
 
         <div className="chi-tiet-ho-so__tab-content">
           {activeTab === 'thong-tin' && sinhVien && (
-            <div className="chi-tiet-ho-so__info-grid">
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Họ và tên</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">MSSV</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.mssv}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">CCCD</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Ngày sinh</span>
-                <span className="chi-tiet-ho-so__info-value">{formatDate(sinhVien.ngaySinh || '')}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Giới tính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Số điện thoại</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.sdt || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Email</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.email || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Quê quán</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.queQuan || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Lớp hành chính</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.lop || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Khóa</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Khóa năm nhập học</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.khoaNamNhapHoc || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Ngành</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Hệ đào tạo</span>
-                <span className="chi-tiet-ho-so__info-value">{sinhVien.heDaoTao || '-'}</span>
-              </div>
-              <div className="chi-tiet-ho-so__info-item">
-                <span className="chi-tiet-ho-so__info-label">Trạng thái học vụ</span>
-                <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien.trangThaiHocVu).className}`}>
-                  {getBadgeInfo(sinhVien.trangThaiHocVu).label}
-                </span>
+            <div className="chi-tiet-ho-so__info-card">
+              <h3 className="chi-tiet-ho-so__info-card-title">Thông tin cá nhân & Học vụ</h3>
+              <div className="chi-tiet-ho-so__info-grid">
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Họ và tên</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.hoTen || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">MSSV</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.mssv}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">CCCD</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.cccd || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Ngày sinh</span>
+                  <span className="chi-tiet-ho-so__info-value">{formatDate(sinhVien.ngaySinh || '')}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Giới tính</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.gioiTinh || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Số điện thoại</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.sdt || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Email</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.email || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Quê quán</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.queQuan || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Ngành</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.nganh || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Khóa</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.khoa || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Khóa năm học</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.khoaNamHoc || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item">
+                  <span className="chi-tiet-ho-so__info-label">Lớp hành chính</span>
+                  <span className="chi-tiet-ho-so__info-value">{sinhVien.lop || '-'}</span>
+                </div>
+                <div className="chi-tiet-ho-so__info-item chi-tiet-ho-so__info-item--wide">
+                  <span className="chi-tiet-ho-so__info-label">Trạng thái học vụ</span>
+                  <span className={`chi-tiet-ho-so__badge ${getBadgeInfo(sinhVien.trangThaiHocVu).className}`}>
+                    {getBadgeInfo(sinhVien.trangThaiHocVu).label}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -939,7 +975,7 @@ export function TrangChiTietHoSo() {
                       </tr>
                     </thead>
                     <tbody>
-                      {giayToList.map((giayTo, index) => {
+                      {giayToList.map((giayTo) => {
                         const isDaNop = giayTo.trangThaiNop === 'Đã nộp'
                         const trangThaiInfo = TRANG_THAI_NOP_MAPPING[giayTo.trangThaiNop] || {
                           label: giayTo.trangThaiNop,
@@ -1089,7 +1125,7 @@ export function TrangChiTietHoSo() {
             <Button
               variant="primary"
               onClick={handleSubmitBoSung}
-              disabled={isSubmittingBoSung}
+              disabled={isSubmittingBoSung || isLoadingBoSung}
               icon={isSubmittingBoSung ? <Loader2 size={16} /> : <Save size={16} />}
             >
               {isSubmittingBoSung ? 'Đang lưu...' : 'Bổ sung'}
@@ -1097,335 +1133,77 @@ export function TrangChiTietHoSo() {
           </>
         }
       >
-        <div className="chi-tiet-ho-so__form-grid">
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+        {isLoadingBoSung ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem', alignItems: 'center', gap: '0.5rem' }}>
+            <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ color: 'var(--color-text-secondary)' }}>Đang tải dữ liệu...</span>
+          </div>
+        ) : (
+          <div className="chi-tiet-ho-so__form-grid">
+            <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+              <FormSelect
+                label="Loại giấy tờ *"
+                name="maLoai"
+                value={boSungForm.maLoai}
+                onChange={(e) => setBoSungForm((prev) => ({ ...prev, maLoai: e.target.value }))}
+                options={availableLoaiGiayTo.map((lgt) => ({
+                  value: lgt.maLoai,
+                  label: `${lgt.maLoai} - ${lgt.tenGiayTo}${lgt.batBuoc ? ' (Bắt buộc)' : ''}`,
+                }))}
+                placeholder="-- Chọn loại giấy tờ --"
+              />
+              {availableLoaiGiayTo.length === 0 && (
+                <p style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>
+                  Sinh viên đã có đủ tất cả các loại giấy tờ đang hoạt động trong hệ thống.
+                </p>
+              )}
+            </div>
+
             <FormSelect
-              label="Loại giấy tờ *"
-              name="maLoai"
-              value={boSungForm.maLoai}
-              onChange={(e) => setBoSungForm((prev) => ({ ...prev, maLoai: e.target.value }))}
-              options={availableLoaiGiayTo.map((lgt) => ({
-                value: lgt.maLoai,
-                label: `${lgt.maLoai} - ${lgt.tenGiayTo}${lgt.batBuoc ? ' (Bắt buộc)' : ''}`,
-              }))}
-              placeholder="-- Chọn loại giấy tờ --"
+              label="Trạng thái nộp *"
+              name="trangThaiNop"
+              value={boSungForm.trangThaiNop}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, trangThaiNop: e.target.value }))}
+              options={[
+                { value: 'Đã nộp', label: 'Đã nộp' },
+                { value: 'Chưa nộp', label: 'Chưa nộp' },
+                { value: 'Thiếu', label: 'Thiếu' },
+                { value: 'Không hợp lệ', label: 'Không hợp lệ' },
+              ]}
             />
-            {availableLoaiGiayTo.length === 0 && (
-              <p style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>
-                Sinh viên đã có đủ tất cả 13 loại giấy tờ trong hệ thống.
-              </p>
-            )}
-          </div>
 
-          <FormSelect
-            label="Trạng thái nộp *"
-            name="trangThaiNop"
-            value={boSungForm.trangThaiNop}
-            onChange={(e) => setBoSungForm((prev) => ({ ...prev, trangThaiNop: e.target.value }))}
-            options={[
-              { value: 'Đã nộp', label: 'Đã nộp' },
-              { value: 'Chưa nộp', label: 'Chưa nộp' },
-              { value: 'Thiếu', label: 'Thiếu' },
-              { value: 'Không hợp lệ', label: 'Không hợp lệ' },
-            ]}
-          />
-
-          <FormSelect
-            label="Bản gốc / Bản sao"
-            name="banGocBanSao"
-            value={boSungForm.banGocBanSao}
-            onChange={(e) => setBoSungForm((prev) => ({ ...prev, banGocBanSao: e.target.value }))}
-            options={[
-              { value: 'Bản gốc', label: 'Bản gốc' },
-              { value: 'Bản sao', label: 'Bản sao' },
-            ]}
-          />
-
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <FormInput
-              label="Vị trí lưu kho"
-              name="viTriLuuKho"
-              value={boSungForm.viTriLuuKho}
-              onChange={(e) => setBoSungForm((prev) => ({ ...prev, viTriLuuKho: e.target.value }))}
-              placeholder="VD: Kệ A-01-05"
+            <FormSelect
+              label="Bản gốc / Bản sao"
+              name="banGocBanSao"
+              value={boSungForm.banGocBanSao}
+              onChange={(e) => setBoSungForm((prev) => ({ ...prev, banGocBanSao: e.target.value }))}
+              options={[
+                { value: 'Bản gốc', label: 'Bản gốc' },
+                { value: 'Bản sao', label: 'Bản sao' },
+              ]}
             />
-          </div>
 
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <FormInput
-              label="Ghi chú"
-              name="ghiChu"
-              value={boSungForm.ghiChu}
-              onChange={(e) => setBoSungForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
-              placeholder="VD: Bổ sung giấy khai sinh bản sao có công chứng"
-            />
-          </div>
-        </div>
-      </Modal>
+            <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+              <FormInput
+                label="Vị trí lưu kho"
+                name="viTriLuuKho"
+                value={boSungForm.viTriLuuKho}
+                onChange={(e) => setBoSungForm((prev) => ({ ...prev, viTriLuuKho: e.target.value }))}
+                placeholder="VD: Kệ A-01-05"
+              />
+            </div>
 
-      {/* Modal Mượn / trả hồ sơ (sinh viên đang được chọn) */}
-      <Modal
-        isOpen={isMuonTraModalOpen}
-        onClose={handleCloseMuonTraModal}
-        title="Mượn / trả hồ sơ"
-        size="lg"
-        footer={
-          <>
-            <Button variant="secondary" onClick={handleCloseMuonTraModal} disabled={isSubmittingMuonTra}>
-              Hủy
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSubmitMuonTra}
-              disabled={isSubmittingMuonTra}
-              icon={isSubmittingMuonTra ? <Loader2 size={16} /> : <ArrowRightLeft size={16} />}
-            >
-              {isSubmittingMuonTra ? 'Đang tạo phiếu...' : 'Tạo phiếu'}
-            </Button>
-          </>
-        }
-      >
-        <div className="chi-tiet-ho-so__form-grid">
-          {/* Thông tin sinh viên (read-only) */}
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
-              Sinh viên
-            </h3>
-            <div
-              className="trang-muon-tra__info-card"
-              style={{ background: '#f8fafc', border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}
-            >
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: 8,
-                  fontSize: 14,
-                }}
-              >
-                <div>
-                  <span style={{ color: '#6b7280' }}>Họ tên: </span>
-                  <strong>{sinhVien?.hoTen || '-'}</strong>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>MSSV: </span>
-                  <strong>{sinhVien?.mssv || mssv}</strong>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Lớp: </span>
-                  <span>{sinhVien?.lop || '-'}</span>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Khóa: </span>
-                  <span>{sinhVien?.khoa || '-'}</span>
-                </div>
-              </div>
+            <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
+              <FormInput
+                label="Ghi chú"
+                name="ghiChu"
+                value={boSungForm.ghiChu}
+                onChange={(e) => setBoSungForm((prev) => ({ ...prev, ghiChu: e.target.value }))}
+                placeholder="VD: Bổ sung giấy khai sinh bản sao có công chứng"
+              />
             </div>
           </div>
-
-          {/* Loại phiếu + cán bộ phụ trách */}
-          <FormSelect
-            label="Loại hồ sơ *"
-            name="loaiPhieu"
-            value={muonTraForm.loaiPhieu}
-            onChange={(e) => {
-              const v = e.target.value
-              setMuonTraForm((prev) => ({
-                ...prev,
-                loaiPhieu: v,
-                ngayTraDuKien:
-                  v === 'Mượn tạm thời' ? defaultHanTra(prev.ngayMuon) : '',
-              }))
-            }}
-            options={[
-              { value: 'Mượn tạm thời', label: 'Mượn tạm thời' },
-              { value: 'Rút vĩnh viễn', label: 'Rút vĩnh viễn' },
-            ]}
-          />
-          <div className="chi-tiet-ho-so__form-group">
-            <label
-              className="chi-tiet-ho-so__form-label"
-              style={{
-                fontSize: 14,
-                fontWeight: 500,
-                color: 'var(--color-text-secondary)',
-              }}
-            >
-              Cán bộ phụ trách
-            </label>
-            <input
-              className="chi-tiet-ho-so__form-input"
-              type="text"
-              value={authStore.getUser()?.hoTen || authStore.getUser()?.username || '—'}
-              disabled
-              style={{
-                padding: '10px 12px',
-                border: '1px solid var(--color-border)',
-                borderRadius: 6,
-                fontSize: 14,
-                background: '#f8fafc',
-                color: 'var(--color-text-secondary)',
-              }}
-            />
-          </div>
-
-          <FormInput
-            label="Ngày mượn *"
-            name="ngayMuon"
-            type="date"
-            value={muonTraForm.ngayMuon}
-            onChange={(e) => {
-              const v = e.target.value
-              setMuonTraForm((prev) => ({
-                ...prev,
-                ngayMuon: v,
-                ngayTraDuKien:
-                  prev.loaiPhieu === 'Mượn tạm thời' ? defaultHanTra(v) : prev.ngayTraDuKien,
-              }))
-            }}
-          />
-          {muonTraForm.loaiPhieu === 'Mượn tạm thời' && (
-            <FormInput
-              label="Hạn trả *"
-              name="ngayTraDuKien"
-              type="date"
-              value={muonTraForm.ngayTraDuKien}
-              onChange={(e) =>
-                setMuonTraForm((prev) => ({ ...prev, ngayTraDuKien: e.target.value }))
-              }
-            />
-          )}
-
-          {/* Lý do mượn / rút */}
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <FormInput
-              label="Lý do mượn / rút *"
-              name="lyDo"
-              value={muonTraForm.lyDo}
-              onChange={(e) => setMuonTraForm((prev) => ({ ...prev, lyDo: e.target.value }))}
-              placeholder="Nhập lý do mượn hoặc rút hồ sơ"
-            />
-          </div>
-
-          {/* Danh sách hồ sơ giấy tờ - cho phép tick chọn */}
-          <div className="chi-tiet-ho-so__form-group chi-tiet-ho-so__form-group--full">
-            <h3 className="trang-muon-tra__form-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>
-              Chọn hồ sơ giấy tờ * ({selectedMaHoSo.length}/{muonTraHoSoList.length} đã chọn)
-            </h3>
-            {isLoadingMuonTraHoSo ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  color: '#6b7280',
-                  padding: 12,
-                }}
-              >
-                <Loader2 size={16} className="chi-tiet-ho-so__loading-icon" />
-                <span>Đang tải hồ sơ giấy tờ...</span>
-              </div>
-            ) : muonTraHoSoList.length === 0 ? (
-              <p style={{ color: '#6b7280', fontSize: 14 }}>
-                Sinh viên chưa có hồ sơ giấy tờ nào trong hệ thống. Hãy bổ sung giấy tờ trước.
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                  maxHeight: 240,
-                  overflowY: 'auto',
-                  border: '1px solid var(--color-border-light)',
-                  borderRadius: 6,
-                  padding: 8,
-                  background: '#fafafa',
-                }}
-              >
-                {muonTraHoSoList.map((hs) => {
-                  const loai = loaiGiayToList.find((l) => l.maLoai === hs.maLoai)
-                  return (
-                    <label
-                      key={hs.maHoSo}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'auto 90px 1fr 110px 110px',
-                        gap: 8,
-                        alignItems: 'center',
-                        padding: '6px 8px',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                        fontSize: 13,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMaHoSo.includes(hs.maHoSo)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedMaHoSo((prev) => [...prev, hs.maHoSo])
-                          } else {
-                            setSelectedMaHoSo((prev) =>
-                              prev.filter((id) => id !== hs.maHoSo)
-                            )
-                          }
-                        }}
-                        style={{ cursor: 'pointer', width: 16, height: 16 }}
-                      />
-                      <span
-                        style={{
-                          fontFamily: 'monospace',
-                          fontWeight: 600,
-                          color: 'var(--color-primary)',
-                        }}
-                      >
-                        {hs.maHoSo}
-                      </span>
-                      <span>{loai ? loai.tenGiayTo : hs.maLoai}</span>
-                      <span style={{ color: '#6b7280' }}>{hs.trangThaiNop}</span>
-                      <span style={{ color: '#6b7280', fontStyle: 'italic' }}>
-                        {hs.viTriLuuKho || '-'}
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <button
-                type="button"
-                onClick={() => setSelectedMaHoSo(muonTraHoSoList.map((h) => h.maHoSo))}
-                style={{
-                  fontSize: 12,
-                  padding: '4px 10px',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 4,
-                  background: 'var(--color-surface)',
-                  cursor: 'pointer',
-                }}
-                disabled={muonTraHoSoList.length === 0}
-              >
-                Chọn tất cả
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedMaHoSo([])}
-                style={{
-                  fontSize: 12,
-                  padding: '4px 10px',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 4,
-                  background: 'var(--color-surface)',
-                  cursor: 'pointer',
-                }}
-                disabled={selectedMaHoSo.length === 0}
-              >
-                Bỏ chọn
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
       </Modal>
 
       {/* Toast */}
@@ -1447,7 +1225,7 @@ export function TrangChiTietHoSo() {
         isOpen={isPrintModalOpen}
         onClose={handleClosePrintModal}
         title={printMode === 'chooser' ? 'Chọn loại in / xuất' : 'Xem trước bản in'}
-        size={printMode === 'preview' ? 'xl' : 'md'}
+        size={printMode === 'preview' ? 'lg' : 'md'}
         footer={
           printMode === 'chooser' ? (
             <>
@@ -1590,6 +1368,137 @@ export function TrangChiTietHoSo() {
           </div>,
           document.body
         )}
+
+      {/* Modal Chi tiết phiếu mượn / trả */}
+      <Modal
+        isOpen={isChiTietPhieuModalOpen}
+        onClose={handleCloseChiTietPhieuModal}
+        title={`Chi tiết phiếu ${chiTietPhieu?.maPhieu || ''}`}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleMoTrangQuanLyPhieu}>
+              Mở trang quản lý phiếu
+            </Button>
+            <Button variant="secondary" onClick={handleCloseChiTietPhieuModal}>
+              Đóng
+            </Button>
+            {isTraPhieu && (
+              <Button
+                variant="primary"
+                onClick={handleTraPhieu}
+                disabled={isSubmittingTra}
+                icon={isSubmittingTra ? <Loader2 size={16} /> : undefined}
+              >
+                {isSubmittingTra ? 'Đang xử lý...' : 'Trả hồ sơ'}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {isLoadingChiTietPhieu ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+            <Loader2 size={24} className="chi-tiet-ho-so__loading-icon" />
+          </div>
+        ) : chiTietPhieu ? (
+          <div className="chi-tiet-phieu-modal">
+            {/* Trạng thái */}
+            <div className="chi-tiet-phieu-modal__status">
+              <span className={`chi-tiet-ho-so__badge ${
+                TRANG_THAI_PHIEU_MAPPING[chiTietPhieu.trangThai]?.className || 'badge--secondary'
+              }`}>
+                {TRANG_THAI_PHIEU_MAPPING[chiTietPhieu.trangThai]?.label || chiTietPhieu.trangThai}
+              </span>
+              <span className="chi-tiet-phieu-modal__loai">{chiTietPhieu.loaiPhieu}</span>
+            </div>
+
+            {/* Thông tin sinh viên */}
+            <div className="chi-tiet-phieu-modal__section">
+              <h4 className="chi-tiet-phieu-modal__section-title">Thông tin sinh viên</h4>
+              <div className="chi-tiet-phieu-modal__info-grid">
+                <div className="chi-tiet-phieu-modal__info-item">
+                  <span className="chi-tiet-phieu-modal__label">MSSV</span>
+                  <span className="chi-tiet-phieu-modal__value">{chiTietPhieu.mssv}</span>
+                </div>
+                <div className="chi-tiet-phieu-modal__info-item">
+                  <span className="chi-tiet-phieu-modal__label">Họ tên</span>
+                  <span className="chi-tiet-phieu-modal__value">
+                    {chiTietPhieu.hoTenSinhVien || sinhVien?.hoTen || '-'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Thông tin phiếu */}
+            <div className="chi-tiet-phieu-modal__section">
+              <h4 className="chi-tiet-phieu-modal__section-title">Thông tin phiếu</h4>
+              <div className="chi-tiet-phieu-modal__info-grid">
+                <div className="chi-tiet-phieu-modal__info-item">
+                  <span className="chi-tiet-phieu-modal__label">Mã phiếu</span>
+                  <span className="chi-tiet-phieu-modal__value">{chiTietPhieu.maPhieu}</span>
+                </div>
+                <div className="chi-tiet-phieu-modal__info-item">
+                  <span className="chi-tiet-phieu-modal__label">Ngày mượn</span>
+                  <span className="chi-tiet-phieu-modal__value">{formatDate(chiTietPhieu.ngayMuon || '')}</span>
+                </div>
+                {chiTietPhieu.loaiPhieu === 'Mượn tạm thời' && (
+                  <>
+                    <div className="chi-tiet-phieu-modal__info-item">
+                      <span className="chi-tiet-phieu-modal__label">Hạn trả</span>
+                      <span className="chi-tiet-phieu-modal__value">
+                        {formatDate(chiTietPhieu.ngayTraDuKien || '')}
+                      </span>
+                    </div>
+                    {chiTietPhieu.ngayTraThucTe && (
+                      <div className="chi-tiet-phieu-modal__info-item">
+                        <span className="chi-tiet-phieu-modal__label">Ngày trả thực tế</span>
+                        <span className="chi-tiet-phieu-modal__value">
+                          {formatDate(chiTietPhieu.ngayTraThucTe)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="chi-tiet-phieu-modal__info-item chi-tiet-phieu-modal__info-item--full">
+                  <span className="chi-tiet-phieu-modal__label">Cán bộ phụ trách</span>
+                  <span className="chi-tiet-phieu-modal__value">{chiTietPhieu.nguoiTao || '-'}</span>
+                </div>
+                <div className="chi-tiet-phieu-modal__info-item chi-tiet-phieu-modal__info-item--full">
+                  <span className="chi-tiet-phieu-modal__label">Lý do mượn</span>
+                  <span className="chi-tiet-phieu-modal__value">{chiTietPhieu.lyDo || '-'}</span>
+                </div>
+                {chiTietPhieu.ghiChu && (
+                  <div className="chi-tiet-phieu-modal__info-item chi-tiet-phieu-modal__info-item--full">
+                    <span className="chi-tiet-phieu-modal__label">Ghi chú</span>
+                    <span className="chi-tiet-phieu-modal__value">{chiTietPhieu.ghiChu}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Danh sách giấy tờ trong phiếu */}
+            <div className="chi-tiet-phieu-modal__section">
+              <h4 className="chi-tiet-phieu-modal__section-title">
+                Danh sách giấy tờ ({chiTietPhieu.danhSachMaHoSo?.length || 0} mục)
+              </h4>
+              {chiTietPhieu.danhSachMaHoSo && chiTietPhieu.danhSachMaHoSo.length > 0 ? (
+                <div className="chi-tiet-phieu-modal__hoso-list">
+                  {chiTietPhieu.danhSachMaHoSo.map((ma, idx) => (
+                    <div key={ma} className="chi-tiet-phieu-modal__hoso-item">
+                      <span className="chi-tiet-phieu-modal__hoso-index">{idx + 1}</span>
+                      <span className="chi-tiet-phieu-modal__hoso-code">{ma}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="chi-tiet-phieu-modal__empty">Không có hồ sơ giấy tờ nào trong phiếu.</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p style={{ textAlign: 'center', color: '#6b7280' }}>Không có dữ liệu phiếu.</p>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -1599,7 +1508,7 @@ export function TrangChiTietHoSo() {
 // =====================================================================
 
 /** Format ngày dd/MM/yyyy — dùng trong bản in. */
-function fmtDate(s?: string): string {
+function fmtDate(s?: string | null): string {
   if (!s) return '—'
   try {
     const d = new Date(s)
@@ -1665,15 +1574,18 @@ function PrintHoSoSinhVien({
   // Map giayToList theo maLoai để tra nhanh
   const giayToByMaLoai = new Map(giayToList.map((g) => [g.maLoai, g]))
   // Gom toàn bộ 13 loại (nếu load được) để in đầy đủ; fallback dùng giayToList
-  const allLoai =
+  const allLoai: LoaiGiayTo[] =
     loaiGiayToList.length > 0
       ? loaiGiayToList
       : giayToList.map((g) => ({
           maLoai: g.maLoai,
-          tenLoai: g.tenLoai || g.maLoai,
+          tenGiayTo: g.maLoai,
+          moTa: null,
           batBuoc: false,
           dangSuDung: true,
-        } as LoaiGiayTo))
+          thuTuHienThi: null,
+          ngayTao: '',
+        }))
   const soBatBuoc = allLoai.filter((l) => l.batBuoc).length
   const soDaCo = giayToList.length
 

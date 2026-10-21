@@ -36,20 +36,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = resolveBearerToken(request);
         if (token == null) {
+            log.debug("JWT absent — method={}, uri={}", request.getMethod(), request.getRequestURI());
             filterChain.doFilter(request, response);
             return;
         }
 
         // Kiểm tra chữ ký/thời hạn trước để không gọi Redis cho token vô hiệu.
         if (!jwtService.isAccessToken(token)) {
-            log.debug("Token không phải access token hoặc đã hết hạn");
+            log.debug("Token không phải access token hoặc đã hết hạn — method={}, uri={}",
+                    request.getMethod(), request.getRequestURI());
             filterChain.doFilter(request, response);
             return;
         }
 
         // Kiểm tra thu hồi có thể lỗi Redis — không được để lỗi hạ tầng biến thành 500.
         if (isRevoked(token)) {
-            log.debug("Access token đã bị thu hồi");
+            log.debug("Access token đã bị thu hồi — method={}, uri={}",
+                    request.getMethod(), request.getRequestURI());
             filterChain.doFilter(request, response);
             return;
         }
@@ -58,14 +61,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String role = jwtService.extractRole(token);
 
         if (username == null || role == null) {
+            log.debug("Token hợp lệ nhưng username hoặc role bị null — username={}, role={}, method={}, uri={}",
+                    username, role, request.getMethod(), request.getRequestURI());
             filterChain.doFilter(request, response);
             return;
         }
 
+        var grantedAuthority = new SimpleGrantedAuthority("ROLE_" + role);
         var authentication = new UsernamePasswordAuthenticationToken(
-                username, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                username, null, List.of(grantedAuthority));
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        log.info("Xác thực JWT thành công — username={}, role={}, authority={}, method={}, uri={}",
+                username, role, grantedAuthority, request.getMethod(), request.getRequestURI());
 
         filterChain.doFilter(request, response);
     }

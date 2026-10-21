@@ -18,6 +18,7 @@ import vn.vwa.edurecords.repository.UserRepository;
 import vn.vwa.edurecords.security.JwtService;
 import vn.vwa.edurecords.security.RefreshTokenService;
 import vn.vwa.edurecords.security.TokenRevocationService;
+import vn.vwa.edurecords.service.UserService;
 
 @Service
 public class AuthService {
@@ -25,15 +26,18 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
+    private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TokenRevocationService revocationService;
     private final RefreshTokenService refreshTokenService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+    public AuthService(UserRepository userRepository, UserService userService,
+                      PasswordEncoder passwordEncoder,
                       JwtService jwtService, TokenRevocationService revocationService,
                       RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
+        this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.revocationService = revocationService;
@@ -74,6 +78,15 @@ public class AuthService {
      */
     @Transactional
     public User createUser(RegisterRequest request) {
+        return createUser(request, Role.STAFF);
+    }
+
+    /**
+     * Tạo tài khoản với vai trò chỉ định.
+     * CHỈ dùng trong môi trường dev — xóa endpoint sau khi test xong!
+     */
+    @Transactional
+    public User createUser(RegisterRequest request, Role forcedRole) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BadRequestException("USERNAME_EXISTS", "Tên đăng nhập đã tồn tại.");
         }
@@ -83,12 +96,13 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .hoTen(request.getHoTen())
                 .email(request.getEmail())
-                .role(Role.STAFF)
+                .role(forcedRole)
                 .isActive(true)
                 .build();
 
         User saved = userRepository.save(user);
-        log.info("Đã tạo tài khoản nhân viên '{}' (id={})", saved.getUsername(), saved.getId());
+        log.info("Đã tạo tài khoản '{}' với vai trò {} (id={})",
+                saved.getUsername(), forcedRole, saved.getId());
         return saved;
     }
 
@@ -177,6 +191,14 @@ public class AuthService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND",
                         "Không tìm thấy tài khoản: " + username));
+
+        if (user.getRole() == Role.ADMIN) {
+            long activeAdmins = userService.countActiveAdmins();
+            if (activeAdmins <= 1) {
+                throw new BadRequestException("LAST_ADMIN",
+                        "Không thể vô hiệu hóa tài khoản ADMIN cuối cùng đang hoạt động.");
+            }
+        }
 
         user.setIsActive(false);
         userRepository.save(user);

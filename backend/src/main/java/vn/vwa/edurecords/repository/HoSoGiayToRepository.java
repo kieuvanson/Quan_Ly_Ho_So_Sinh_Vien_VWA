@@ -15,4 +15,6 @@ public interface HoSoGiayToRepository extends JpaRepository<HoSoGiayTo, String> 
     Optional<HoSoGiayTo> findByMssvAndMaLoai(String mssv, String maLoai);
     
     long countByMssv(String mssv);
+
+    long countByMaLoai(String maLoai);
 }

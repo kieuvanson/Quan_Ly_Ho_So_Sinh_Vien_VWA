@@ -5,6 +5,59 @@
   animation: fadeIn var(--transition-base) ease-out;
 }
 
+/* ===== Tabs (Sinh viên | Hồ sơ giấy tờ) ===== */
+.trang-danh-sach__tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 2px solid var(--color-border);
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.trang-danh-sach__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px; /* tràn xuống dưới border của tab-list */
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.trang-danh-sach__tab:hover:not(.trang-danh-sach__tab--active) {
+  color: var(--color-text);
+  background-color: var(--color-bg-soft, rgba(0, 0, 0, 0.03));
+}
+.trang-danh-sach__tab--active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.trang-danh-sach__tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 999px;
+  background-color: var(--color-bg-soft, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+.trang-danh-sach__tab--active .trang-danh-sach__tab-count {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
 /* Header */
 .trang-danh-sach__header {
   display: flex;
@@ -184,12 +237,16 @@
 
 .trang-danh-sach__table-wrapper {
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
+/* Table - Never wrap content */
 .trang-danh-sach__table {
   width: 100%;
+  min-width: 1241px; /* sum of fixed column widths (checkbox 44 + others) */
   border-collapse: collapse;
   font-size: var(--font-size-base);
+  table-layout: fixed;
 }
 
 .trang-danh-sach__table thead {
@@ -197,21 +254,26 @@
 }
 
 .trang-danh-sach__table th {
-  padding: var(--space-4);
+  padding: 12px 14px;
   text-align: left;
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--color-border);
-  white-space: nowrap;
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap; /* NEVER wrap header text */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .trang-danh-sach__table td {
-  padding: var(--space-4);
+  padding: 12px 14px;
   border-bottom: 1px solid var(--color-border-light);
   color: var(--color-text);
+  white-space: nowrap; /* NEVER wrap cell content */
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background-color var(--transition-fast);
 }
 
@@ -227,51 +289,80 @@
   border-bottom: none;
 }
 
+/* Column Widths - Fixed to prevent wrapping */
 .trang-danh-sach__table .col-stt {
-  width: 60px;
+  width: 52px;
   text-align: center;
-  color: var(--color-text-muted);
 }
 
 .trang-danh-sach__table .col-mssv {
-  width: 130px;
-  font-weight: var(--font-weight-medium);
+  width: 120px;
+  text-align: left;
 }
 
 .trang-danh-sach__table .col-cccd {
-  width: 150px;
+  width: 135px;
+  text-align: left;
 }
 
 .trang-danh-sach__table .col-ngay-sinh {
-  width: 110px;
+  width: 105px;
+  text-align: center;
 }
 
 .trang-danh-sach__table .col-nganh {
-  min-width: 180px;
+  width: 190px;
+  text-align: left;
 }
 
 .trang-danh-sach__table .col-khoa {
-  width: 90px;
+  width: 80px;
+  text-align: center;
+}
+
+.trang-danh-sach__table .col-khoa-nam-hoc {
+  width: 110px;
+  text-align: center;
+}
+
+.trang-danh-sach__table .col-lop {
+  width: 120px;
   text-align: center;
 }
 
 .trang-danh-sach__table .col-trang-thai {
-  width: 140px;
-}
-
-.trang-danh-sach__table .col-thao-tac {
-  width: 100px;
+  width: 120px;
   text-align: center;
 }
 
-/* Badge */
+.trang-danh-sach__table .col-thao-tac {
+  width: 90px;
+  text-align: center;
+}
+
+/* Họ và tên — rộng hơn để nhận diện tên dài */
+.trang-danh-sach__table th:nth-child(4),
+.trang-danh-sach__table td:nth-child(4) {
+  width: 170px;
+}
+
+/* Căn giữa cho cột checkbox và STT */
+.trang-danh-sach__table .col-center {
+  text-align: center;
+}
+
+/* Badge - Always on one line */
 .trang-danh-sach__badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+  white-space: nowrap; /* Badge never wraps */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Action Button */
@@ -317,6 +408,30 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+.trang-danh-sach__page-size-select {
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  margin-right: var(--space-2);
+}
+
+.trang-danh-sach__page-size-select:hover {
+  background-color: var(--color-surface-hover);
+  border-color: #cbd5e1;
+}
+
+.trang-danh-sach__page-size-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .trang-danh-sach__page-btn {
@@ -609,4 +724,594 @@
   align-items: center;
   gap: var(--space-1);
   color: var(--color-danger, #dc2626);
+}
+
+/* ===== Import Preview ===== */
+.trang-danh-sach__import-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Thống kê preview */
+.trang-danh-sach__import-preview-stats {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-start;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  min-width: 120px;
+}
+
+.stat-item--success {
+  color: #16a34a;
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.stat-item--warning {
+  color: #d97706;
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
+.stat-item--info {
+  color: var(--color-text-secondary);
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.stat-item .stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-item .stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  display: block;
+}
+
+/* Bảng preview */
+.trang-danh-sach__import-preview-table-wrapper {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.trang-danh-sach__import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  table-layout: fixed;
+}
+
+.trang-danh-sach__import-preview-table thead {
+  position: sticky;
+  top: 0;
+  background-color: #f8fafc;
+  z-index: 1;
+}
+
+.trang-danh-sach__import-preview-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.trang-danh-sach__import-preview-table th:first-child {
+  width: 60px;
+  text-align: center;
+}
+
+.trang-danh-sach__import-preview-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.trang-danh-sach__import-preview-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.trang-danh-sach__import-preview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Row status colors */
+.trang-danh-sach__import-preview-table .row--valid {
+  background-color: #f0fdf4;
+}
+
+.trang-danh-sach__import-preview-table .row--duplicate {
+  background-color: #fffbeb;
+}
+
+.trang-danh-sach__import-preview-table .row--invalid {
+  background-color: #fef2f2;
+}
+
+/* Error / info text in preview table */
+.col-center {
+  text-align: center;
+}
+
+.col-error {
+  max-width: 280px;
+}
+
+.error-text {
+  font-size: var(--font-size-xs);
+  color: #dc2626;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Note below preview table */
+.trang-danh-sach__import-preview-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: #16a34a;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  margin: 0;
+}
+
+.trang-danh-sach__import-preview-note--error {
+  color: #dc2626;
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* Import error box */
+.trang-danh-sach__import-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: #dc2626;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  white-space: pre-line; /* Cho phép xuống dòng từ \n */
+}
+
+/* ===== Fail-fast box (sau V7) ===== */
+.trang-danh-sach__import-failfast {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: #fef2f2;
+  border: 2px solid #dc2626;
+  color: #991b1b;
+  margin-bottom: var(--space-4);
+}
+
+.trang-danh-sach__import-failfast h4 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--font-size-base);
+  color: #dc2626;
+}
+
+.trang-danh-sach__import-failfast p {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}
+
+.trang-danh-sach__import-failfast-detail {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background-color: #ffffff;
+  border-radius: var(--radius-sm);
+  border: 1px solid #fecaca;
+}
+
+.trang-danh-sach__import-failfast-detail code {
+  background-color: #fef3c7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-sm);
+  color: #92400e;
+}
+
+.trang-danh-sach__import-failfast-detail ul {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+  color: #dc2626;
+  font-size: var(--font-size-sm);
+}
+
+.trang-danh-sach__import-failfast-detail ul li {
+  margin-bottom: var(--space-1);
+}
+
+.trang-danh-sach__import-failfast-hint {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background-color: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  color: #78350f;
+  font-weight: var(--font-weight-medium);
+}
+
+/* Result summary */
+.result-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.result-summary--success {
+  color: #16a34a;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.result-summary--success h4 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.result-summary--success p {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+.result-summary--warning {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  color: #d97706;
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: var(--font-size-sm);
+}
+
+/* Badge variants */
+.badge--success {
+  background-color: #dcfce7;
+  color: #16a34a;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.badge--warning {
+  background-color: #fef3c7;
+  color: #d97706;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.badge--danger {
+  background-color: #fee2e2;
+  color: #dc2626;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   BULK SELECTION + BULK ACTION BAR
+   ============================================================ */
+
+/* Cột checkbox — layout cứng, không có marker. */
+.trang-danh-sach__table .col-checkbox {
+  width: 44px;
+  text-align: center;
+  vertical-align: middle;
+  /* Ngăn marker từ ::marker pseudo-element */
+  display: table-cell;
+}
+
+/* Button checkbox: reset triệt để, không có marker, không có ellipsis. */
+.trang-danh-sach__checkbox-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  margin: 0 auto;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  transition: all var(--transition-fast);
+  /* Reset triệt để — loại bỏ list-style, ::marker, ellipsis */
+  all: unset;
+  box-sizing: border-box;
+  font: inherit;
+  line-height: 1;
+  list-style: none;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/* Chặn ::marker trên mọi phần tử trong cột checkbox (không dùng nesting vì .css không hỗ trợ) */
+.trang-danh-sach__table .col-checkbox ul,
+.trang-danh-sach__table .col-checkbox ol,
+.trang-danh-sach__table .col-checkbox li,
+.trang-danh-sach__table .col-checkbox button,
+.trang-danh-sach__table .col-checkbox > ul,
+.trang-danh-sach__table .col-checkbox > ol,
+.trang-danh-sach__table .col-checkbox > li {
+  list-style: none;
+}
+.trang-danh-sach__table .col-checkbox ul::marker,
+.trang-danh-sach__table .col-checkbox ol::marker,
+.trang-danh-sach__table .col-checkbox li::marker,
+.trang-danh-sach__table .col-checkbox button::marker,
+.trang-danh-sach__table .col-checkbox > ul::marker,
+.trang-danh-sach__table .col-checkbox > ol::marker,
+.trang-danh-sach__table .col-checkbox > li::marker {
+  content: none;
+}
+.trang-danh-sach__table .col-checkbox::marker {
+  content: none;
+}
+
+.trang-danh-sach__checkbox-btn:hover {
+  background-color: var(--color-bg-muted, rgba(0, 0, 0, 0.04));
+  color: var(--color-primary);
+}
+
+.trang-danh-sach__checkbox {
+  display: block;
+}
+
+.trang-danh-sach__checkbox--checked {
+  color: var(--color-primary);
+}
+
+.trang-danh-sach__checkbox--indeterminate {
+  color: var(--color-primary);
+}
+
+/* Row được chọn */
+.trang-danh-sach__row--selected {
+  background-color: rgba(59, 130, 246, 0.06) !important;
+}
+
+.trang-danh-sach__row--selected:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+
+/* Thanh thao tác hàng loạt */
+.trang-danh-sach__bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background-color: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.trang-danh-sach__bulk-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: #3730a3;
+  font-size: var(--font-size-sm);
+  flex-wrap: wrap;
+}
+
+.trang-danh-sach__bulk-count strong {
+  font-size: var(--font-size-base);
+  margin-right: 4px;
+}
+
+.trang-danh-sach__bulk-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: #92400e;
+  background-color: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.trang-danh-sach__bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Modal cập nhật trạng thái */
+.trang-danh-sach__bulk-update {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.trang-danh-sach__bulk-update-help {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.trang-danh-sach__bulk-update-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.trang-danh-sach__bulk-update-label {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+}
+
+.trang-danh-sach__bulk-update-preview-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.trang-danh-sach__bulk-update-preview-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.trang-danh-sach__bulk-update-preview-table-wrapper {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.trang-danh-sach__bulk-update-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: #92400e;
+  background-color: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+
+/* Modal xóa hàng loạt */
+.trang-danh-sach__bulk-delete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.trang-danh-sach__bulk-delete-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  color: #991b1b;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.trang-danh-sach__bulk-delete-warning strong {
+  color: #dc2626;
+}
+
+.trang-danh-sach__bulk-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.trang-danh-sach__bulk-delete-confirm label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.trang-danh-sach__bulk-delete-confirm code {
+  background-color: #fef3c7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  color: #92400e;
+  font-weight: bold;
+}
+
+.trang-danh-sach__bulk-delete-input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-family: 'Courier New', monospace;
+  background-color: var(--color-bg);
+  transition: all var(--transition-fast);
+}
+
+.trang-danh-sach__bulk-delete-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* Responsive cho bulk bar */
+@media (max-width: 768px) {
+  .trang-danh-sach__bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .trang-danh-sach__bulk-actions {
+    justify-content: flex-end;
+  }
 }

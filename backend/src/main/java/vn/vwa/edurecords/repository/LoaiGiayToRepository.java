@@ -16,4 +16,6 @@ public interface LoaiGiayToRepository extends JpaRepository<LoaiGiayTo, String> 
     long countByDangSuDungTrue();
 
     long countByDangSuDungTrueAndBatBuocTrue();
+
+    boolean existsByMaLoai(String maLoai);
 }
