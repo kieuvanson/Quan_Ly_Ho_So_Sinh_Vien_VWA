@@ -2,17 +2,13 @@ package vn.vwa.edurecords.service;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import vn.vwa.edurecords.dto.importexcel.ImportConfirmResponse;
@@ -23,29 +19,18 @@ import vn.vwa.edurecords.dto.importexcel.ImportSheetNameResolver;
 import vn.vwa.edurecords.dto.importexcel.ImportTokenPayload;
 import vn.vwa.edurecords.dto.importexcel.PreviewRowData;
 import vn.vwa.edurecords.dto.importexcel.SheetPreview;
-import vn.vwa.edurecords.entity.HoSoGiayTo;
 import vn.vwa.edurecords.entity.Khoa;
-import vn.vwa.edurecords.entity.LichSuNop;
 import vn.vwa.edurecords.entity.LoaiGiayTo;
 import vn.vwa.edurecords.entity.Nganh;
-import vn.vwa.edurecords.entity.SinhVien;
-import vn.vwa.edurecords.repository.HoSoGiayToRepository;
-import vn.vwa.edurecords.repository.LichSuNopRepository;
 import vn.vwa.edurecords.repository.SinhVienRepository;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * Service import HOSOGIAYTO (và SINHVIEN nếu chọn mode gộp) từ file Excel.
@@ -73,12 +58,16 @@ import java.util.UUID;
  *   <li>File tối đa 10MB, 10.000 dòng tổng (theo controller).</li>
  *   <li>Batch insert: 500 dòng / lần.</li>
  * </ul>
+ *
+ * <h3>Transaction</h3>
+ * <p>VIỆC GHI thực sự được ủy thác cho HoSoImportPersistenceService
+ * (service riêng) để đảm bảo Spring Proxy bắt được @Transactional.
+ * Xem HoSoImportPersistenceService để biết chi tiết transaction.</p>
  */
 @Service
 public class HoSoGiayToImportService {
 
     private static final Logger log = LoggerFactory.getLogger(HoSoGiayToImportService.class);
-    private static final int BATCH_SIZE = 500;
 
     // Cột file HS thuần (mode HO_SO_GIAY_TO) - thứ tự cố định.
     // 0:MSSV, 1:Tên giấy tờ (hoặc Mã loại), 2:Trạng thái nộp, 3:Bản gốc/Bản sao,
@@ -90,23 +79,17 @@ public class HoSoGiayToImportService {
 
     private final DanhMucCacheService danhMucCacheService;
     private final SinhVienRepository sinhVienRepository;
-    private final HoSoGiayToRepository hoSoGiayToRepository;
-    private final LichSuNopRepository lichSuNopRepository;
-    private final JdbcTemplate jdbcTemplate;
     private final ImportTokenStore importTokenStore;
+    private final HoSoImportPersistenceService persistenceService;
 
     public HoSoGiayToImportService(DanhMucCacheService danhMucCacheService,
                                    SinhVienRepository sinhVienRepository,
-                                   HoSoGiayToRepository hoSoGiayToRepository,
-                                   LichSuNopRepository lichSuNopRepository,
-                                   JdbcTemplate jdbcTemplate,
-                                   ImportTokenStore importTokenStore) {
+                                   ImportTokenStore importTokenStore,
+                                   HoSoImportPersistenceService persistenceService) {
         this.danhMucCacheService = danhMucCacheService;
         this.sinhVienRepository = sinhVienRepository;
-        this.hoSoGiayToRepository = hoSoGiayToRepository;
-        this.lichSuNopRepository = lichSuNopRepository;
-        this.jdbcTemplate = jdbcTemplate;
         this.importTokenStore = importTokenStore;
+        this.persistenceService = persistenceService;
     }
 
     // ============================================================
@@ -394,11 +377,21 @@ public class HoSoGiayToImportService {
     }
 
     // ============================================================
-    // BƯỚC 2: CONFIRM
+    // BƯỚC 2: CONFIRM (ủy thác cho PersistenceService)
     // ============================================================
 
     /**
-     * Ghi dữ liệu từ token vào DB. Mỗi sheet chạy 1 transaction riêng.
+     * Ghi dữ liệu từ token vào DB.
+     *
+     * <p>VIỆC GHI thực sự được ủy thác cho HoSoImportPersistenceService
+     * (service riêng) để đảm bảo Spring Proxy bắt được @Transactional
+     * (tránh self-invocation bypass khi gọi nội bộ trong cùng class).
+     *
+     * <p>Transaction phân chia:
+     * <ul>
+     *   <li>Sheet SV hoặc HS: mỗi sheet = 1 transaction riêng (REQUIRES_NEW).</li>
+     *   <li>Sheet GOP (SV+HS): cả SV và HS trong 1 transaction chung.</li>
+     * </ul>
      */
     public ImportConfirmResponse confirm(String token) {
         ImportTokenPayload payload = importTokenStore.get(token)
@@ -409,8 +402,6 @@ public class HoSoGiayToImportService {
         response.setToken(token);
         int totalSuccess = 0;
         int totalFailure = 0;
-        // Snapshot lại danh mục lần nữa để đảm bảo tính nhất quán (FK có thể đã bị xóa)
-        DanhMucCacheService.Snapshot cache = danhMucCacheService.snapshot();
 
         try {
             for (SheetPreview sp : payload.getSheets()) {
@@ -419,11 +410,14 @@ public class HoSoGiayToImportService {
                 int sheetFail = 0;
                 try {
                     if (sp.getMode() == ImportMode.SINH_VIEN) {
-                        sheetSuccess = confirmSheetSV(sp, cache);
+                        // Gọi qua Spring Proxy → REQUIRES_NEW có hiệu lực
+                        sheetSuccess = persistenceService.insertSheetSV(sp);
                     } else if (sp.getMode() == ImportMode.HO_SO_GIAY_TO) {
-                        sheetSuccess = confirmSheetHS(sp, cache);
+                        // Gọi qua Spring Proxy → REQUIRES_NEW có hiệu lực
+                        sheetSuccess = persistenceService.insertSheetHS(sp);
                     } else if (sp.getMode() == ImportMode.GOP) {
-                        sheetSuccess = confirmSheetGOP(sp, cache);
+                        // Gọi qua Spring Proxy → cả SV và HS trong 1 transaction
+                        sheetSuccess = persistenceService.insertSheetGOP(sp);
                     }
                 } catch (RuntimeException ex) {
                     log.error("Sheet '{}' lỗi khi ghi: {}", sp.getTenSheet(), ex.getMessage(), ex);
@@ -446,181 +440,6 @@ public class HoSoGiayToImportService {
         response.setTongThatBai(totalFailure);
         response.setThoiGianXuLyMs(System.currentTimeMillis() - start);
         return response;
-    }
-
-    /**
-     * Ghi 1 sheet SV. Insert vào bảng sinhvien. Dùng JdbcTemplate batch.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int confirmSheetSV(SheetPreview sp, DanhMucCacheService.Snapshot cache) {
-        if (sp.getRows().isEmpty()) return 0;
-        String sql = "INSERT INTO sinhvien (mssv, ho_ten, ngay_sinh, gioi_tinh, cccd, sdt, email, "
-                + "que_quan, khoa_id, nganh_id, lop_id, khoa_hoc_id, he_dao_tao, trang_thai_hoc_vu, "
-                + "ngay_tao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS trangthaihocvu), ?)";
-        List<PreviewRowData> rows = sp.getRows();
-        jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-            @Override public void setValues(PreparedStatement ps, int i) throws SQLException {
-                PreviewRowData r = rows.get(i);
-                ps.setString(1, r.getString("mssv"));
-                ps.setString(2, r.getString("hoTen"));
-                ps.setTimestamp(3, parseTimestamp(r.getString("ngaySinh")));
-                setNullableString(ps, 4, r.getString("gioiTinh"));
-                setNullableString(ps, 5, r.getString("cccd"));
-                setNullableString(ps, 6, r.getString("sdt"));
-                setNullableString(ps, 7, r.getString("email"));
-                setNullableString(ps, 8, r.getString("queQuan"));
-                ps.setInt(9, (Integer) r.get("khoaId"));
-                ps.setInt(10, (Integer) r.get("nganhId"));
-                ps.setInt(11, (Integer) r.get("lopId"));
-                ps.setInt(12, (Integer) r.get("khoaHocId"));
-                setNullableString(ps, 13, r.getString("heDaoTao"));
-                ps.setString(14, r.getString("trangThaiHocVu"));
-                ps.setTimestamp(15, Timestamp.valueOf(LocalDateTime.now()));
-            }
-            @Override public int getBatchSize() { return rows.size(); }
-        });
-        return rows.size();
-    }
-
-    /**
-     * Ghi 1 sheet HS thuần.
-     * Mỗi dòng HS: 1 INSERT/UPDATE vào ho_so_giay_to + 1 INSERT vào lich_su_nop.
-     *
-     * <p>Chính sách trùng: UPSERT theo {@code (mssv, ma_loai)}.</p>
-     * <ul>
-     *   <li>Chưa có → INSERT mới.</li>
-     *   <li>Đã có → UPDATE các trường thay đổi (trang_thai_nop, loai_ban, file, vị trí)
-     *       và đặt {@code ngay_cap_nhat = NOW()}. Nếu dữ liệu mới GIỐNG dữ liệu cũ
-     *       thì DB vẫn chạy UPDATE (tốn 1 dòng) nhưng UPDATE trả về 0 row changed
-     *       → vẫn ghi 1 log lich_su_nop để audit.</li>
-     * </ul>
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int confirmSheetHS(SheetPreview sp, DanhMucCacheService.Snapshot cache) {
-        if (sp.getRows().isEmpty()) return 0;
-        // 1. UPSERT batch ho_so_giay_to
-        //    ON CONFLICT (mssv, ma_loai) DO UPDATE SET các trường + ngay_cap_nhat
-        String sqlHs = "INSERT INTO ho_so_giay_to (ma_ho_so, mssv, ma_loai, trang_thai_nop, "
-                + "ban_goc_ban_sao, file_dinh_kem, vi_tri_luu_kho, ngay_tao) "
-                + "VALUES (?, ?, ?, CAST(? AS trangthainop), "
-                + "CAST(? AS loaiban), ?, ?, ?) "
-                + "ON CONFLICT (mssv, ma_loai) DO UPDATE SET "
-                + "  trang_thai_nop = EXCLUDED.trang_thai_nop, "
-                + "  ban_goc_ban_sao = EXCLUDED.ban_goc_ban_sao, "
-                + "  file_dinh_kem = EXCLUDED.file_dinh_kem, "
-                + "  vi_tri_luu_kho = EXCLUDED.vi_tri_luu_kho, "
-                + "  ngay_cap_nhat = CURRENT_TIMESTAMP";
-        List<PreviewRowData> rows = sp.getRows();
-        List<String> maHoSoList = new ArrayList<>();
-        List<LocalDateTime> nowList = new ArrayList<>();
-        for (int i = 0; i < rows.size(); i++) {
-            // Khi UPSERT, nếu conflict thì DB giữ ma_ho_so CŨ và bỏ qua giá trị
-            // mà ta truyền vào ON CONFLICT. Tức là ma_ho_so mà ta sinh ra có thể
-            // không được dùng. Để audit chính xác, ta truy vấn lại ma_ho_so sau.
-            // Ở đây sinh trước để dùng cho lich_su_nop; sẽ được khớp lại bên dưới.
-            maHoSoList.add(generateMaHoSo());
-            nowList.add(LocalDateTime.now());
-        }
-        jdbcTemplate.batchUpdate(sqlHs, new BatchPreparedStatementSetter() {
-            @Override public void setValues(PreparedStatement ps, int i) throws SQLException {
-                PreviewRowData r = rows.get(i);
-                ps.setString(1, maHoSoList.get(i));
-                ps.setString(2, r.getString("mssv"));
-                ps.setString(3, r.getString("maLoai"));
-                ps.setString(4, r.getString("trangThaiNop"));
-                if (r.get("loaiBan") == null) ps.setNull(5, java.sql.Types.VARCHAR);
-                else ps.setString(5, r.getString("loaiBan"));
-                ps.setString(6, r.getString("fileDinhKem"));
-                ps.setString(7, r.getString("viTriLuuKho"));
-                ps.setTimestamp(8, Timestamp.valueOf(nowList.get(i)));
-            }
-            @Override public int getBatchSize() { return rows.size(); }
-        });
-
-        // 2. Lấy lại ma_ho_so thực tế trong DB (sau UPSERT) cho từng (mssv, ma_loai)
-        //    Vì khi conflict, ma_ho_so CŨ được giữ, không phải ma_ho_so mới ta sinh.
-        List<String> actualMaHoSoList = new ArrayList<>(rows.size());
-        for (PreviewRowData r : rows) {
-            String actual = jdbcTemplate.queryForObject(
-                    "SELECT ma_ho_so FROM ho_so_giay_to WHERE mssv = ? AND ma_loai = ?",
-                    (rs, idx) -> rs.getString(1),
-                    r.getString("mssv"), r.getString("maLoai"));
-            actualMaHoSoList.add(actual);
-        }
-
-        // 3. Insert batch lich_su_nop dùng ma_ho_so THỰC TẾ
-        insertLichSuNopBatch(rows, actualMaHoSoList, nowList);
-        return rows.size();
-    }
-
-    /**
-     * Ghi 1 sheet GOP: tách dòng SV (insert sinhvien) và dòng HS (insert ho_so_giay_to + lich_su_nop).
-     * Thứ tự dòng trong file được tôn trọng → SV trước, HS sau cùng MSSV.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int confirmSheetGOP(SheetPreview sp, DanhMucCacheService.Snapshot cache) {
-        // Phân loại: rows có thể xen kẽ SV / HS, ta xét theo thứ tự file
-        // Tuy nhiên, để đảm bảo SV insert trước (FK ho_so_giay_to.mssv → sinhvien.mssv),
-        // ta tách 2 nhóm.
-        List<PreviewRowData> svRows = new ArrayList<>();
-        List<PreviewRowData> hsRows = new ArrayList<>();
-        for (PreviewRowData r : sp.getRows()) {
-            if ("SV".equals(r.getLoaiDong())) svRows.add(r);
-            else if ("HS".equals(r.getLoaiDong())) hsRows.add(r);
-        }
-        // Insert SV trước
-        if (!svRows.isEmpty()) {
-            SheetPreview tmp = new SheetPreview(sp.getTenSheet() + " (SV)", ImportMode.SINH_VIEN);
-            tmp.setRows(svRows);
-            confirmSheetSV(tmp, cache);
-        }
-        // Sau đó insert HS
-        if (!hsRows.isEmpty()) {
-            SheetPreview tmp = new SheetPreview(sp.getTenSheet() + " (HS)", ImportMode.HO_SO_GIAY_TO);
-            tmp.setRows(hsRows);
-            confirmSheetHS(tmp, cache);
-        }
-        return sp.getRows().size();
-    }
-
-    /**
-     * Insert hàng loạt LICHSUNOP. 1 dòng cho mỗi HOSOGIAYTO vừa ghi.
-     *
-     * <p>trang_thai_cu: lấy từ DB TRƯỚC khi UPSERT (nếu có).</p>
-     * <p>hanh_dong: "TAO_MOI" nếu dòng mới, "CAP_NHAT" nếu đã tồn tại.</p>
-     */
-    private void insertLichSuNopBatch(List<PreviewRowData> rows, List<String> maHoSoList,
-                                      List<LocalDateTime> nowList) {
-        String sql = "INSERT INTO lich_su_nop (ma_log, ma_ho_so, mssv, hanh_dong, trang_thai_cu, "
-                + "trang_thai_moi, ghi_chu, nguoi_thuc_hien, thoi_gian) "
-                + "VALUES (?, ?, ?, ?, CAST(? AS trangthainop), CAST(? AS trangthainop), ?, ?, ?)";
-        jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-            @Override public void setValues(PreparedStatement ps, int i) throws SQLException {
-                PreviewRowData r = rows.get(i);
-                String mssv = r.getString("mssv");
-                String maLoai = r.getString("maLoai");
-                String newTrangThai = r.getString("trangThaiNop");
-                // Lấy trang_thai_cu hiện tại (NULL nếu bản ghi vừa được tạo mới hoàn toàn)
-                String oldTrangThai = jdbcTemplate.query(
-                        "SELECT trang_thai_nop::text FROM ho_so_giay_to WHERE ma_ho_so = ?",
-                        rs -> rs.next() ? rs.getString(1) : null,
-                        maHoSoList.get(i));
-                boolean isUpdate = oldTrangThai != null && !oldTrangThai.equals(newTrangThai);
-                String hanhDong = isUpdate ? "CAP_NHAT" : "TAO_MOI";
-                ps.setString(1, generateMaLog());
-                ps.setString(2, maHoSoList.get(i));
-                ps.setString(3, mssv);
-                ps.setString(4, hanhDong);
-                // trang_thai_cu = giá trị cũ trong DB (hoặc NULL nếu tạo mới)
-                if (oldTrangThai == null) ps.setNull(5, java.sql.Types.VARCHAR);
-                else ps.setString(5, oldTrangThai);
-                ps.setString(6, newTrangThai);
-                ps.setString(7, isUpdate ? "Cập nhật từ Excel" : "Import từ Excel");
-                ps.setString(8, "system");
-                ps.setTimestamp(9, Timestamp.valueOf(nowList.get(i)));
-            }
-            @Override public int getBatchSize() { return rows.size(); }
-        });
     }
 
     // ============================================================
@@ -754,53 +573,9 @@ public class HoSoGiayToImportService {
         };
     }
 
-    private Timestamp parseTimestamp(String s) {
-        if (s == null || s.isBlank()) return null;
-        try {
-            if (s.contains("/")) {
-                String[] p = s.split("/");
-                if (p.length == 3) {
-                    int d = Integer.parseInt(p[0].trim());
-                    int m = Integer.parseInt(p[1].trim());
-                    int y = Integer.parseInt(p[2].trim());
-                    return Timestamp.valueOf(LocalDateTime.of(y, m, d, 0, 0));
-                }
-            }
-            return Timestamp.valueOf(LocalDateTime.parse(s));
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
     private String trimToNull(String s) {
         if (s == null) return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
-    }
-
-    /** Set null cho VARCHAR nếu rỗng. */
-    private void setNullableString(PreparedStatement ps, int index, String value) throws SQLException {
-        if (value == null || value.isBlank()) ps.setNull(index, java.sql.Types.VARCHAR);
-        else ps.setString(index, value);
-    }
-
-    /**
-     * Sinh mã hồ sơ. Giới hạn 20 ký tự (VARCHAR(20) trong DB).
-     * Format: "HS" + millis(13) + "-" + UUID ngắn(4) = 21 → rút còn "HS" + millis(12) + UUID(6) = 20.
-     * - millis 12 chữ số: lấy 12 chữ số cuối của currentTimeMillis (vẫn unique trong vài tháng).
-     * - UUID 6 hex char: ~16 triệu giá trị, đủ cho batch 10K dòng.
-     */
-    private String generateMaHoSo() {
-        long ms = System.currentTimeMillis() % 1_000_000_000_000L; // 12 chữ số cuối
-        return "HS" + ms + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-    }
-
-    /**
-     * Sinh mã log. Giới hạn 20 ký tự (VARCHAR(20) trong DB).
-     * Format: "LOG" + millis(12) + UUID(5) = 20.
-     */
-    private String generateMaLog() {
-        long ms = System.currentTimeMillis() % 1_000_000_000_000L;
-        return "LOG" + ms + UUID.randomUUID().toString().substring(0, 5).toUpperCase();
     }
 }

@@ -18,11 +18,12 @@ import vn.vwa.edurecords.repository.UserRepository;
 import vn.vwa.edurecords.security.JwtService;
 import vn.vwa.edurecords.service.AuthService;
 
+import org.springframework.context.annotation.Import;
+
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -35,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Import(TestJacksonConfig.class)
 class AuthSecurityTests extends IntegrationTestConfig {
 
     @Autowired
