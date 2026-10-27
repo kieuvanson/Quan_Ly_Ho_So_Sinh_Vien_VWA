@@ -211,7 +211,7 @@ File có **1 sheet tên `SV`** chứa dữ liệu sinh viên. **14 cột theo đ
 | 2 | `Họ tên` | ✅ **Bắt buộc** | Tối đa 150 ký tự. |
 | 3 | `Ngày sinh` | ❌ Tùy chọn | Hỗ trợ: `dd/MM/yyyy`, `yyyy-MM-dd`, hoặc ô định dạng ngày Excel. |
 | 4 | `Giới tính` | ❌ Tùy chọn | Tối đa 10 ký tự (VD: `Nam`, `Nữ`). |
-| 5 | `CCCD` | ❌ Tùy chọn | Tối đa 20 ký tự. Phải **duy nhất** trong hệ thống. |
+| 5 | `CCCD` | ❌ Tùy chọn | Tối đ  a 20 ký tự. Phải **duy nhất** trong hệ thống. |
 | 6 | `SĐT` | ❌ Tùy chọn | Tối đa 20 ký tự. |
 | 7 | `Email` | ❌ Tùy chọn | Tối đa 100 ký tự. |
 | 8 | `Quê quán` | ❌ Tùy chọn | Tối đa 255 ký tự. |
