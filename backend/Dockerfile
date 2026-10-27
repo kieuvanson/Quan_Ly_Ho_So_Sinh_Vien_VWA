@@ -29,5 +29,15 @@ EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || exit 1
 
+# Kích thước heap.
+# -Xmx512m dễ OOM khi import Excel lớn: spring.servlet.multipart cho phép 10MB,
+# hibernate.jdbc.batch_size=500 và cả 3 module import chạy cùng lúc giữ nhiều
+# object trong bộ nhớ. 1g là mức tối thiểu hợp lý cho VPS 2GB.
+# Override khi deploy nếu VPS nhỏ hơn:
+#   docker compose build --build-arg JVM_MAX_HEAP=768m
+ARG JVM_XMS=256m
+ARG JVM_XMX=1g
+ENV JAVA_TOOL_OPTIONS="-Xms${JVM_XMS} -Xmx${JVM_XMX}"
+
 # Run as non-root user
-ENTRYPOINT ["java", "-jar", "-Xms256m", "-Xmx512m", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -73,20 +73,12 @@ public class AuthService {
      * Tạo tài khoản nhân viên mới. CHỈ được gọi từ endpoint có
      * {@code @PreAuthorize("hasRole('ADMIN')")} — không có đường đăng ký công khai.
      *
-     * Vai trò luôn là {@link Role#STAFF}: cấp quyền quản trị là thao tác nhạy cảm
-     * phải được quyết định riêng, không nhận giá trị từ request body.
-     */
+     * <p>Vai trò luôn là {@link Role#STAFF}: cấp quyền quản trị là thao tác nhạy cảm
+     * phải được quyết định riêng, không nhận giá trị từ request body. Cách duy nhất để
+     * có tài khoản ADMIN là {@code AdminBootstrap} khi bảng {@code users} còn trống.
+    */
     @Transactional
     public User createUser(RegisterRequest request) {
-        return createUser(request, Role.STAFF);
-    }
-
-    /**
-     * Tạo tài khoản với vai trò chỉ định.
-     * CHỈ dùng trong môi trường dev — xóa endpoint sau khi test xong!
-     */
-    @Transactional
-    public User createUser(RegisterRequest request, Role forcedRole) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BadRequestException("USERNAME_EXISTS", "Tên đăng nhập đã tồn tại.");
         }
@@ -96,13 +88,13 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .hoTen(request.getHoTen())
                 .email(request.getEmail())
-                .role(forcedRole)
+                .role(Role.STAFF)
                 .isActive(true)
                 .build();
 
         User saved = userRepository.save(user);
         log.info("Đã tạo tài khoản '{}' với vai trò {} (id={})",
-                saved.getUsername(), forcedRole, saved.getId());
+                saved.getUsername(), saved.getRole(), saved.getId());
         return saved;
     }
 

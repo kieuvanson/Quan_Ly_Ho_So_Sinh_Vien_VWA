@@ -77,36 +77,6 @@ public class AuthController {
                 .body(ApiResponse.success("Tạo tài khoản thành công", created));
     }
 
-    /**
-     * DEV-ONLY: Tạo user test để kiểm thử API khi không có user ADMIN.
-     * CHỈ hoạt động khi server chạy ở localhost:8081.
-     * SAU KHI TẠO USER XONG, XÓA ENDPOINT NÀY!
-     */
-    @PostMapping("/dev-register")
-    public ResponseEntity<ApiResponse<UserResponse>> devRegister(@Valid @RequestBody RegisterRequest request) {
-        String remoteAddr = "dev-only";
-        try {
-            jakarta.servlet.http.HttpServletRequest httpReq =
-                    ((org.springframework.web.context.request.ServletRequestAttributes)
-                            org.springframework.web.context.request.RequestContextHolder.getRequestAttributes())
-                    .getRequest();
-            remoteAddr = httpReq.getRemoteAddr();
-        } catch (Exception ignored) {}
-
-        if (!("localhost".equals(remoteAddr) || "127.0.0.1".equals(remoteAddr)
-                || "0:0:0:0:0:0:0:1".equals(remoteAddr)
-                || "::1".equals(remoteAddr))) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error(403, "FORBIDDEN", "Endpoint chỉ dùng trong môi trường dev."));
-        }
-
-        // Override role thành ADMIN để test bulk APIs
-        vn.vwa.edurecords.entity.enums.Role forcedRole = vn.vwa.edurecords.entity.enums.Role.ADMIN;
-        UserResponse created = UserResponse.fromEntity(authService.createUser(request, forcedRole));
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Tạo tài khoản dev thành công (ADMIN)", created));
-    }
-
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<AuthResponse>> refresh(
             @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshToken,

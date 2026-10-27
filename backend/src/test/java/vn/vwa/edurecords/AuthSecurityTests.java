@@ -10,7 +10,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import vn.vwa.edurecords.dto.request.RegisterRequest;
 import vn.vwa.edurecords.entity.User;
 import vn.vwa.edurecords.entity.enums.Role;
@@ -35,7 +34,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Testcontainers
 @Import(TestJacksonConfig.class)
 class AuthSecurityTests extends IntegrationTestConfig {
 

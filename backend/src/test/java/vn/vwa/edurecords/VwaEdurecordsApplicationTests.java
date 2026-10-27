@@ -8,7 +8,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import vn.vwa.edurecords.security.JwtAuthenticationFilter;
 import vn.vwa.edurecords.security.RateLimitFilter;
 import vn.vwa.edurecords.security.RefreshTokenService;
@@ -27,7 +26,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Testcontainers
 class VwaEdurecordsApplicationTests extends IntegrationTestConfig {
 
     @Autowired

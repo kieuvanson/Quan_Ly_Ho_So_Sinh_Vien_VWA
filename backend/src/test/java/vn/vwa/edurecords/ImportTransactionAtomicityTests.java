@@ -12,7 +12,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import vn.vwa.edurecords.dto.importexcel.ImportMode;
 import vn.vwa.edurecords.dto.importexcel.PreviewRowData;
 import vn.vwa.edurecords.dto.importexcel.SheetPreview;
@@ -33,11 +32,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>LƯU Ý: Tests này dùng database riêng (Testcontainers) và không ảnh hưởng
  * đến database production. Khi chạy cùng các test khác, Testcontainers có thể
  * cần thời gian khởi tạo container - chạy riêng sẽ nhanh hơn.
+ *
+ * <p>Class này không cần khai báo gì về Testcontainers: vòng đời container do
+ * {@link IntegrationTestConfig} quản lý, dùng chung cho mọi lớp test kể cả các
+ * lớp con {@code @Nested} bên dưới.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@Testcontainers
 @DisplayName("GOP Transaction Atomicity Tests")
 class ImportTransactionAtomicityTests extends IntegrationTestConfig {
 

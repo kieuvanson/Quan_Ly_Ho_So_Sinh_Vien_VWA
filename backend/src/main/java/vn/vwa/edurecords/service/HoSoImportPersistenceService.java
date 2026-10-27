@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.vwa.edurecords.dto.importexcel.PreviewRowData;
@@ -14,7 +15,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -119,7 +122,12 @@ public class HoSoImportPersistenceService {
             nowList.add(LocalDateTime.now());
         }
 
-        // 1. UPSERT batch ho_so_giay_to
+        // 1. Đọc trạng thái CŨ của các hồ sơ sắp bị ghi đè.
+        //    PHẢI đọc TRƯỚC khi UPSERT: sau UPSERT mọi dòng đã mang trạng thái
+        //    mới, nên không còn phân biệt được TAO_MOI với CAP_NHAT.
+        Map<String, String> oldTrangThaiMap = batchQueryTrangThaiCu(rows);
+
+        // 2. UPSERT batch ho_so_giay_to
         String sqlHs = """
             INSERT INTO ho_so_giay_to
                 (ma_ho_so, mssv, ma_loai, trang_thai_nop, ban_goc_ban_sao,
@@ -154,12 +162,12 @@ public class HoSoImportPersistenceService {
             }
         });
 
-        // 2. Batch query để lấy ma_ho_so THỰC TẾ (thay vì query trong vòng lặp)
+        // 3. Batch query để lấy ma_ho_so THỰC TẾ (thay vì query trong vòng lặp)
         // Xây dựng câu query với tất cả cặp (mssv, ma_loai) trong 1 lần
         List<String> actualMaHoSoList = batchQueryMaHoSo(rows);
 
-        // 3. Batch insert lich_su_nop dùng ma_ho_so THỰC TẾ
-        batchInsertLichSuNop(rows, actualMaHoSoList, nowList);
+        // 4. Batch insert lich_su_nop dùng ma_ho_so THỰC TẾ
+        batchInsertLichSuNop(rows, actualMaHoSoList, nowList, oldTrangThaiMap);
 
         log.info("Đã insert {} hồ sơ giấy tờ vào sheet '{}'", rows.size(), sp.getTenSheet());
         return rows.size();
@@ -228,7 +236,7 @@ public class HoSoImportPersistenceService {
                 "WHERE (mssv, ma_loai) IN (" + placeholders + ")";
 
         List<String> result = jdbcTemplate.query(sql,
-                rs -> {
+                (ResultSetExtractor<List<String>>) rs -> {
                     // Map (mssv, ma_loai) → ma_ho_so
                     java.util.Map<String, String> map = new java.util.HashMap<>();
                     while (rs.next()) {
@@ -256,6 +264,49 @@ public class HoSoImportPersistenceService {
         return result;
     }
 
+    /**
+     * Batch query lấy trạng thái CŨ của các hồ sơ giấy tờ sắp được ghi.
+     *
+     * <p>Phải gọi TRƯỚC khi UPSERT. Sau khi UPSERT, mọi dòng đã mang trạng
+     * thái mới nên không thể phân biệt hồ sơ tạo mới (TAO_MOI) với hồ sơ bị
+     * cập nhật (CAP_NHAT).
+     *
+     * <p>Key của map là {@code mssv|maLoai} — cặp khóa nghiệp vụ (unique
+     * constraint {@code (mssv, ma_loai)}) — vì ma_ho_so có thể đổi khi
+     * UPSERT ghi đè một hồ sơ đã tồn tại.
+     *
+     * <p>Hồ sơ không tồn tại thì không có trong map → trạng thái cũ = null →
+     * hành động = TAO_MOI.
+     */
+    private Map<String, String> batchQueryTrangThaiCu(List<PreviewRowData> rows) {
+        Map<String, String> oldTrangThaiMap = new HashMap<>();
+        if (rows.isEmpty()) return oldTrangThaiMap;
+
+        // Xây dựng placeholders: (?,?), (?,?), ...
+        StringBuilder placeholders = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) placeholders.append(", ");
+            placeholders.append("(?, ?)");
+            params.add(rows.get(i).getString("mssv"));
+            params.add(rows.get(i).getString("maLoai"));
+        }
+
+        String sql = "SELECT mssv, ma_loai, trang_thai_nop::text FROM ho_so_giay_to " +
+                "WHERE (mssv, ma_loai) IN (" + placeholders + ")";
+
+        jdbcTemplate.query(sql, (ResultSetExtractor<Void>) rs -> {
+            while (rs.next()) {
+                oldTrangThaiMap.put(
+                        rs.getString("mssv") + "|" + rs.getString("ma_loai"),
+                        rs.getString("trang_thai_nop"));
+            }
+            return null;
+        }, params.toArray());
+
+        return oldTrangThaiMap;
+    }
+
     // ============================================================
     // BATCH INSERT LICH SU NOP
     // ============================================================
@@ -263,32 +314,15 @@ public class HoSoImportPersistenceService {
     /**
      * Batch insert lich_su_nop (audit log).
      * Mỗi hồ sơ giấy tờ tạo 1 dòng log.
+     *
+     * @param oldTrangThaiMap trạng thái CŨ của hồ sơ, đọc TRƯỚC khi UPSERT.
+     *                      Key là {@code mssv|maLoai}, value là trạng thái cũ
+     *                      (null nghĩa là hồ sơ mới → hành động TAO_MOI).
      */
     private void batchInsertLichSuNop(List<PreviewRowData> rows, List<String> maHoSoList,
-                                      List<LocalDateTime> nowList) {
+                                      List<LocalDateTime> nowList,
+                                      Map<String, String> oldTrangThaiMap) {
         if (rows.isEmpty()) return;
-
-        // Lấy trạng thái cũ cho tất cả các dòng trong 1 query
-        StringBuilder placeholders = new StringBuilder();
-        List<Object> params = new ArrayList<>();
-        for (int i = 0; i < maHoSoList.size(); i++) {
-            if (i > 0) placeholders.append(", ");
-            placeholders.append("?");
-            params.add(maHoSoList.get(i));
-        }
-
-        // Query trạng thái cũ trước khi UPSERT
-        java.util.Map<String, String> oldTrangThaiMap = new java.util.HashMap<>();
-        if (!maHoSoList.isEmpty() && maHoSoList.get(0) != null) {
-            String sqlOld = "SELECT ma_ho_so, trang_thai_nop::text FROM ho_so_giay_to " +
-                    "WHERE ma_ho_so IN (" + placeholders + ")";
-            jdbcTemplate.query(sqlOld, rs -> {
-                while (rs.next()) {
-                    oldTrangThaiMap.put(rs.getString("ma_ho_so"),
-                            rs.getString("trang_thai_nop"));
-                }
-            }, params.toArray());
-        }
 
         // Batch insert lich_su_nop
         String sql = """
@@ -308,7 +342,9 @@ public class HoSoImportPersistenceService {
                 String maHoSo = maHoSoList.get(i);
 
                 // Xác định hành động: TAO_MOI hay CAP_NHAT
-                String oldTrangThai = (maHoSo != null) ? oldTrangThaiMap.get(maHoSo) : null;
+                // oldTrangThaiMap được đọc TRƯỚC UPSERT, nên null nghĩa là
+                // hồ sơ chưa tồn tại → tạo mới.
+                String oldTrangThai = oldTrangThaiMap.get(mssv + "|" + maLoai);
                 boolean isUpdate = oldTrangThai != null;
                 String hanhDong = isUpdate ? "CAP_NHAT" : "TAO_MOI";
 
