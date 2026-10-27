@@ -1,0 +1,44 @@
+# =====================================================================
+# Cấu hình deploy backend lên Railway.
+#
+# Railway đọc file này khi deploy service "Backend" trong project.
+# Service này dùng Dockerfile có sẵn ở backend/Dockerfile.
+#
+# LƯU Ý: file này PHẢI nằm trong thư mục root của service.
+# Nếu deploy từ repo root, đặt Root Directory = "backend" trong
+# Railway dashboard, khi đó file này được copy vào thư mục gốc service.
+# =====================================================================
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+# =====================================================================
+# Healthcheck.
+#
+# Spring Boot expose /actuator/health (đã permitAll trong SecurityConfig).
+# Railway dùng kết quả healthcheck để quyết định service đã sẵn sàng
+# nhận traffic hay chưa, và để khởi động lại container khi app treo.
+#
+# start_period = 90s: lần chạy đầu tiên cần build image + JVM khởi động
+# + Flyway chạy migration, nên chấp nhận lâu hơn trước khi coi là fail.
+# =====================================================================
+[deploy]
+startCommand = "java -jar app.jar"
+healthcheckPath = "/actuator/health"
+healthcheckTimeout = 180
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# =====================================================================
+# Resource limits.
+#
+# Import Excel (tối đa 10MB, batch 500 bản ghi) dễ OOM nếu heap quá nhỏ.
+# Backend/Dockerfile đã đặt JAVA_TOOL_OPTIONS="-Xms256m -Xmx1g".
+#
+# Nếu Railway gán ít RAM hơn 1g, hãy đặt JVM_XMX bằng khoảng 1/3
+# tổng RAM được cấp (biến môi trường trong Railway dashboard).
+# =====================================================================
+[build.args]
+JVM_XMS = "256m"
+JVM_XMX = "1g"
