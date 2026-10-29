@@ -67,10 +67,10 @@ public class HoSoGiayToController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStats(@RequestParam String mssv) {
         List<HoSoGiayTo> hoSos = hoSoGiayToService.getByMssv(mssv);
         long total = hoSos.size();
-        long daNop = hoSos.stream().filter(h -> "Da nop".equals(h.getTrangThaiNop())).count();
-        long chuaNop = hoSos.stream().filter(h -> "Chua nop".equals(h.getTrangThaiNop())).count();
-        long thieu = hoSos.stream().filter(h -> "Thieu".equals(h.getTrangThaiNop())).count();
-        long khongHopLe = hoSos.stream().filter(h -> "Khong hop le".equals(h.getTrangThaiNop())).count();
+        long daNop = hoSos.stream().filter(h -> "Đã nộp".equals(h.getTrangThaiNop())).count();
+        long chuaNop = hoSos.stream().filter(h -> "Chưa nộp".equals(h.getTrangThaiNop())).count();
+        long thieu = hoSos.stream().filter(h -> "Thiếu".equals(h.getTrangThaiNop())).count();
+        long khongHopLe = hoSos.stream().filter(h -> "Không hợp lệ".equals(h.getTrangThaiNop())).count();
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("mssv", mssv);

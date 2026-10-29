@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import vn.vwa.edurecords.dto.response.ApiResponse;
 import vn.vwa.edurecords.dto.response.LichSuNopResponse;
+import vn.vwa.edurecords.dto.response.PagedResponse;
 import vn.vwa.edurecords.service.LichSuNopService;
 
 import java.util.HashMap;
@@ -25,9 +26,46 @@ public class LichSuNopController {
     }
 
     /**
+     * GET /api/lich-su-nop/all?keyword=&hanhDong=&nguoiThucHien=&fromDate=&toDate=&page=0&size=20
+     *
+     * <p>Lấy lịch sử nộp giấy tờ trên TOÀN HỆ THỐNG, có lọc + phân trang
+     * server-side. Dùng cho tab "Lịch sử hồ sơ & giấy tờ" của màn hình
+     * Lịch sử hoạt động.</p>
+     *
+     * <ul>
+     *   <li>{@code keyword} — MSSV, họ tên SV, mã hồ sơ, tên giấy tờ, hành động,
+     *       ghi chú, người thực hiện.</li>
+     *   <li>{@code hanhDong} — mã hành động (VD: {@code TAO_MOI}, {@code Nop giay to}).</li>
+     *   <li>{@code nguoiThucHien} — username cán bộ (khớp chính xác).</li>
+     *   <li>{@code fromDate} / {@code toDate} — khoảng ngày yyyy-MM-dd.</li>
+     * </ul>
+     */
+    @GetMapping("/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<PagedResponse<List<LichSuNopResponse>>>> searchAll(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String hanhDong,
+            @RequestParam(required = false) String nguoiThucHien,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        Page<LichSuNopResponse> result = lichSuNopService.searchAll(
+                keyword, hanhDong, nguoiThucHien, fromDate, toDate, page, size);
+
+        PagedResponse.PageMetadata meta = new PagedResponse.PageMetadata(
+                result.getNumber(), result.getSize(), result.getTotalElements());
+        PagedResponse<List<LichSuNopResponse>> paged =
+                new PagedResponse<>(result.getContent(), meta);
+
+        return ResponseEntity.ok(ApiResponse.success("Lấy lịch sử nộp giấy tờ thành công", paged));
+    }
+
+    /**
      * GET /api/lich-su-nop?mssv=XXX&page=0&size=20
      * Lấy lịch sử nộp theo MSSV (ADMIN).
-     */
+    */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getByMssv(

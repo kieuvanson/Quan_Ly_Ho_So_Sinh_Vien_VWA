@@ -120,10 +120,10 @@ public class PhieuXuatHoSoService {
                     ? Collections.emptyList()
                     : phieuXuatHoSoRepository.findActive(keyword, loaiHoSo, size, offset);
         } else {
-            total = phieuXuatHoSoRepository.countByFilters(keyword, trangThai, loaiHoSo, null, null);
+            total = phieuXuatHoSoRepository.countByFilters(keyword, trangThai, loaiHoSo, null, null, null);
             content = total == 0
                     ? Collections.emptyList()
-                    : phieuXuatHoSoRepository.findByFilters(keyword, trangThai, loaiHoSo, null, null, size, offset);
+                    : phieuXuatHoSoRepository.findByFilters(keyword, trangThai, loaiHoSo, null, null, null, size, offset);
         }
 
         if (content.isEmpty()) {
@@ -144,6 +144,7 @@ public class PhieuXuatHoSoService {
             loaiHoSo = LOAI_MUON_TAM_THOI;
         }
         String keyword = trimToNull(req.getKeyword());
+        String nguoiThucHien = trimToNull(req.getNguoiThucHien());
         String fromDate = trimToNull(req.getFromDate());
         String toDate = trimToNull(req.getToDate());
 
@@ -151,11 +152,13 @@ public class PhieuXuatHoSoService {
         int size = Math.max(1, req.getSize());
         int offset = page * size;
 
-        long total = phieuXuatHoSoRepository.countByFilters(keyword, trangThai, loaiHoSo, fromDate, toDate);
+        long total = phieuXuatHoSoRepository.countByFilters(
+                keyword, trangThai, loaiHoSo, nguoiThucHien, fromDate, toDate);
 
         List<PhieuXuatHoSo> content = total == 0
                 ? Collections.emptyList()
-                : phieuXuatHoSoRepository.findByFilters(keyword, trangThai, loaiHoSo, fromDate, toDate, size, offset);
+                : phieuXuatHoSoRepository.findByFilters(
+                        keyword, trangThai, loaiHoSo, nguoiThucHien, fromDate, toDate, size, offset);
 
         if (content.isEmpty()) {
             Pageable pageable = PageRequest.of(page, size);

@@ -65,12 +65,20 @@ public class PhieuXuatHoSoController {
 
     /**
      * GET /api/phieu-muon/lich-su
+     *
+     * <p>Lịch sử mượn / trả và lịch sử rút hồ sơ — phân biệt qua {@code loaiHoSo}:
+     * {@code Mượn tạm thời} (mặc định) hoặc {@code Rút vĩnh viễn}.</p>
+     *
+     * <p>Filter: keyword (mã phiếu / MSSV / họ tên / lý do), trangThai,
+     * loaiHoSo, nguoiThucHien (người tạo phiếu), fromDate / toDate (theo ngayTao),
+     * page / size. Tất cả đều xử lý server-side.</p>
      */
     @GetMapping("/lich-su")
     public ResponseEntity<ApiResponse<PagedResponse<List<PhieuMuonResponse>>>> getLichSuMuonTra(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String trangThai,
             @RequestParam(required = false) String loaiHoSo,
+            @RequestParam(required = false) String nguoiThucHien,
             @RequestParam(required = false) String fromDate,
             @RequestParam(required = false) String toDate,
             @RequestParam(defaultValue = "0") int page,
@@ -80,6 +88,7 @@ public class PhieuXuatHoSoController {
         req.setKeyword(keyword);
         req.setTrangThai(trangThai);
         req.setLoaiHoSo(loaiHoSo);
+        req.setNguoiThucHien(nguoiThucHien);
         req.setFromDate(fromDate);
         req.setToDate(toDate);
         req.setPage(page);

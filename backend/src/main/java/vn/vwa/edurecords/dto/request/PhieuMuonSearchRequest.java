@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Min;
  * - keyword: tìm theo maPhieu / mssv / hoTen sinh viên / lyDo (LIKE, không phân biệt hoa thường)
  * - trangThai: trạng thái phiếu. Mặc định 'Đang mượn' cho /dang-muon, optional cho /lich-su.
  * - loaiHoSo: 'Mượn tạm thời' | 'Rút vĩnh viễn'
+ * - nguoiThucHien: username cán bộ tạo phiếu (khớp chính xác, không phân biệt hoa thường)
  * - fromDate, toDate: filter theo ngayTao (yyyy-MM-dd). Chỉ dùng cho /lich-su.
  * - page/size: phân trang
  */
@@ -20,6 +21,7 @@ public class PhieuMuonSearchRequest {
     private String keyword;
     private String trangThai;
     private String loaiHoSo;
+    private String nguoiThucHien;
     private String fromDate;
     private String toDate;
 
@@ -40,6 +42,9 @@ public class PhieuMuonSearchRequest {
 
     public String getLoaiHoSo() { return loaiHoSo; }
     public void setLoaiHoSo(String loaiHoSo) { this.loaiHoSo = loaiHoSo; }
+
+    public String getNguoiThucHien() { return nguoiThucHien; }
+    public void setNguoiThucHien(String nguoiThucHien) { this.nguoiThucHien = nguoiThucHien; }
 
     public String getFromDate() { return fromDate; }
     public void setFromDate(String fromDate) { this.fromDate = fromDate; }

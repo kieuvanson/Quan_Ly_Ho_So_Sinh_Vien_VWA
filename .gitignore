@@ -76,6 +76,10 @@ nginx/html/
 *.temp
 *.swp
 *.swo
+backend-start.err
+backend-start.log
+tmp_*.sql
+tmp_*.txt
 
 # Docker files in root (Dockerfile và docker-compose.yml giữ lại)
 # backend/.dockerignore và frontend/.dockerignore tự động ignore trong subfolders

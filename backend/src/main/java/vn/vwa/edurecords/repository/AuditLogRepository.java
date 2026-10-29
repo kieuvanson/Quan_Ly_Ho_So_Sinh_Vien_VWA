@@ -27,7 +27,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
      *   <li>{@code keyword} — tìm trên {@code khoa_chinh}, {@code truong_thay_doi},
      *       {@code gia_tri_cu}, {@code gia_tri_moi}, {@code nguoi_thuc_hien},
      *       và họ tên/MSSV sinh viên liên quan.</li>
-     *   <li>{@code nguoiThucHien} — username cán bộ thực hiện (null = tất cả).</li>
+     *   <li>{@code nguoiThucHien} — username cán bộ thực hiện (null = tất cả),
+     *       khớp CHỦ ĐỘNG (không phân biệt hoa thường).</li>
      *   <li>{@code fromDate} / {@code toDate} — khoảng thời gian (yyyy-MM-dd),
      *       so sánh trên {@code thoi_gian}.</li>
      * </ul>
@@ -43,7 +44,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
         WHERE (:bang IS NULL OR a.bang = :bang)
           AND (:bangKhac IS NULL OR a.bang <> :bangKhac)
           AND (:hanhDong IS NULL OR a.hanh_dong = :hanhDong)
-          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(a.nguoi_thuc_hien, '')) = LOWER(:nguoiThucHien))
+          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(a.nguoi_thuc_hien, '')) LIKE LOWER(CONCAT('%', :nguoiThucHien, '%')))
           AND (:fromDate IS NULL OR a.thoi_gian >= CAST(:fromDate AS timestamp))
           AND (:toDate IS NULL OR a.thoi_gian <  CAST(:toDate AS timestamp) + INTERVAL '1 day')
           AND (
@@ -80,7 +81,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
         WHERE (:bang IS NULL OR a.bang = :bang)
           AND (:bangKhac IS NULL OR a.bang <> :bangKhac)
           AND (:hanhDong IS NULL OR a.hanh_dong = :hanhDong)
-          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(a.nguoi_thuc_hien, '')) = LOWER(:nguoiThucHien))
+          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(a.nguoi_thuc_hien, '')) LIKE LOWER(CONCAT('%', :nguoiThucHien, '%')))
           AND (:fromDate IS NULL OR a.thoi_gian >= CAST(:fromDate AS timestamp))
           AND (:toDate IS NULL OR a.thoi_gian <  CAST(:toDate AS timestamp) + INTERVAL '1 day')
           AND (

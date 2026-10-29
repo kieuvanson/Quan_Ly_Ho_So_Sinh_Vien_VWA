@@ -320,14 +320,18 @@ public class SinhVienService {
             sinhVienRepository.save(sv);
 
             // Ghi audit — mỗi SV 1 dòng.
-            String ghiChuAudit = ghiChu == null
-                    ? "bulk update trạng thái học vụ"
-                    : "bulk update trạng thái học vụ: " + ghiChu;
+            // Lưu ý: tham số 7 của AuditService.log() là `nguoiThucHien`,
+            // KHÔNG phải ghi chú. Ghi chú được ghi ở dòng audit riêng để không
+            // làm sai dữ liệu cột nguoi_thuc_hien.
             auditService.log("BULK_UPDATE_TRANG_THAI", "sinhvien", sv.getMssv(),
                     "trang_thai_hoc_vu",
                     oldTrangThai != null ? oldTrangThai.getDisplayName() : null,
-                    newTrangThai.getDisplayName(),
-                    ghiChuAudit);
+                    newTrangThai.getDisplayName());
+
+            if (ghiChu != null && !ghiChu.isBlank()) {
+                auditService.log("BULK_UPDATE_TRANG_THAI_NOTE", "sinhvien", sv.getMssv(),
+                        "ghi_chu", null, ghiChu.trim());
+            }
 
             results.add(SinhVienBulkResult.ItemResult.ok(mssv));
             success++;
@@ -405,16 +409,17 @@ public class SinhVienService {
             }
 
             // Audit log trước khi xóa (lưu thông tin SV để còn truy vết).
-            String auditDetail = "Xóa sinh viên qua bulk delete";
-            if (ghiChu != null) {
-                auditDetail += " — " + ghiChu;
-            }
-            auditDetail += " (họ tên: " + sv.getHoTen()
+            // Tham số 7 của AuditService.log() là `nguoiThucHien` — KHÔNG truyền
+            // mô tả ở đây, nếu không cột nguoi_thuc_hien sẽ bị ghi sai.
+            // Thông tin mô tả được ghi ở truong_thay_doi / gia_tri_moi.
+            String giaTriMoi = "Xóa sinh viên qua bulk delete"
+                    + (ghiChu != null && !ghiChu.isBlank() ? " — " + ghiChu.trim() : "")
+                    + " (họ tên: " + sv.getHoTen()
                     + ", trạng thái: "
                     + (sv.getTrangThaiHocVu() != null
                             ? sv.getTrangThaiHocVu().getDisplayName() : "n/a") + ")";
             auditService.log("BULK_DELETE_SINHVIEN", "sinhvien", sv.getMssv(),
-                    null, null, null, auditDetail);
+                    "deleted", null, giaTriMoi);
 
             sinhVienRepository.delete(sv);
             results.add(SinhVienBulkResult.ItemResult.ok(mssv));

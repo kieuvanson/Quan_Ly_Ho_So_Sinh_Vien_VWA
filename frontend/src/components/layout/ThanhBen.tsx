@@ -78,7 +78,7 @@ export function ThanhBen({ isCollapsed }: ThanhBenProps) {
     {
       id: 'lich-su',
       icon: History,
-      label: 'Lịch sử & Audit',
+      label: 'Lịch sử hoạt động',
       path: '/lich-su-audit',
     },
     {

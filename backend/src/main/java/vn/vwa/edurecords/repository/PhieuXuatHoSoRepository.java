@@ -164,6 +164,7 @@ public interface PhieuXuatHoSoRepository
         FROM phieu_xuat_ho_so p
         WHERE (CAST(:trangThai AS trangthaiphieu) IS NULL OR p.trang_thai = CAST(:trangThai AS trangthaiphieu))
           AND (CAST(:loaiPhieu AS loaiphieu) IS NULL OR p.loai_phieu = CAST(:loaiPhieu AS loaiphieu))
+          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(p.nguoi_tao, '')) LIKE LOWER(CONCAT('%', :nguoiThucHien, '%')))
           AND (:fromDate IS NULL OR p.ngay_tao >= CAST(:fromDate AS timestamp))
           AND (:toDate IS NULL OR p.ngay_tao <  CAST(:toDate AS timestamp) + INTERVAL '1 day')
           AND (
@@ -171,6 +172,7 @@ public interface PhieuXuatHoSoRepository
             LOWER(p.ma_phieu) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER(p.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER(p.ly_do)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+            LOWER(COALESCE(p.nguoi_tao, '')) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER((SELECT sv.ho_ten FROM sinhvien sv WHERE sv.mssv = p.mssv)) LIKE LOWER(CONCAT('%', :keyword, '%'))
           )
         ORDER BY p.ngay_tao DESC
@@ -180,6 +182,7 @@ public interface PhieuXuatHoSoRepository
             @Param("keyword") String keyword,
             @Param("trangThai") String trangThai,
             @Param("loaiPhieu") String loaiPhieu,
+            @Param("nguoiThucHien") String nguoiThucHien,
             @Param("fromDate") String fromDate,
             @Param("toDate") String toDate,
             @Param("size") int size,
@@ -190,6 +193,7 @@ public interface PhieuXuatHoSoRepository
         FROM phieu_xuat_ho_so p
         WHERE (CAST(:trangThai AS trangthaiphieu) IS NULL OR p.trang_thai = CAST(:trangThai AS trangthaiphieu))
           AND (CAST(:loaiPhieu AS loaiphieu) IS NULL OR p.loai_phieu = CAST(:loaiPhieu AS loaiphieu))
+          AND (:nguoiThucHien IS NULL OR LOWER(COALESCE(p.nguoi_tao, '')) LIKE LOWER(CONCAT('%', :nguoiThucHien, '%')))
           AND (:fromDate IS NULL OR p.ngay_tao >= CAST(:fromDate AS timestamp))
           AND (:toDate IS NULL OR p.ngay_tao <  CAST(:toDate AS timestamp) + INTERVAL '1 day')
           AND (
@@ -197,6 +201,7 @@ public interface PhieuXuatHoSoRepository
             LOWER(p.ma_phieu) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER(p.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER(p.ly_do)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+            LOWER(COALESCE(p.nguoi_tao, '')) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
             LOWER((SELECT sv.ho_ten FROM sinhvien sv WHERE sv.mssv = p.mssv)) LIKE LOWER(CONCAT('%', :keyword, '%'))
           )
         """, nativeQuery = true)
@@ -204,6 +209,7 @@ public interface PhieuXuatHoSoRepository
             @Param("keyword") String keyword,
             @Param("trangThai") String trangThai,
             @Param("loaiPhieu") String loaiPhieu,
+            @Param("nguoiThucHien") String nguoiThucHien,
             @Param("fromDate") String fromDate,
             @Param("toDate") String toDate);
 }

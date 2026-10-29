@@ -19,10 +19,15 @@ import java.util.Optional;
 @Service
 public class UserService {
 
-    private final UserRepository userRepository;
+    /** Tên bảng dùng cho các bản ghi audit liên quan tới tài khoản người dùng. */
+    private static final String BANG_USERS = "users";
 
-    public UserService(UserRepository userRepository) {
+    private final UserRepository userRepository;
+    private final AuditService auditService;
+
+    public UserService(UserRepository userRepository, AuditService auditService) {
         this.userRepository = userRepository;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -43,9 +48,13 @@ public class UserService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND",
                         "Không tìm thấy tài khoản: " + username));
+        String hoTenCu = user.getHoTen();
         user.setHoTen(req.getHoTen().trim());
         user.setEmail(req.getEmail() != null ? req.getEmail().trim() : null);
-        return UserResponse.fromEntity(userRepository.save(user));
+        UserResponse result = UserResponse.fromEntity(userRepository.save(user));
+        auditService.log("UPDATE_PROFILE", BANG_USERS, username,
+                "ho_ten", hoTenCu, user.getHoTen());
+        return result;
     }
 
     @Transactional
@@ -53,8 +62,12 @@ public class UserService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND",
                         "Không tìm thấy tài khoản: " + username));
+        String roleCu = user.getRole().name();
         user.setRole(req.getRole());
-        return UserResponse.fromEntity(userRepository.save(user));
+        UserResponse result = UserResponse.fromEntity(userRepository.save(user));
+        auditService.log("UPDATE_ROLE", BANG_USERS, username,
+                "role", roleCu, req.getRole().name());
+        return result;
     }
 
     /**
@@ -66,7 +79,10 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND",
                         "Không tìm thấy tài khoản: " + username));
         user.setIsActive(true);
-        return UserResponse.fromEntity(userRepository.save(user));
+        UserResponse result = UserResponse.fromEntity(userRepository.save(user));
+        auditService.log("ACTIVATE_USER", BANG_USERS, username,
+                "is_active", "false", "true");
+        return result;
     }
 
     /**

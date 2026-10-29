@@ -249,7 +249,7 @@ public class HoSoGiayToService {
         hoSo.setMaHoSo(generateMaHoSo());
         hoSo.setMssv(mssv);
         hoSo.setMaLoai(maLoai);
-        hoSo.setTrangThaiNop(request.getTrangThaiNop() != null ? request.getTrangThaiNop() : "Chua nop");
+        hoSo.setTrangThaiNop(request.getTrangThaiNop() != null ? request.getTrangThaiNop() : "Chưa nộp");
         hoSo.setBanGocBanSao(request.getBanGocBanSao());
         hoSo.setFileDinhKem(request.getFileDinhKem());
         hoSo.setViTriLuuKho(request.getViTriLuuKho());
@@ -344,20 +344,26 @@ public class HoSoGiayToService {
         lichSuNopRepository.save(log);
     }
 
+    /**
+     * Xác định nhãn hành động ghi vào {@code lich_su_nop} dựa trên cặp
+     * (trạng thái cũ, trạng thái mới). Giá trị trạng thái phải khớp với
+     * ENUM {@code trangthainop} trong DB: {@code Chưa nộp}, {@code Đã nộp},
+     * {@code Thiếu}, {@code Không hợp lệ}.
+     */
     private String xacDinhHanhDong(String trangThaiCu, String trangThaiMoi) {
-        if ("Chua nop".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
-            return "Nop giay to";
-        } else if ("Da nop".equals(trangThaiCu) && "Chua nop".equals(trangThaiMoi)) {
-            return "Huy nop";
-        } else if ("Da nop".equals(trangThaiCu) && "Thieu".equals(trangThaiMoi)) {
-            return "Danh dau thieu";
-        } else if ("Thieu".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
-            return "Bo sung day du";
-        } else if ("Da nop".equals(trangThaiCu) && "Khong hop le".equals(trangThaiMoi)) {
-            return "Danh dau khong hop le";
-        } else if ("Khong hop le".equals(trangThaiCu) && "Da nop".equals(trangThaiMoi)) {
-            return "Hop le tro lai";
+        if ("Chưa nộp".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
+            return "Nộp giấy tờ";
+        } else if ("Đã nộp".equals(trangThaiCu) && "Chưa nộp".equals(trangThaiMoi)) {
+            return "Hủy nộp";
+        } else if ("Đã nộp".equals(trangThaiCu) && "Thiếu".equals(trangThaiMoi)) {
+            return "Đánh dấu thiếu";
+        } else if ("Thiếu".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
+            return "Bổ sung đầy đủ";
+        } else if ("Đã nộp".equals(trangThaiCu) && "Không hợp lệ".equals(trangThaiMoi)) {
+            return "Đánh dấu không hợp lệ";
+        } else if ("Không hợp lệ".equals(trangThaiCu) && "Đã nộp".equals(trangThaiMoi)) {
+            return "Hợp lệ trở lại";
         }
-        return "Cap nhat trang thai";
+        return "Cập nhật trạng thái";
     }
 }

@@ -10,7 +10,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/muon-tra-ho-so': 'Mượn / trả hồ sơ',
   '/rut-ho-so': 'Rút hồ sơ',
   '/bao-cao-thong-ke': 'Báo cáo - Thống kê',
-  '/lich-su-audit': 'Lịch sử & Audit',
+  '/lich-su-audit': 'Lịch sử hoạt động',
   '/cai-dat': 'Cài đặt',
 }
 

@@ -42,6 +42,8 @@ export const phieuMuonApi = {
     keyword?: string
     trangThai?: string
     loaiHoSo?: string
+    /** Username người tạo phiếu — lọc server-side. */
+    nguoiThucHien?: string
     fromDate?: string
     toDate?: string
     page?: number
@@ -51,6 +53,7 @@ export const phieuMuonApi = {
     if (params.keyword) sp.append('keyword', params.keyword)
     if (params.trangThai) sp.append('trangThai', params.trangThai)
     if (params.loaiHoSo) sp.append('loaiHoSo', params.loaiHoSo)
+    if (params.nguoiThucHien) sp.append('nguoiThucHien', params.nguoiThucHien)
     if (params.fromDate) sp.append('fromDate', params.fromDate)
     if (params.toDate) sp.append('toDate', params.toDate)
     if (params.page !== undefined) sp.append('page', String(params.page))
